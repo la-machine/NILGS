@@ -1,0 +1,14 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Development overlay: publishes the database on 127.0.0.1:47432 (the project
+# never uses default ports; see README "Ports") so a backend started from the
+# IDE or `./mvnw spring-boot:run` can reach it.
+#
+#   docker compose -f compose.yml -f compose.dev.yml up -d db migrate
+#   cd backend && SNIGF_DB_URL=jdbc:postgresql://localhost:47432/snigf SNIGF_SECRETS_DIR=../infra/secrets ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+#
+# Never use this file on staging or production.
+services:
+  db:
+    ports:
+      - "127.0.0.1:${SNIGF_DB_PORT:-47432}:47432"

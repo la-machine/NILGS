@@ -1,0 +1,7 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Production (pilot). Real data only after gate G1 and written authorization.
+# EnvironmentGuard refuses to start with demo mode on or a placeholder password.
+snigf:
+  environment: PROD
+  demo-mode: false

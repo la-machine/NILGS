@@ -1,0 +1,35 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Reverse proxy (ADR-010): one origin for the UI and the API, so no CORS.
+# SNIGF_SITE_ADDRESS is a domain name on staging and production (Caddy then
+# obtains and renews TLS certificates) and ":47000" for the local stack (no default ports, see README).
+{
+	admin off
+}
+
+{$SNIGF_SITE_ADDRESS::47000} {
+	encode zstd gzip
+
+	header {
+		# Ignored by browsers over plain HTTP; enforced once the site runs on HTTPS.
+		Strict-Transport-Security "max-age=31536000"
+		# The basemap tile host is added here when the map arrives (E-08).
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "same-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		-Server
+	}
+
+	# The API only. Actuator listens on the app's management port (47081), which
+	# is never proxied.
+	handle /api/* {
+		reverse_proxy app:47080
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}

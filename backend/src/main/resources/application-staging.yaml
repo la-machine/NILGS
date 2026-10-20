@@ -1,0 +1,7 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Migration rehearsal, acceptance and the ministerial demonstration.
+# Synthetic data only (Release plan §4).
+snigf:
+  environment: STAGING
+  demo-mode: true

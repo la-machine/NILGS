@@ -1,0 +1,10 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Build context for infra/proxy/Dockerfile (repository root).
+**/node_modules
+**/dist
+**/target
+infra/secrets
+.git
+.idea
+.vscode

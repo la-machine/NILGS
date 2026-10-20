@@ -1,0 +1,11 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Automated tests: databases are created per run by Testcontainers and discarded.
+snigf:
+  environment: TEST
+  demo-mode: true
+
+logging:
+  structured:
+    format:
+      console: ""

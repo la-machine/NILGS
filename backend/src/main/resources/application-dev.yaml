@@ -1,0 +1,12 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Developer machines and the local Compose stack. Synthetic data only.
+snigf:
+  environment: DEV
+  demo-mode: true
+
+# Readable logs on a developer console.
+logging:
+  structured:
+    format:
+      console: ""

@@ -1,0 +1,124 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# SNIGF/NILGS — local and demo stack (C1, ADR-009).
+#
+#   infra/scripts/dev-setup.sh             once: .env + local secret files
+#   docker compose up -d --build             db, migrate, app, web → http://localhost:47000
+#   docker compose --profile test run --rm dbtest   database test suite
+#
+# Images are pinned by tag and digest; Compose pulls them when missing.
+# Only the web proxy publishes a port, on 127.0.0.1. The database and the app's
+# management port are reachable only on the Compose network (Slice 1 design §6).
+# Use `docker compose exec db psql -U postgres -d snigf`, or compose.dev.yml to
+# publish the database port to localhost while running the backend from an IDE.
+
+name: snigf
+
+x-postgis-image: &postgis-image postgis/postgis:18-3.6@sha256:b4466ea2ba7e3af54fcbba996d45325720f4b3ecb4f43f99b2f41367dc196f23
+
+services:
+  db:
+    image: *postgis-image
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: snigf
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_superuser_password
+      # Non-default port (README "Ports"); the server, psql and pg_isready all read it.
+      PGPORT: "47432"
+    secrets:
+      - db_superuser_password
+      - db_migrator_password
+      - db_app_password
+      - db_auditor_password
+    volumes:
+      # PostgreSQL 18 images keep PGDATA under /var/lib/postgresql/18/docker.
+      - db-data:/var/lib/postgresql
+      # Runs once, on an empty data directory only.
+      - ./infra/db/init/01-roles.sql:/snigf/01-roles.sql:ro
+      - ./infra/db/docker-init-roles.sh:/docker-entrypoint-initdb.d/10-snigf-roles.sh:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "snigf"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Deploy-time step: applies migrations as the schema owner, then exits.
+  # The application itself never holds snigf_migrator credentials (ADR-009).
+  migrate:
+    image: flyway/flyway:12.4.0-alpine   # the Flyway version Spring Boot 4.1.1 manages, so tests and deploys match
+    depends_on:
+      db:
+        condition: service_healthy
+    secrets:
+      - db_migrator_password
+    environment:
+      FLYWAY_URL: jdbc:postgresql://db:47432/snigf
+      FLYWAY_USER: snigf_migrator
+      FLYWAY_SCHEMAS: snigf
+      FLYWAY_DEFAULT_SCHEMA: snigf
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_VALIDATE_MIGRATION_NAMING: "true"
+    volumes:
+      - ./backend/src/main/resources/db/migration:/flyway/sql:ro
+    entrypoint: ["sh", "-c", "FLYWAY_PASSWORD=\"$$(cat /run/secrets/db_migrator_password)\" exec flyway migrate"]
+    restart: "no"
+
+  app:
+    build: ./backend
+    image: snigf-backend:local
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SNIGF_PROFILE:-dev}
+      SNIGF_DB_URL: jdbc:postgresql://db:47432/snigf
+    # Only the application role's password; never the migrator's (ADR-009).
+    secrets:
+      - db_app_password
+    # Health check is defined in backend/Dockerfile (readiness on port 47081).
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/proxy/Dockerfile
+    image: snigf-web:local
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      SNIGF_SITE_ADDRESS: ${SNIGF_SITE_ADDRESS:-:47000}
+    ports:
+      - "127.0.0.1:${SNIGF_HTTP_PORT:-47000}:47000"
+
+  # Database test suite (pgTAP + concurrent audit chain) in a throwaway server.
+  # Same script and image as CI; no volume, so every run starts from scratch.
+  dbtest:
+    profiles: ["test"]
+    build:
+      context: infra/db
+      dockerfile: test.Dockerfile
+      args:
+        BASE_IMAGE: *postgis-image
+    environment:
+      PGPORT: "47432"
+    volumes:
+      - .:/repo:ro
+    tmpfs:
+      - /var/lib/postgresql
+    command: ["sh", "/repo/infra/db/run-db-test.sh"]
+
+secrets:
+  db_superuser_password:
+    file: ./infra/secrets/db_superuser_password
+  db_migrator_password:
+    file: ./infra/secrets/db_migrator_password
+  db_app_password:
+    file: ./infra/secrets/db_app_password
+  db_auditor_password:
+    file: ./infra/secrets/db_auditor_password
+
+volumes:
+  db-data:

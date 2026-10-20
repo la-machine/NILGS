@@ -1,0 +1,15 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Build output
+target/
+node_modules/
+dist/
+# Local configuration and secrets
+.env
+*.local
+secrets/
+# Editors
+.idea/
+.vscode/
+*.iml
+.DS_Store

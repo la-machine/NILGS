@@ -1,0 +1,7 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+target/
+src/test/
+Dockerfile
+.dockerignore
+*.iml

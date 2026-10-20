@@ -1,0 +1,8 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Shell scripts and SQL run inside Linux containers: keep LF on every platform.
+* text=auto
+*.sh   text eol=lf
+*.sql  text eol=lf
+*.yml  text eol=lf
+*Dockerfile text eol=lf

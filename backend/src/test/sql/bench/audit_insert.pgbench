@@ -1,0 +1,14 @@
+-- SNIGF/NILGS - Copyright (c) 2026 FLYT.
+-- Author: Pythagore.
+-- pgbench script: concurrent audit inserts as snigf_app, about 10% rolled back.
+-- The chain must stay contiguous and verifiable afterwards (db-test.sh checks it).
+\set r random(1, 10)
+BEGIN;
+INSERT INTO snigf.audit_event (id, actor_type, actor_label, action, outcome, correlation_id, details, prev_hash, hash)
+VALUES (gen_random_uuid(), 'SERVICE', 'bench', 'BENCH_EVENT', 'SUCCESS', gen_random_uuid(),
+        jsonb_build_object('client', :client_id), '\x00', '\x00');
+\if :r = 1
+ROLLBACK;
+\else
+COMMIT;
+\endif
