@@ -22,15 +22,24 @@ LABEL org.opencontainers.image.title="SNIGF/NILGS backend" \
       org.opencontainers.image.vendor="FLYT" \
       org.opencontainers.image.authors="Pythagore" \
       org.opencontainers.image.description="Demonstration software, synthetic data only"
-RUN groupadd --system --gid 10001 snigf && useradd --system --uid 10001 --gid snigf --no-create-home snigf
+RUN groupadd --system --gid 10001 snigf && useradd --system --uid 10001 --gid snigf --no-create-home snigf \
+ && install -d -o snigf -g snigf -m 700 /var/lib/snigf/audit-checkpoints
 WORKDIR /app
 COPY --from=build /extracted/dependencies/ ./
 COPY --from=build /extracted/spring-boot-loader/ ./
 COPY --from=build /extracted/snapshot-dependencies/ ./
 COPY --from=build /extracted/application/ ./
+COPY --chmod=555 docker-entrypoint.sh /usr/local/bin/snigf-entrypoint
+# Private copy of the database client key, made by the entry point (mode 0600).
+ENV SNIGF_DB_CLIENT_KEY=/run/snigf-keys/app_db_client_key_pk8
+# Signed audit checkpoints: the volume audit-checkpoints (compose.yml) is mounted here and
+# inherits this directory's owner and mode on first use.
+ENV SNIGF_AUDIT_CHECKPOINT_DIR=/var/lib/snigf/audit-checkpoints
 USER snigf:snigf
-EXPOSE 47080 47081
-# Readiness over plain TCP: the runtime image carries no curl or wget.
+# Ports come from the environment (.env); this is the documented API port (ADR-015).
+EXPOSE 47080
+# Readiness on the management port, which listens on the container's loopback only
+# (never on a network), so plain HTTP never leaves the container. No curl in the image.
 HEALTHCHECK --interval=10s --timeout=3s --start-period=60s --retries=5 \
-  CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/47081 && printf 'GET /actuator/health/readiness HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-XX:+ExitOnOutOfMemoryError", "org.springframework.boot.loader.launch.JarLauncher"]
+  CMD ["bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${SNIGF_MANAGEMENT_PORT:?} &&printf 'GET /actuator/health/readiness HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+ENTRYPOINT ["/usr/local/bin/snigf-entrypoint"]

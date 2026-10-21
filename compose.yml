@@ -1,59 +1,109 @@
 # SNIGF/NILGS - Copyright (c) 2026 FLYT.
 # Author: Pythagore.
-# SNIGF/NILGS — local and demo stack (C1, ADR-009).
+# SNIGF/NILGS — local and demo stack.
 #
-#   infra/scripts/dev-setup.sh             once: .env + local secret files
-#   docker compose up -d --build             db, migrate, app, web → http://localhost:47000
-#   docker compose --profile test run --rm dbtest   database test suite
+#   bash infra/scripts/dev-setup.sh                  once: .env, passwords, development PKI
+#   docker compose up -d --build --wait              db, migrate, openbao, bao-init, app, web
+#                                                    → https://localhost:47000
+#   docker compose --profile test run --rm --build dbtest           database test suite
+#   docker compose --profile test run --rm --build security-probe   transport and isolation checks
 #
-# Images are pinned by tag and digest; Compose pulls them when missing.
-# Only the web proxy publishes a port, on 127.0.0.1. The database and the app's
-# management port are reachable only on the Compose network (Slice 1 design §6).
-# Use `docker compose exec db psql -U postgres -d snigf`, or compose.dev.yml to
-# publish the database port to localhost while running the backend from an IDE.
+# Security model (ADR-017, ADR-020):
+#   * TLS 1.3 on every hop: browser → web, web → app (mutual TLS), app/migrate → db
+#     (verify-full + client certificate + SCRAM). No plain-text port exists.
+#   * Networks: edge (published proxy port), app-net (web ↔ app), data-net (app, migrate ↔ db),
+#     key-net (app, bao-init ↔ openbao). All but edge are internal (no internet). The proxy
+#     reaches neither the database nor OpenBao.
+#   * Keys live in OpenBao (ADR-018): the app signs, wraps data keys and computes HMACs
+#     there over mutual TLS and never holds a long-term key.
+#   * Containers: read-only root filesystem, all capabilities dropped, no-new-privileges,
+#     non-root users, resource limits from .env.
+#   * Every value comes from .env (ADR-014); Compose refuses to start if one is missing.
+#   * Images are pinned by tag and digest; Compose pulls them when missing.
 
 name: snigf
 
 x-postgis-image: &postgis-image postgis/postgis:18-3.6@sha256:b4466ea2ba7e3af54fcbba996d45325720f4b3ecb4f43f99b2f41367dc196f23
 
+# Key custody settings shared by the provisioning job and the application (ADR-018).
+x-key-names: &key-names
+  SNIGF_BAO_TRANSIT_MOUNT: ${SNIGF_BAO_TRANSIT_MOUNT:?set in .env}
+  SNIGF_BAO_AUTH_MOUNT: ${SNIGF_BAO_AUTH_MOUNT:?set in .env}
+  SNIGF_BAO_APP_ROLE: ${SNIGF_BAO_APP_ROLE:?set in .env}
+  SNIGF_KEY_AUDIT_CHECKPOINT: ${SNIGF_KEY_AUDIT_CHECKPOINT:?set in .env}
+  SNIGF_KEY_RECORD_SIGNING: ${SNIGF_KEY_RECORD_SIGNING:?set in .env}
+  SNIGF_KEY_DATA_ENCRYPTION: ${SNIGF_KEY_DATA_ENCRYPTION:?set in .env}
+  SNIGF_KEY_PAYMENT_CALLBACK: ${SNIGF_KEY_PAYMENT_CALLBACK:?set in .env}
+  SNIGF_KEY_PASSWORD_PEPPER: ${SNIGF_KEY_PASSWORD_PEPPER:?set in .env}
+  SNIGF_KEY_BLIND_INDEX: ${SNIGF_KEY_BLIND_INDEX:?set in .env}
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  restart: unless-stopped
+
 services:
   db:
+    <<: *hardened
     image: *postgis-image
-    restart: unless-stopped
+    # The entrypoint starts as root to install the TLS key and drop to the postgres
+    # user; these are the only capabilities it needs for that.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    entrypoint: ["sh", "/etc/snigf/start-postgres.sh"]
     environment:
       POSTGRES_DB: snigf
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/db_superuser_password
-      # Non-default port (README "Ports"); the server, psql and pg_isready all read it.
-      PGPORT: "47432"
+      PGPORT: ${SNIGF_DB_PORT:?set in .env}
+      SNIGF_DB_LOG_CONNECTIONS: ${SNIGF_DB_LOG_CONNECTIONS:?set in .env}
     secrets:
       - db_superuser_password
       - db_migrator_password
       - db_app_password
       - db_auditor_password
+      - db_tls_crt
+      - db_tls_key
+      - pki_ca_chain_crt
     volumes:
       # PostgreSQL 18 images keep PGDATA under /var/lib/postgresql/18/docker.
       - db-data:/var/lib/postgresql
-      # Runs once, on an empty data directory only.
+      - ./infra/db/start-postgres.sh:/etc/snigf/start-postgres.sh:ro
+      - ./infra/db/pg_hba.conf:/etc/snigf/pg_hba.conf:ro
+      # First start of an empty volume only.
       - ./infra/db/init/01-roles.sql:/snigf/01-roles.sql:ro
       - ./infra/db/docker-init-roles.sh:/docker-entrypoint-initdb.d/10-snigf-roles.sh:ro
+    tmpfs:
+      - /var/run/postgresql
+      - /tmp
+      - /run/snigf-tls
+    networks: [data-net]
+    mem_limit: ${SNIGF_DB_MEMORY:?set in .env}
+    cpus: ${SNIGF_DB_CPUS:?set in .env}
+    pids_limit: ${SNIGF_DB_PIDS:?set in .env}
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres", "-d", "snigf"]
       interval: 5s
       timeout: 3s
       retries: 20
 
-  # Deploy-time step: applies migrations as the schema owner, then exits.
-  # The application itself never holds snigf_migrator credentials (ADR-009).
+  # Deploy-time step: applies migrations as the schema owner over TLS with a client
+  # certificate, then exits. The application never holds these credentials (ADR-009).
   migrate:
+    <<: *hardened
+    restart: "no"
     image: flyway/flyway:12.4.0-alpine   # the Flyway version Spring Boot 4.1.1 manages, so tests and deploys match
+    user: "10003:10003"
     depends_on:
       db:
         condition: service_healthy
     secrets:
       - db_migrator_password
+      - migrator_db_client_crt
+      - migrator_db_client_key_pk8
+      - pki_ca_chain_crt
     environment:
-      FLYWAY_URL: jdbc:postgresql://db:47432/snigf
+      FLYWAY_URL: "jdbc:postgresql://db:${SNIGF_DB_PORT:?set in .env}/snigf?sslmode=verify-full&sslrootcert=/run/secrets/pki_ca_chain_crt&sslcert=/run/secrets/migrator_db_client_crt&sslkey=/run/secrets/migrator_db_client_key_pk8"
       FLYWAY_USER: snigf_migrator
       FLYWAY_SCHEMAS: snigf
       FLYWAY_DEFAULT_SCHEMA: snigf
@@ -61,40 +111,189 @@ services:
       FLYWAY_VALIDATE_MIGRATION_NAMING: "true"
     volumes:
       - ./backend/src/main/resources/db/migration:/flyway/sql:ro
+    tmpfs:
+      - /tmp
+    networks: [data-net]
+    mem_limit: ${SNIGF_MIGRATE_MEMORY:?set in .env}
     entrypoint: ["sh", "-c", "FLYWAY_PASSWORD=\"$$(cat /run/secrets/db_migrator_password)\" exec flyway migrate"]
+
+  # Key custody (ADR-018). Starts sealed; bao-init unseals and provisions it.
+  openbao:
+    <<: *hardened
+    build:
+      context: infra/openbao
+      target: server
+    image: snigf-openbao:local
+    environment:
+      SNIGF_BAO_PORT: ${SNIGF_BAO_PORT:?set in .env}
+      SNIGF_BAO_CLUSTER_PORT: ${SNIGF_BAO_CLUSTER_PORT:?set in .env}
+      SNIGF_BAO_LOG_LEVEL: ${SNIGF_BAO_LOG_LEVEL:?set in .env}
+      # Used only by the health check (`bao status`): healthy = initialised and unsealed.
+      BAO_ADDR: https://127.0.0.1:${SNIGF_BAO_PORT:?set in .env}
+      BAO_CACERT: /run/secrets/pki_ca_chain_crt
+      BAO_CLIENT_CERT: /run/secrets/bao_health_client_crt
+      BAO_CLIENT_KEY: /run/secrets/bao_health_client_key
+    secrets:
+      - bao_tls_crt
+      - bao_tls_key
+      - pki_ca_chain_crt
+      - bao_health_client_crt
+      - bao_health_client_key
+    volumes:
+      - bao-data:/openbao/data
+      - bao-audit:/openbao/audit
+    tmpfs:
+      - /run/snigf-bao:uid=100,gid=1000,mode=0700
+      - /tmp
+    networks: [key-net]
+    mem_limit: ${SNIGF_BAO_MEMORY:?set in .env}
+    cpus: ${SNIGF_BAO_CPUS:?set in .env}
+    pids_limit: ${SNIGF_BAO_PIDS:?set in .env}
+    healthcheck:
+      test: ["CMD", "bao", "status"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # Deploy-time step: initialise (first run), unseal, and provision keys, policy and the
+  # application's certificate login with a temporary root token it then revokes.
+  bao-init:
+    <<: *hardened
     restart: "no"
+    build:
+      context: infra/openbao
+      target: init
+    image: snigf-openbao-init:local
+    depends_on:
+      openbao:
+        condition: service_started
+    environment:
+      <<: *key-names
+      SNIGF_BAO_PORT: ${SNIGF_BAO_PORT:?set in .env}
+      SNIGF_BAO_UNSEAL_SHARES: ${SNIGF_BAO_UNSEAL_SHARES:?set in .env}
+      SNIGF_BAO_UNSEAL_THRESHOLD: ${SNIGF_BAO_UNSEAL_THRESHOLD:?set in .env}
+      SNIGF_BAO_INIT_TIMEOUT: ${SNIGF_BAO_INIT_TIMEOUT:?set in .env}
+      SNIGF_BAO_APP_CLIENT_CN: ${SNIGF_BAO_APP_CLIENT_CN:?set in .env}
+      SNIGF_BAO_TOKEN_TTL: ${SNIGF_BAO_TOKEN_TTL:?set in .env}
+      SNIGF_BAO_TOKEN_MAX_TTL: ${SNIGF_BAO_TOKEN_MAX_TTL:?set in .env}
+      SNIGF_KEY_ROTATE_SIGNING: ${SNIGF_KEY_ROTATE_SIGNING:?set in .env}
+      SNIGF_KEY_ROTATE_DATA_ENCRYPTION: ${SNIGF_KEY_ROTATE_DATA_ENCRYPTION:?set in .env}
+      SNIGF_KEY_ROTATE_PAYMENT_CALLBACK: ${SNIGF_KEY_ROTATE_PAYMENT_CALLBACK:?set in .env}
+    secrets:
+      - pki_ca_chain_crt
+      - bao_admin_client_crt
+      - bao_admin_client_key
+    volumes:
+      # DEVELOPMENT CUSTODY ONLY: unseal shares stand in for the custodians (ADR-018).
+      - bao-keys:/bao-keys
+    tmpfs:
+      - /tmp
+    networks: [key-net]
 
   app:
+    <<: *hardened
     build: ./backend
     image: snigf-backend:local
-    restart: unless-stopped
     depends_on:
       migrate:
         condition: service_completed_successfully
+      bao-init:
+        condition: service_completed_successfully
+      openbao:
+        condition: service_healthy
     environment:
-      SPRING_PROFILES_ACTIVE: ${SNIGF_PROFILE:-dev}
-      SNIGF_DB_URL: jdbc:postgresql://db:47432/snigf
-    # Only the application role's password; never the migrator's (ADR-009).
+      <<: *key-names
+      SNIGF_BAO_URL: https://openbao:${SNIGF_BAO_PORT:?set in .env}
+      SNIGF_BAO_CONNECT_TIMEOUT: ${SNIGF_BAO_CONNECT_TIMEOUT:?set in .env}
+      SNIGF_BAO_REQUEST_TIMEOUT: ${SNIGF_BAO_REQUEST_TIMEOUT:?set in .env}
+      SPRING_PROFILES_ACTIVE: ${SNIGF_PROFILE:?set in .env}
+      SNIGF_DB_URL: jdbc:postgresql://db:${SNIGF_DB_PORT:?set in .env}/snigf
+      SNIGF_APP_PORT: ${SNIGF_APP_PORT:?set in .env}
+      SNIGF_MANAGEMENT_PORT: ${SNIGF_MANAGEMENT_PORT:?set in .env}
+      SNIGF_PROXY_CLIENT_CN: ${SNIGF_PROXY_CLIENT_CN:?set in .env}
+      SNIGF_PROXY_CLIENT_ADDRESS_HEADER: ${SNIGF_PROXY_CLIENT_ADDRESS_HEADER:?set in .env}
+      SNIGF_PASSWORD_MIN_LENGTH: ${SNIGF_PASSWORD_MIN_LENGTH:?set in .env}
+      SNIGF_PASSWORD_MAX_LENGTH: ${SNIGF_PASSWORD_MAX_LENGTH:?set in .env}
+      SNIGF_PASSWORD_ARGON2_MEMORY_KIB: ${SNIGF_PASSWORD_ARGON2_MEMORY_KIB:?set in .env}
+      SNIGF_PASSWORD_ARGON2_ITERATIONS: ${SNIGF_PASSWORD_ARGON2_ITERATIONS:?set in .env}
+      SNIGF_PASSWORD_ARGON2_PARALLELISM: ${SNIGF_PASSWORD_ARGON2_PARALLELISM:?set in .env}
+      SNIGF_PASSWORD_MAX_CONCURRENT_HASHES: ${SNIGF_PASSWORD_MAX_CONCURRENT_HASHES:?set in .env}
+      SNIGF_PASSWORD_HASH_QUEUE_TIMEOUT: ${SNIGF_PASSWORD_HASH_QUEUE_TIMEOUT:?set in .env}
+      SNIGF_LOGIN_MAX_FAILURES: ${SNIGF_LOGIN_MAX_FAILURES:?set in .env}
+      SNIGF_LOGIN_LOCK_DURATION: ${SNIGF_LOGIN_LOCK_DURATION:?set in .env}
+      SNIGF_RATE_LOGIN_PER_MINUTE: ${SNIGF_RATE_LOGIN_PER_MINUTE:?set in .env}
+      SNIGF_RATE_REGISTER_PER_HOUR: ${SNIGF_RATE_REGISTER_PER_HOUR:?set in .env}
+      SNIGF_RATE_MAX_TRACKED_CLIENTS: ${SNIGF_RATE_MAX_TRACKED_CLIENTS:?set in .env}
+      SNIGF_SESSION_IDLE_TIMEOUT: ${SNIGF_SESSION_IDLE_TIMEOUT:?set in .env}
+      SNIGF_SESSION_ABSOLUTE_TIMEOUT: ${SNIGF_SESSION_ABSOLUTE_TIMEOUT:?set in .env}
+      SNIGF_SESSION_COOKIE_NAME: ${SNIGF_SESSION_COOKIE_NAME:?set in .env}
+      SNIGF_SESSION_COOKIE_SAME_SITE: ${SNIGF_SESSION_COOKIE_SAME_SITE:?set in .env}
+      SNIGF_SESSION_CLEANUP_CRON: ${SNIGF_SESSION_CLEANUP_CRON:?set in .env}
+      SNIGF_CSRF_COOKIE_NAME: ${SNIGF_CSRF_COOKIE_NAME:?set in .env}
+      SNIGF_CSRF_HEADER_NAME: ${SNIGF_CSRF_HEADER_NAME:?set in .env}
+      SNIGF_AUDIT_CHECKPOINT_CRON: ${SNIGF_AUDIT_CHECKPOINT_CRON:?set in .env}
+      SNIGF_AUDIT_VERIFY_CRON: ${SNIGF_AUDIT_VERIFY_CRON:?set in .env}
+      SNIGF_AUDIT_SCHEDULE_ZONE: ${SNIGF_AUDIT_SCHEDULE_ZONE:?set in .env}
+      SNIGF_AUDIT_VERIFY_ON_STARTUP: ${SNIGF_AUDIT_VERIFY_ON_STARTUP:?set in .env}
+      SNIGF_AUDIT_MAX_DETAILS_BYTES: ${SNIGF_AUDIT_MAX_DETAILS_BYTES:?set in .env}
+      SNIGF_AUDIT_VERIFY_FETCH_SIZE: ${SNIGF_AUDIT_VERIFY_FETCH_SIZE:?set in .env}
+    # Only the application's own credentials; never the migrator's (ADR-009).
     secrets:
       - db_app_password
-    # Health check is defined in backend/Dockerfile (readiness on port 47081).
+      - app_db_client_crt
+      - app_db_client_key_pk8
+      - app_tls_crt
+      - app_tls_key
+      - app_bao_client_crt
+      - app_bao_client_key
+      - pki_ca_chain_crt
+    tmpfs:
+      - /tmp
+      - /run/snigf-keys:uid=10001,gid=10001,mode=0700
+    # Signed audit checkpoints (ADR-007): mounted into the app only, never into the
+    # database container, so whoever controls the database cannot rewrite them.
+    volumes:
+      - audit-checkpoints:/var/lib/snigf/audit-checkpoints
+    networks: [app-net, data-net, key-net]
+    mem_limit: ${SNIGF_APP_MEMORY:?set in .env}
+    cpus: ${SNIGF_APP_CPUS:?set in .env}
+    pids_limit: ${SNIGF_APP_PIDS:?set in .env}
+    # Health check: backend/Dockerfile (readiness on the loopback management port).
 
   web:
+    <<: *hardened
     build:
       context: .
       dockerfile: infra/proxy/Dockerfile
     image: snigf-web:local
-    restart: unless-stopped
+    user: "10002:10002"
     depends_on:
       app:
         condition: service_healthy
     environment:
-      SNIGF_SITE_ADDRESS: ${SNIGF_SITE_ADDRESS:-:47000}
+      SNIGF_HTTPS_PORT: ${SNIGF_HTTPS_PORT:?set in .env}
+      SNIGF_APP_PORT: ${SNIGF_APP_PORT:?set in .env}
+      SNIGF_PROXY_CLIENT_ADDRESS_HEADER: ${SNIGF_PROXY_CLIENT_ADDRESS_HEADER:?set in .env}
+    secrets:
+      - web_tls_crt
+      - web_tls_key
+      - web_client_crt
+      - web_client_key
+      - pki_ca_chain_crt
+    tmpfs:
+      - /data:uid=10002,gid=10002,mode=0700
+      - /config:uid=10002,gid=10002,mode=0700
     ports:
-      - "127.0.0.1:${SNIGF_HTTP_PORT:-47000}:47000"
+      - "127.0.0.1:${SNIGF_HTTPS_PORT:?set in .env}:${SNIGF_HTTPS_PORT:?set in .env}"
+    networks: [edge, app-net]
+    mem_limit: ${SNIGF_WEB_MEMORY:?set in .env}
+    cpus: ${SNIGF_WEB_CPUS:?set in .env}
+    pids_limit: ${SNIGF_WEB_PIDS:?set in .env}
+
+  # --- Test harnesses (profile "test") --------------------------------------------
 
   # Database test suite (pgTAP + concurrent audit chain) in a throwaway server.
-  # Same script and image as CI; no volume, so every run starts from scratch.
+  # Same script and image as CI; no volume and no network, so every run starts clean.
   dbtest:
     profiles: ["test"]
     build:
@@ -103,22 +302,111 @@ services:
       args:
         BASE_IMAGE: *postgis-image
     environment:
-      PGPORT: "47432"
+      PGPORT: ${SNIGF_DB_PORT:?set in .env}
     volumes:
       - .:/repo:ro
     tmpfs:
       - /var/lib/postgresql
+    network_mode: none
     command: ["sh", "/repo/infra/db/run-db-test.sh"]
 
+  # Asserts the transport and isolation guarantees against the running stack (ADR-020).
+  security-probe:
+    profiles: ["test"]
+    build: infra/probe
+    image: snigf-probe:local
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      SNIGF_HTTPS_PORT: ${SNIGF_HTTPS_PORT:?set in .env}
+      SNIGF_APP_PORT: ${SNIGF_APP_PORT:?set in .env}
+      SNIGF_MANAGEMENT_PORT: ${SNIGF_MANAGEMENT_PORT:?set in .env}
+      SNIGF_DB_PORT: ${SNIGF_DB_PORT:?set in .env}
+      SNIGF_PUBLIC_HOSTNAME: ${SNIGF_PUBLIC_HOSTNAME:?set in .env}
+      SNIGF_BAO_PORT: ${SNIGF_BAO_PORT:?set in .env}
+      SNIGF_BAO_TRANSIT_MOUNT: ${SNIGF_BAO_TRANSIT_MOUNT:?set in .env}
+      SNIGF_BAO_AUTH_MOUNT: ${SNIGF_BAO_AUTH_MOUNT:?set in .env}
+      SNIGF_BAO_APP_ROLE: ${SNIGF_BAO_APP_ROLE:?set in .env}
+      SNIGF_KEY_AUDIT_CHECKPOINT: ${SNIGF_KEY_AUDIT_CHECKPOINT:?set in .env}
+      SNIGF_KEY_DATA_ENCRYPTION: ${SNIGF_KEY_DATA_ENCRYPTION:?set in .env}
+      SNIGF_KEY_PASSWORD_PEPPER: ${SNIGF_KEY_PASSWORD_PEPPER:?set in .env}
+      SNIGF_CSRF_COOKIE_NAME: ${SNIGF_CSRF_COOKIE_NAME:?set in .env}
+      SNIGF_CSRF_HEADER_NAME: ${SNIGF_CSRF_HEADER_NAME:?set in .env}
+    secrets:
+      - pki_ca_chain_crt
+      - app_bao_client_crt
+      - app_bao_client_key
+      - web_client_crt
+      - web_client_key
+      - db_app_password
+      - app_db_client_crt
+      - app_db_client_key
+      - migrator_db_client_crt
+      - migrator_db_client_key
+    volumes:
+      - ./infra/probe/security-probe.sh:/probe/security-probe.sh:ro
+    tmpfs:
+      - /tmp
+    networks: [app-net, data-net, key-net]
+    command: ["sh", "/probe/security-probe.sh"]
+
+  # Runs on app-net only, like the proxy, and must not reach the database.
+  segmentation-probe:
+    profiles: ["test"]
+    image: snigf-probe:local
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      SNIGF_DB_PORT: ${SNIGF_DB_PORT:?set in .env}
+      SNIGF_BAO_PORT: ${SNIGF_BAO_PORT:?set in .env}
+    volumes:
+      - ./infra/probe/security-probe.sh:/probe/security-probe.sh:ro
+    networks: [app-net]
+    command: ["sh", "/probe/security-probe.sh", "segmentation"]
+
+networks:
+  edge: {}
+  app-net:
+    internal: true
+  data-net:
+    internal: true
+  key-net:
+    internal: true
+
 secrets:
-  db_superuser_password:
-    file: ./infra/secrets/db_superuser_password
-  db_migrator_password:
-    file: ./infra/secrets/db_migrator_password
-  db_app_password:
-    file: ./infra/secrets/db_app_password
-  db_auditor_password:
-    file: ./infra/secrets/db_auditor_password
+  db_superuser_password:      {file: ./infra/secrets/db_superuser_password}
+  db_migrator_password:       {file: ./infra/secrets/db_migrator_password}
+  db_app_password:            {file: ./infra/secrets/db_app_password}
+  db_auditor_password:        {file: ./infra/secrets/db_auditor_password}
+  pki_ca_chain_crt:           {file: ./infra/secrets/pki_ca_chain_crt}
+  web_tls_crt:                {file: ./infra/secrets/web_tls_crt}
+  web_tls_key:                {file: ./infra/secrets/web_tls_key}
+  web_client_crt:             {file: ./infra/secrets/web_client_crt}
+  web_client_key:             {file: ./infra/secrets/web_client_key}
+  app_tls_crt:                {file: ./infra/secrets/app_tls_crt}
+  app_tls_key:                {file: ./infra/secrets/app_tls_key}
+  db_tls_crt:                 {file: ./infra/secrets/db_tls_crt}
+  db_tls_key:                 {file: ./infra/secrets/db_tls_key}
+  app_db_client_crt:          {file: ./infra/secrets/app_db_client_crt}
+  app_db_client_key:          {file: ./infra/secrets/app_db_client_key}
+  app_db_client_key_pk8:      {file: ./infra/secrets/app_db_client_key_pk8}
+  migrator_db_client_crt:     {file: ./infra/secrets/migrator_db_client_crt}
+  migrator_db_client_key:     {file: ./infra/secrets/migrator_db_client_key}
+  migrator_db_client_key_pk8: {file: ./infra/secrets/migrator_db_client_key_pk8}
+  bao_tls_crt:                {file: ./infra/secrets/bao_tls_crt}
+  bao_tls_key:                {file: ./infra/secrets/bao_tls_key}
+  app_bao_client_crt:         {file: ./infra/secrets/app_bao_client_crt}
+  app_bao_client_key:         {file: ./infra/secrets/app_bao_client_key}
+  bao_admin_client_crt:       {file: ./infra/secrets/bao_admin_client_crt}
+  bao_admin_client_key:       {file: ./infra/secrets/bao_admin_client_key}
+  bao_health_client_crt:      {file: ./infra/secrets/bao_health_client_crt}
+  bao_health_client_key:      {file: ./infra/secrets/bao_health_client_key}
 
 volumes:
   db-data:
+  bao-data:      # OpenBao storage (Raft), encrypted by its barrier key
+  bao-audit:     # OpenBao audit log
+  bao-keys:      # development custody of the unseal shares (ADR-018)
+  audit-checkpoints:  # signed audit checkpoint files; the auditor copies them off-host (ADR-007)

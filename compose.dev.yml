@@ -1,14 +1,25 @@
 # SNIGF/NILGS - Copyright (c) 2026 FLYT.
 # Author: Pythagore.
-# Development overlay: publishes the database on 127.0.0.1:47432 (the project
-# never uses default ports; see README "Ports") so a backend started from the
-# IDE or `./mvnw spring-boot:run` can reach it.
+# Development overlay: publishes the database on 127.0.0.1:${SNIGF_DB_PORT} and OpenBao on
+# 127.0.0.1:${SNIGF_BAO_PORT} so a backend started from the IDE or `./mvnw spring-boot:run`
+# can reach them. Connections are still mutual TLS 1.3 (pg_hba.conf, OpenBao listener).
 #
-#   docker compose -f compose.yml -f compose.dev.yml up -d db migrate
-#   cd backend && SNIGF_DB_URL=jdbc:postgresql://localhost:47432/snigf SNIGF_SECRETS_DIR=../infra/secrets ./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+#   docker compose -f compose.yml -f compose.dev.yml up -d --wait db migrate openbao bao-init
+#   see README "Develop" for the backend command
 #
 # Never use this file on staging or production.
 services:
   db:
     ports:
-      - "127.0.0.1:${SNIGF_DB_PORT:-47432}:47432"
+      - "127.0.0.1:${SNIGF_DB_PORT:?set in .env}:${SNIGF_DB_PORT:?set in .env}"
+    # Ports cannot be published from an internal-only network.
+    networks: [data-net, dev-db]
+
+  openbao:
+    ports:
+      - "127.0.0.1:${SNIGF_BAO_PORT:?set in .env}:${SNIGF_BAO_PORT:?set in .env}"
+    networks: [key-net, dev-bao]
+
+networks:
+  dev-db: {}
+  dev-bao: {}

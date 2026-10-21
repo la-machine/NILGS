@@ -64,14 +64,25 @@ jobs:
 
       - name: Stack smoke test (S1-AC1)
         run: |
+          # .env is data, never sourced as shell code (values may contain spaces).
+          SNIGF_PUBLIC_HOSTNAME="$(sed -n 's/^SNIGF_PUBLIC_HOSTNAME=//p' .env | tr -d '\r')"
+          SNIGF_HTTPS_PORT="$(sed -n 's/^SNIGF_HTTPS_PORT=//p' .env | tr -d '\r')"
           docker compose up -d --build --wait
           expected="$(ls backend/src/main/resources/db/migration/V*__*.sql | wc -l)"
-          applied="$(docker compose exec -T db psql -X -tA -U postgres -d snigf -v ON_ERROR_STOP=1 \
+          # The superuser logs in only through the local socket as the postgres OS user (pg_hba.conf).
+          applied="$(docker compose exec -T -u postgres db psql -X -tA -d snigf -v ON_ERROR_STOP=1 \
             -c "SELECT count(*) FROM snigf.flyway_schema_history WHERE success")"
           echo "migrations: expected=$expected applied=$applied"
           test "$applied" -eq "$expected"
-          curl -fsS http://127.0.0.1:47000/ | grep -q "SNIGF / NILGS"
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:47000/api/v1/parcels)" = 403
+          URL="https://$SNIGF_PUBLIC_HOSTNAME:$SNIGF_HTTPS_PORT"
+          curl -fsS --cacert infra/secrets/pki_root_ca_crt "$URL/" | grep -q "SNIGF / NILGS"
+          test "$(curl -s -o /dev/null -w '%{http_code}' --cacert infra/secrets/pki_root_ca_crt "$URL/api/v1/parcels")" = 401
+
+      - name: Security probe (transport, ADR-017)
+        run: docker compose --profile test run --rm --build security-probe
+
+      - name: Segmentation probe (isolation, ADR-020)
+        run: docker compose --profile test run --rm segmentation-probe
 
       - name: Logs on failure
         if: failure()

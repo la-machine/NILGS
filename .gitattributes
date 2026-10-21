@@ -6,3 +6,8 @@
 *.sql  text eol=lf
 *.yml  text eol=lf
 *Dockerfile text eol=lf
+*.hcl  text eol=lf
+*.template text eol=lf
+*.yaml text eol=lf
+# Data whose checksum is pinned (common-passwords.txt): never convert line endings.
+*.txt  text eol=lf

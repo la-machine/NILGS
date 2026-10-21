@@ -4,7 +4,7 @@
 
 | Status | Date | Deciders |
 | --- | --- | --- |
-| Accepted | 2026-10-20 | Pythagore (FLYT) |
+| Superseded by [ADR-016](016-webauthn-staff-authentication.md) | 2026-10-20 | Pythagore (FLYT) |
 
 ## Context
 

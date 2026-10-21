@@ -2,20 +2,30 @@
 # Author: Pythagore.
 # Base configuration: production-safe defaults. Each environment profile
 # (dev, test, staging, prod) overrides only what differs; EnvironmentGuard
-# refuses to start unless exactly one of them is active.
+# refuses to start unless exactly one of them is active and transport security
+# is complete (ADR-017).
+#
+# Values come from the environment (Compose passes SNIGF_* from .env, ADR-014).
+# Ports, host names and subjects have no fallback here: if one is missing, startup fails.
 spring:
   application:
     name: snigf
-  # Secrets are files (Docker secrets), never environment variables or Git:
-  # /run/secrets/db_app_password becomes the property db_app_password.
   config:
-    import: optional:configtree:${SNIGF_SECRETS_DIR:/run/secrets}/
+    import:
+      # Running from the IDE in backend/: the repository's .env is a valid properties file.
+      - optional:file:${SNIGF_ENV_FILE:../.env}[.properties]
+      # Secrets are files (Docker secrets), never environment variables or Git:
+      # /run/secrets/db_app_password becomes the property db_app_password.
+      - optional:configtree:${SNIGF_SECRETS_DIR:/run/secrets}/
   datasource:
-    url: ${SNIGF_DB_URL:jdbc:postgresql://localhost:47432/snigf}
+    url: ${SNIGF_DB_URL:jdbc:postgresql://localhost:${SNIGF_DB_PORT}/snigf}
     username: snigf_app
     password: ${db_app_password:}
     hikari:
       maximum-pool-size: 10
+      data-source-properties:
+        # Safe default; the transport-security profile supplies the certificates.
+        sslmode: verify-full
   # Migrations are applied by the migrate service as snigf_migrator (ADR-009);
   # the application role cannot run DDL.
   flyway:
@@ -26,9 +36,26 @@ spring:
   threads:
     virtual:
       enabled: true
+  # Server-side sessions in PostgreSQL (ADR-004); tables come from migration V5 because
+  # the application role cannot run DDL.
+  session:
+    # Idle limit P5; the absolute limit is snigf.identity.session.absolute-timeout.
+    timeout: ${SNIGF_SESSION_IDLE_TIMEOUT}
+    jdbc:
+      initialize-schema: never
+      cleanup-cron: ${SNIGF_SESSION_CLEANUP_CRON}
+  # Every environment except test also activates transport-security
+  # (application-transport-security.yaml) and key-custody (application-key-custody.yaml):
+  # TLS material and OpenBao settings are loaded at startup, so they cannot live in the
+  # base file. EnvironmentGuard checks the result.
+  profiles:
+    group:
+      dev: [transport-security, key-custody]
+      staging: [transport-security, key-custody]
+      prod: [transport-security, key-custody]
 
 server:
-  port: 47080
+  port: ${SNIGF_APP_PORT}
   shutdown: graceful
   error:
     include-stacktrace: never
@@ -36,10 +63,13 @@ server:
     include-binding-errors: never
     include-exception: false
 
-# Health and metrics on a separate port that the reverse proxy never exposes.
+# Health and metrics: bound to the container's loopback, unreachable from any network.
 management:
   server:
-    port: 47081
+    port: ${SNIGF_MANAGEMENT_PORT}
+    address: 127.0.0.1
+    ssl:
+      enabled: false
   endpoints:
     web:
       exposure:
@@ -49,6 +79,10 @@ management:
       probes:
         enabled: true
       show-details: never
+      # Not ready while the database or key custody is unavailable (ADR-018).
+      group:
+        readiness:
+          include: readinessState,db,keys
   info:
     env:
       enabled: false
@@ -61,3 +95,43 @@ logging:
 
 snigf:
   demo-mode: false
+  security:
+    transport:
+      require-client-certificate: true
+  keys:
+    # Safe default: keys in OpenBao. Only the test profile may choose EPHEMERAL.
+    provider: OPENBAO
+  # Authentication (ADR-004, ADR-016; Slice 1 design P5, P6, P7): every value from .env.
+  identity:
+    password:
+      min-length: ${SNIGF_PASSWORD_MIN_LENGTH}
+      max-length: ${SNIGF_PASSWORD_MAX_LENGTH}
+      argon2-memory-kib: ${SNIGF_PASSWORD_ARGON2_MEMORY_KIB}
+      argon2-iterations: ${SNIGF_PASSWORD_ARGON2_ITERATIONS}
+      argon2-parallelism: ${SNIGF_PASSWORD_ARGON2_PARALLELISM}
+      max-concurrent-hashes: ${SNIGF_PASSWORD_MAX_CONCURRENT_HASHES}
+      hash-queue-timeout: ${SNIGF_PASSWORD_HASH_QUEUE_TIMEOUT}
+    lockout:
+      max-failures: ${SNIGF_LOGIN_MAX_FAILURES}
+      lock-duration: ${SNIGF_LOGIN_LOCK_DURATION}
+    session:
+      absolute-timeout: ${SNIGF_SESSION_ABSOLUTE_TIMEOUT}
+      # __Host- cookie, always Secure and HttpOnly (IdentityConfiguration.sessionCookie).
+      cookie-name: ${SNIGF_SESSION_COOKIE_NAME}
+      cookie-same-site: ${SNIGF_SESSION_COOKIE_SAME_SITE}
+    csrf:
+      cookie-name: ${SNIGF_CSRF_COOKIE_NAME}
+      header-name: ${SNIGF_CSRF_HEADER_NAME}
+    rate-limit:
+      login-per-minute: ${SNIGF_RATE_LOGIN_PER_MINUTE}
+      register-per-hour: ${SNIGF_RATE_REGISTER_PER_HOUR}
+      max-tracked-clients: ${SNIGF_RATE_MAX_TRACKED_CLIENTS}
+  # Audit trail (ADR-007): no fallbacks, every value comes from .env.
+  audit:
+    checkpoint-directory: ${SNIGF_AUDIT_CHECKPOINT_DIR}
+    checkpoint-cron: ${SNIGF_AUDIT_CHECKPOINT_CRON}
+    verify-cron: ${SNIGF_AUDIT_VERIFY_CRON}
+    schedule-zone: ${SNIGF_AUDIT_SCHEDULE_ZONE}
+    verify-on-startup: ${SNIGF_AUDIT_VERIFY_ON_STARTUP}
+    max-details-bytes: ${SNIGF_AUDIT_MAX_DETAILS_BYTES}
+    verify-fetch-size: ${SNIGF_AUDIT_VERIFY_FETCH_SIZE}

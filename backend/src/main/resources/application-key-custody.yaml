@@ -1,0 +1,39 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Key custody (ADR-018), active in dev, staging and prod through profile groups.
+# Every value comes from .env; there are no fallbacks, so a missing setting stops startup.
+spring:
+  ssl:
+    bundle:
+      pem:
+        # The application's identity towards OpenBao (certificate login) and the CA
+        # OpenBao's server certificate must chain to.
+        snigf-openbao:
+          keystore:
+            certificate: file:${SNIGF_SECRETS_DIR:/run/secrets}/app_bao_client_crt
+            private-key: file:${SNIGF_SECRETS_DIR:/run/secrets}/app_bao_client_key
+          truststore:
+            certificate: file:${SNIGF_SECRETS_DIR:/run/secrets}/pki_ca_chain_crt
+          options:
+            enabled-protocols: TLSv1.3
+
+snigf:
+  keys:
+    provider: OPENBAO
+    openbao:
+      # Compose sets SNIGF_BAO_URL (https://openbao:<port>); from the IDE, OpenBao is
+      # published on localhost by compose.dev.yml.
+      url: ${SNIGF_BAO_URL:https://localhost:${SNIGF_BAO_PORT}}
+      ssl-bundle: snigf-openbao
+      auth-mount: ${SNIGF_BAO_AUTH_MOUNT}
+      role: ${SNIGF_BAO_APP_ROLE}
+      transit-mount: ${SNIGF_BAO_TRANSIT_MOUNT}
+      connect-timeout: ${SNIGF_BAO_CONNECT_TIMEOUT}
+      request-timeout: ${SNIGF_BAO_REQUEST_TIMEOUT}
+    names:
+      audit-checkpoint: ${SNIGF_KEY_AUDIT_CHECKPOINT}
+      record-signing: ${SNIGF_KEY_RECORD_SIGNING}
+      data-encryption: ${SNIGF_KEY_DATA_ENCRYPTION}
+      payment-callback: ${SNIGF_KEY_PAYMENT_CALLBACK}
+      password-pepper: ${SNIGF_KEY_PASSWORD_PEPPER}
+      blind-index: ${SNIGF_KEY_BLIND_INDEX}

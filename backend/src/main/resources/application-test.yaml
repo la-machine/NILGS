@@ -1,9 +1,75 @@
 # SNIGF/NILGS - Copyright (c) 2026 FLYT.
 # Author: Pythagore.
 # Automated tests: databases are created per run by Testcontainers and discarded.
+# The only profile allowed to run without transport security (EnvironmentGuard);
+# transport guarantees are verified against the running stack by the security probe.
 snigf:
   environment: TEST
   demo-mode: true
+  security:
+    transport:
+      require-client-certificate: false
+  # In-memory keys, regenerated per run; the OpenBao path is verified against the
+  # running stack (startup self-test, security probe).
+  keys:
+    provider: EPHEMERAL
+    names:
+      audit-checkpoint: test-audit-checkpoint
+      record-signing: test-record-signing
+      data-encryption: test-data-encryption
+      payment-callback: test-payment-callback
+      password-pepper: test-password-pepper
+      blind-index: test-blind-index
+  # Cheap Argon2 (allowed in tests only) so the suite stays fast; the rules are the same.
+  identity:
+    password:
+      min-length: 12
+      max-length: 128
+      argon2-memory-kib: 1024
+      argon2-iterations: 1
+      argon2-parallelism: 1
+      max-concurrent-hashes: 4
+      hash-queue-timeout: 2s
+    lockout:
+      max-failures: 5
+      lock-duration: 15m
+    session:
+      absolute-timeout: 8h
+      cookie-name: __Host-snigf-session
+      cookie-same-site: Strict
+    csrf:
+      cookie-name: __Host-snigf-xsrf
+      header-name: X-XSRF-TOKEN
+    rate-limit:
+      login-per-minute: 20
+      register-per-hour: 10
+      max-tracked-clients: 1000
+  # Schedules off ("-", allowed in tests only); tests call the trail directly.
+  audit:
+    checkpoint-directory: ${java.io.tmpdir}/snigf-audit-test-${random.uuid}
+    checkpoint-cron: "-"
+    verify-cron: "-"
+    schedule-zone: Africa/Douala
+    verify-on-startup: false
+    max-details-bytes: 8192
+    verify-fetch-size: 50
+
+server:
+  port: 0
+
+management:
+  server:
+    port: 0
+
+spring:
+  session:
+    timeout: 30m
+    jdbc:
+      cleanup-cron: "-"
+  datasource:
+    hikari:
+      data-source-properties:
+        sslmode: disable
 
 logging:
   structured:

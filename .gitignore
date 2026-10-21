@@ -8,6 +8,8 @@ dist/
 .env
 *.local
 secrets/
+# Audit checkpoints written by a backend run from the IDE
+var/
 # Editors
 .idea/
 .vscode/

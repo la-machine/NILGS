@@ -1,30 +1,49 @@
 # SNIGF/NILGS - Copyright (c) 2026 FLYT.
 # Author: Pythagore.
-# Reverse proxy (ADR-010): one origin for the UI and the API, so no CORS.
-# SNIGF_SITE_ADDRESS is a domain name on staging and production (Caddy then
-# obtains and renews TLS certificates) and ":47000" for the local stack (no default ports, see README).
+# Reverse proxy (ADR-010, ADR-017): one origin for UI and API, TLS 1.3 only.
+#   browser → proxy   TLS 1.3 with the certificate in /run/secrets/web_tls_*
+#   proxy → app       mutual TLS 1.3: the proxy presents web_client_*, verifies the app
+#                     against the SNIGF CA chain and its name "app"
+# No plain-HTTP listener exists: automatic HTTPS redirects are disabled.
 {
 	admin off
+	auto_https disable_redirects
+	servers {
+		protocols h1 h2
+	}
 }
 
-{$SNIGF_SITE_ADDRESS::47000} {
+:{$SNIGF_HTTPS_PORT} {
+	tls /run/secrets/web_tls_crt /run/secrets/web_tls_key {
+		protocols tls1.3
+	}
+
 	encode zstd gzip
 
 	header {
-		# Ignored by browsers over plain HTTP; enforced once the site runs on HTTPS.
-		Strict-Transport-Security "max-age=31536000"
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		# The basemap tile host is added here when the map arrives (E-08).
 		Content-Security-Policy "default-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "same-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
 		-Server
 	}
 
-	# The API only. Actuator listens on the app's management port (47081), which
-	# is never proxied.
+	# The API only. Management endpoints are bound to the app's loopback interface.
 	handle /api/* {
-		reverse_proxy app:47080
+		reverse_proxy https://app:{$SNIGF_APP_PORT} {
+			# The browser's address for audit records. `header_up` replaces any value the
+			# browser sent; the app believes it only on this proxy's client certificate.
+			header_up {$SNIGF_PROXY_CLIENT_ADDRESS_HEADER} {remote_host}
+			transport http {
+				tls_server_name app
+				tls_trust_pool file /run/secrets/pki_ca_chain_crt
+				tls_client_auth /run/secrets/web_client_crt /run/secrets/web_client_key
+			}
+		}
 	}
 
 	handle {

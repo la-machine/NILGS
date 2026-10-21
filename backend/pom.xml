@@ -39,6 +39,9 @@
     <properties>
         <java.version>25</java.version>
         <spring-modulith.version>2.1.1</spring-modulith.version>
+        <!-- Not managed by Spring Boot: pinned here, upgraded deliberately. -->
+        <bouncycastle.version>1.86</bouncycastle.version>
+        <bucket4j.version>8.21.0</bucket4j.version>
     </properties>
 
     <dependencyManagement>
@@ -73,6 +76,23 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+        <!-- ADR-004: server-side sessions in PostgreSQL, revocable at once. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-session-jdbc</artifactId>
+        </dependency>
+        <!-- Argon2id password hashing (Spring Security's Argon2PasswordEncoder uses it). -->
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+        </dependency>
+        <!-- Login and registration throttling (P6). -->
+        <dependency>
+            <groupId>com.bucket4j</groupId>
+            <artifactId>bucket4j_jdk17-core</artifactId>
+            <version>${bucket4j.version}</version>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>

@@ -1,0 +1,46 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Transport security (ADR-017), active in dev, staging and prod through profile groups.
+# Certificates and keys are Docker secrets issued by the SNIGF PKI.
+spring:
+  ssl:
+    bundle:
+      pem:
+        # The app's TLS identity, and the CA chain client certificates must chain to.
+        snigf-server:
+          keystore:
+            certificate: file:${SNIGF_SECRETS_DIR:/run/secrets}/app_tls_crt
+            private-key: file:${SNIGF_SECRETS_DIR:/run/secrets}/app_tls_key
+          truststore:
+            certificate: file:${SNIGF_SECRETS_DIR:/run/secrets}/pki_ca_chain_crt
+          # With an SSL bundle, server.ssl.enabled-protocols is ignored: the protocol
+          # list must be set here (found by the security probe).
+          options:
+            enabled-protocols: TLSv1.3
+  # TLS 1.3 to PostgreSQL: server certificate and host name verified, client
+  # certificate presented (pg_hba requires it, with CN = snigf_app).
+  datasource:
+    hikari:
+      data-source-properties:
+        sslmode: verify-full
+        sslrootcert: ${SNIGF_SECRETS_DIR:/run/secrets}/pki_ca_chain_crt
+        sslcert: ${SNIGF_SECRETS_DIR:/run/secrets}/app_db_client_crt
+        # The container entry point copies the key to a 0600 file (SNIGF_DB_CLIENT_KEY).
+        sslkey: ${SNIGF_DB_CLIENT_KEY:${SNIGF_SECRETS_DIR:/run/secrets}/app_db_client_key_pk8}
+
+# Mutual TLS 1.3 only: a client without a certificate from the SNIGF CA cannot connect;
+# ClientCertificateFilter then admits only the common names listed below.
+server:
+  ssl:
+    bundle: snigf-server
+    client-auth: need
+
+snigf:
+  security:
+    transport:
+      require-client-certificate: true
+      allowed-client-common-names:
+        - ${SNIGF_PROXY_CLIENT_CN}
+      # The proxy writes the browser's address here (Caddyfile header_up), overwriting
+      # any value the browser sent; believed only on the proxy's certificate.
+      client-address-header: ${SNIGF_PROXY_CLIENT_ADDRESS_HEADER}

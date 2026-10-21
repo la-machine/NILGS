@@ -4,7 +4,7 @@
 
 | Status | Date | Deciders |
 | --- | --- | --- |
-| Accepted | 2026-10-20 | Pythagore (FLYT) |
+| Accepted, implemented (refined by ADR-022) | 2026-10-20 | Pythagore (FLYT) |
 
 ## Context
 

@@ -6,6 +6,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.HexFormat;
 
@@ -37,13 +40,15 @@ public final class PostgisDatabase {
     private final GenericContainer<?> container;
     private final String appPassword;
     private final String migratorPassword;
+    private final String superuserPassword;
 
     private PostgisDatabase() {
         this.appPassword = randomSecret();
         this.migratorPassword = randomSecret();
+        this.superuserPassword = randomSecret();
         this.container = new GenericContainer<>(DockerImageName.parse(IMAGE))
                 .withEnv("POSTGRES_DB", "snigf")
-                .withEnv("POSTGRES_PASSWORD", randomSecret())
+                .withEnv("POSTGRES_PASSWORD", superuserPassword)
                 .withEnv("PGPORT", String.valueOf(PORT))
                 .withExposedPorts(PORT)
                 // Logged once by the initialisation server and once by the real one.
@@ -67,6 +72,20 @@ public final class PostgisDatabase {
 
     public String appPassword() {
         return appPassword;
+    }
+
+    /**
+     * A new connection as the PostgreSQL superuser, with auto-commit off: the residual-risk
+     * actor of docs/audit.md, used by tests that tamper with the audit chain. Callers roll
+     * back or restore what they change, because the database is shared by every test.
+     */
+    public Connection superuserConnection() throws SQLException {
+        Connection connection = DriverManager.getConnection(jdbcUrl(), "postgres", superuserPassword);
+        connection.setAutoCommit(false);
+        try (var statement = connection.createStatement()) {
+            statement.execute("SET search_path = snigf, public");
+        }
+        return connection;
     }
 
     private void applyRoles() {

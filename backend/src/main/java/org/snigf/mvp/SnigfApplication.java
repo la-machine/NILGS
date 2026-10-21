@@ -20,6 +20,10 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 public class SnigfApplication {
 
     public static void main(String[] args) {
+
+
         SpringApplication.run(SnigfApplication.class, args);
+
     }
+
 }

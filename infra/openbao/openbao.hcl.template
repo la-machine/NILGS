@@ -1,0 +1,57 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# OpenBao server configuration (ADR-018). start-openbao.sh replaces each @NAME@ with
+# the value of SNIGF_NAME from .env and writes the result to a tmpfs before starting.
+
+ui        = false
+log_level = "@BAO_LOG_LEVEL@"
+log_format = "json"
+
+# OpenBao 2.x has no mlock support (the setting was removed): memory holding keys can be
+# swapped, so hosts must run without swap or with encrypted swap (docs/guides).
+
+api_addr     = "https://openbao:@BAO_PORT@"
+cluster_addr = "https://openbao:@BAO_CLUSTER_PORT@"
+
+storage "raft" {
+  path    = "/openbao/data"
+  node_id = "openbao-1"
+}
+
+# Mutual TLS 1.3 only: a client without a certificate from the SNIGF CA cannot even
+# complete the handshake. Authentication (auth/cert) then admits only listed names.
+listener "tcp" {
+  address                            = "0.0.0.0:@BAO_PORT@"
+  cluster_address                    = "0.0.0.0:@BAO_CLUSTER_PORT@"
+  tls_cert_file                      = "/run/secrets/bao_tls_crt"
+  tls_key_file                       = "/run/secrets/bao_tls_key"
+  tls_client_ca_file                 = "/run/secrets/pki_ca_chain_crt"
+  tls_min_version                    = "tls13"
+  tls_require_and_verify_client_cert = true
+
+  # A root token exists only during a provisioning run: bao-init generates it from a
+  # quorum of unseal shares and revokes it at the end. Re-keying stays authenticated.
+  disable_unauthed_generate_root_endpoints = false
+  disable_unauthed_rekey_endpoints         = true
+
+  telemetry {
+    unauthenticated_metrics_access = false
+  }
+}
+
+# Every request and response, with secret values HMAC-protected, to two sinks: the
+# container log (collected with the other services) and a file on its own volume.
+audit "file" "stdout" {
+  description = "SNIGF key operations to the container log"
+  options {
+    file_path = "stdout"
+  }
+}
+
+audit "file" "file" {
+  description = "SNIGF key operations to the audit volume"
+  options {
+    file_path = "/openbao/audit/audit.log"
+    mode      = "0600"
+  }
+}

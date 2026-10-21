@@ -15,5 +15,11 @@ LABEL org.opencontainers.image.title="SNIGF/NILGS web" \
       org.opencontainers.image.vendor="FLYT" \
       org.opencontainers.image.authors="Pythagore" \
       org.opencontainers.image.description="Demonstration software, synthetic data only"
+# The upstream binary carries cap_net_bind_service (for ports < 1024). SNIGF listens on
+# 47000 and drops all capabilities, so the file capability is removed: with it, the
+# kernel refuses to execute the binary under cap_drop ALL (ADR-020).
+RUN apk add --no-cache --virtual .caps libcap-utils \
+ && setcap -r /usr/bin/caddy \
+ && apk del .caps
 COPY infra/proxy/Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /src/dist /srv

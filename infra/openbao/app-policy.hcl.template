@@ -1,0 +1,35 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# OpenBao policy of the application (ADR-018). bao-init.sh replaces each @NAME@ with
+# the value from .env. Everything not listed is denied: the application can USE its
+# keys but never export, rotate, back up, delete or create one, and it cannot encrypt
+# arbitrary data with the wrapping key (only obtain new data keys). Reading a key
+# (transit/keys/<name>) returns its settings and public keys, never secret material;
+# the startup self-test uses it to check those settings.
+
+# Its own token, for the readiness check.
+path "auth/token/lookup-self" {
+  capabilities = ["read"]
+}
+
+# --- Signing keys (Ed25519): sign, read public keys (verification is local) ------------
+path "@TRANSIT@/sign/@KEY_AUDIT_CHECKPOINT@"   { capabilities = ["update"] }
+path "@TRANSIT@/keys/@KEY_AUDIT_CHECKPOINT@"   { capabilities = ["read"] }
+
+path "@TRANSIT@/sign/@KEY_RECORD_SIGNING@"     { capabilities = ["update"] }
+path "@TRANSIT@/keys/@KEY_RECORD_SIGNING@"     { capabilities = ["read"] }
+
+# --- Data-key wrapping (AES-256-GCM, derived per context): envelope encryption --------
+path "@TRANSIT@/datakey/plaintext/@KEY_DATA_ENCRYPTION@" { capabilities = ["update"] }
+path "@TRANSIT@/decrypt/@KEY_DATA_ENCRYPTION@"           { capabilities = ["update"] }
+path "@TRANSIT@/keys/@KEY_DATA_ENCRYPTION@"              { capabilities = ["read"] }
+
+# --- HMAC keys, SHA-256 only (verification recomputes with the recorded version) -------
+path "@TRANSIT@/hmac/@KEY_PAYMENT_CALLBACK@/sha2-256"   { capabilities = ["update"] }
+path "@TRANSIT@/keys/@KEY_PAYMENT_CALLBACK@"            { capabilities = ["read"] }
+
+path "@TRANSIT@/hmac/@KEY_PASSWORD_PEPPER@/sha2-256"    { capabilities = ["update"] }
+path "@TRANSIT@/keys/@KEY_PASSWORD_PEPPER@"             { capabilities = ["read"] }
+
+path "@TRANSIT@/hmac/@KEY_BLIND_INDEX@/sha2-256"        { capabilities = ["update"] }
+path "@TRANSIT@/keys/@KEY_BLIND_INDEX@"                 { capabilities = ["read"] }
