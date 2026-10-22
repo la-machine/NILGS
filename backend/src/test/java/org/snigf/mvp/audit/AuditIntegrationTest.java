@@ -6,13 +6,9 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import org.junit.jupiter.api.AfterEach;
-import org.snigf.mvp.support.PostgisDatabase;
+import org.snigf.mvp.support.PostgisIntegrationTest;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -22,16 +18,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * database is shared by every test, so tests use positions they created themselves and
  * undo any tampering.
  */
-@SpringBootTest
-@ActiveProfiles("test")
-public abstract class AuditIntegrationTest {
-
-    @DynamicPropertySource
-    static void database(DynamicPropertyRegistry registry) {
-        PostgisDatabase db = PostgisDatabase.shared();
-        registry.add("spring.datasource.url", db::jdbcUrl);
-        registry.add("spring.datasource.password", db::appPassword);
-    }
+public abstract class AuditIntegrationTest extends PostgisIntegrationTest {
 
     @Autowired
     protected AuditRecorder recorder;

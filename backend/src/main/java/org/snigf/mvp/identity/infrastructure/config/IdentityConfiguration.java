@@ -67,6 +67,11 @@ public class IdentityConfiguration {
         if (!Set.of("strict", "lax").contains(session.cookieSameSite().toLowerCase(Locale.ROOT))) {
             violations.add("SNIGF_SESSION_COOKIE_SAME_SITE must be Strict or Lax");
         }
+        checkWebAuthn(identity.webauthn(), environment, violations);
+        Duration requestTtl = identity.administration().requestTimeToLive();
+        if (requestTtl.compareTo(Duration.ofHours(1)) < 0 || requestTtl.compareTo(Duration.ofDays(30)) > 0) {
+            violations.add("SNIGF_ADMIN_REQUEST_TTL must be between 1h and 30d (ADR-025)");
+        }
         if (environment == DeploymentEnvironment.TEST) {
             return violations;
         }
@@ -85,6 +90,41 @@ public class IdentityConfiguration {
                     + OWASP_MIN_ITERATIONS + " passes (SNIGF_PASSWORD_ARGON2_*)");
         }
         return violations;
+    }
+
+    /**
+     * Every origin must be an exact {@code scheme://host[:port]} whose host is the
+     * relying-party id or one of its subdomains (otherwise browsers refuse the ceremony, or
+     * a foreign site could relay it). Outside tests: https only, and at least two
+     * authenticators per staff member (ADR-016).
+     */
+    static void checkWebAuthn(IdentityProperties.WebAuthn webauthn, DeploymentEnvironment environment,
+                              List<String> violations) {
+        String rpId = webauthn.rpId().toLowerCase(Locale.ROOT);
+        for (String origin : webauthn.allowedOrigins()) {
+            java.net.URI uri;
+            try {
+                uri = java.net.URI.create(origin);
+            } catch (IllegalArgumentException e) {
+                violations.add("SNIGF_WEBAUTHN_ORIGINS contains an invalid origin: " + origin);
+                continue;
+            }
+            String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
+            boolean exact = uri.getScheme() != null && (uri.getPath() == null || uri.getPath().isEmpty())
+                    && uri.getQuery() == null && uri.getFragment() == null && uri.getUserInfo() == null;
+            if (!exact || !(host.equals(rpId) || host.endsWith("." + rpId))) {
+                violations.add("SNIGF_WEBAUTHN_ORIGINS entry " + origin + " must be scheme://host[:port] on "
+                        + "SNIGF_WEBAUTHN_RP_ID " + rpId);
+            } else if (environment != DeploymentEnvironment.TEST && !"https".equals(uri.getScheme())) {
+                violations.add("SNIGF_WEBAUTHN_ORIGINS entry " + origin + " must use https");
+            }
+        }
+        if (webauthn.allowedOrigins().isEmpty()) {
+            violations.add("SNIGF_WEBAUTHN_ORIGINS must list at least one origin");
+        }
+        if (environment != DeploymentEnvironment.TEST && webauthn.minAuthenticators() < 2) {
+            violations.add("SNIGF_WEBAUTHN_MIN_AUTHENTICATORS must be at least 2 (ADR-016)");
+        }
     }
 
     /**

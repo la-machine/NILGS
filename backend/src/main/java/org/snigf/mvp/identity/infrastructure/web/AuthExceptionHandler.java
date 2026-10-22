@@ -4,7 +4,10 @@ package org.snigf.mvp.identity.infrastructure.web;
 
 import java.util.List;
 
+import org.snigf.mvp.identity.application.AccountAdministrationService;
 import org.snigf.mvp.identity.application.RegistrationRejected;
+import org.snigf.mvp.identity.application.SecondFactorService;
+import org.snigf.mvp.identity.application.WebAuthnCeremonies;
 import org.snigf.mvp.identity.domain.PasswordHasher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -19,7 +22,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * Errors of the authentication endpoints as RFC 9457 problems with stable codes (ADR-011).
  * Validation errors name the fields, never echo their values.
  */
-@RestControllerAdvice(assignableTypes = AuthController.class)
+@RestControllerAdvice(assignableTypes = {AuthController.class, MfaController.class, AdminController.class,
+        RoleController.class, GrantController.class, AssignmentController.class})
 class AuthExceptionHandler {
 
     /** Any failed login: unknown account, wrong password, locked, disabled. */
@@ -27,6 +31,41 @@ class AuthExceptionHandler {
         AuthenticationFailed() {
             super("authentication failed");
         }
+    }
+
+    /** A wrong or unverifiable second factor (assertion or recovery code). */
+    static class SecondFactorFailed extends RuntimeException {
+        SecondFactorFailed() {
+            super("second factor failed");
+        }
+    }
+
+    @ExceptionHandler(SecondFactorFailed.class)
+    ResponseEntity<ProblemDetail> secondFactorFailed() {
+        return problem(HttpStatus.UNAUTHORIZED, "SECOND_FACTOR_INVALID");
+    }
+
+    @ExceptionHandler(SecondFactorService.NotAllowed.class)
+    ResponseEntity<ProblemDetail> notAllowed() {
+        return problem(HttpStatus.FORBIDDEN, "MFA_NOT_ALLOWED");
+    }
+
+    /** A registration that did not verify, or a malformed or stale ceremony. */
+    @ExceptionHandler(WebAuthnCeremonies.Rejected.class)
+    ResponseEntity<ProblemDetail> webauthnRejected() {
+        return problem(HttpStatus.UNPROCESSABLE_CONTENT, "WEBAUTHN_REJECTED");
+    }
+
+    /** A refused administrative action: separation of duties, unknown record, conflict, invalid input. */
+    @ExceptionHandler(AccountAdministrationService.Refused.class)
+    ResponseEntity<ProblemDetail> refused(AccountAdministrationService.Refused e) {
+        HttpStatus status = switch (e.kind()) {
+            case FORBIDDEN -> HttpStatus.FORBIDDEN;
+            case NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case CONFLICT -> HttpStatus.CONFLICT;
+            case INVALID -> HttpStatus.UNPROCESSABLE_CONTENT;
+        };
+        return problem(status, e.code());
     }
 
     @ExceptionHandler(AuthenticationFailed.class)

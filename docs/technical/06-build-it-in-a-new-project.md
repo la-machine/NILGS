@@ -140,7 +140,23 @@ Follow [authentication and sessions](../guides/authentication-and-sessions.md):
 
 **Check:** `AuthFlowIT` passes, and so does the security probe's session section.
 
-The WebAuthn second factor (security step 4b) builds on this.
+Then add the WebAuthn second factor (same guide, [ADR-023](../adr/023-webauthn-second-factor-implementation.md)):
+
+- Spring Security's relying-party operations;
+- ceremonies kept on the server, with only their id in the session;
+- user verification required;
+- two authenticators;
+- keyed recovery codes.
+
+**Check:** `MfaFlowIT` passes with emulated authenticators.
+
+Finally, follow [roles, permissions and administration](../guides/roles-and-administration.md):
+
+- a permission enum and the role matrix in code, with a test that keeps its document
+  equal;
+- office-scoped authorities;
+- an endpoint × role matrix test;
+- separation of duties in the service and the database.
 
 ## 9. Continuous integration
 

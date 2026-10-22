@@ -1,0 +1,12 @@
+{
+  "name": "snigf-e2e",
+  "private": true,
+  "description": "SNIGF/NILGS - Copyright (c) 2026 FLYT. Author: Pythagore. End-to-end tests in Chromium against the running stack.",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.0"
+  }
+}

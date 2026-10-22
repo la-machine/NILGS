@@ -13,7 +13,9 @@ explain **how**. [`CHANGELOG.md`](../../CHANGELOG.md) lists **what** changed and
 | [Environment, settings and secrets](environment-and-secrets.md) | `.env`, secret files, ports, adding a setting or a secret, signing files | ADR-014, ADR-015 |
 | [Transport security and hardening](transport-security.md) | Private PKI, TLS 1.3 on every hop, mutual TLS, network segmentation, container hardening, the probes | ADR-017, ADR-020 |
 | [Key custody with OpenBao](key-custody-openbao.md) | OpenBao service, unsealing, provisioning, keys and policy, `KeyService`, adding or rotating a key | ADR-018 |
-| [Authentication and sessions](authentication-and-sessions.md) | Registration, password login, peppered Argon2id, sessions in PostgreSQL, CSRF, lockout, throttling, the security filter chain | ADR-004, ADR-016, ADR-022 |
+| [Authentication and sessions](authentication-and-sessions.md) | Registration, password login, peppered Argon2id, sessions in PostgreSQL, CSRF, lockout, throttling, the WebAuthn second factor, recovery codes, the sign-in screens | ADR-004, ADR-016, ADR-022, ADR-023 |
+| [Roles, permissions and administration](roles-and-administration.md) | Permission catalogue, baseline and custom roles, four-eyes role assignments, special grants, the approval workflow enforced by the database, separation of duties, second-factor reset, the auditor's API | ADR-024, ADR-025, ADR-026 |
+| [End-to-end testing in a real browser](end-to-end-testing.md) | Chromium in Compose against the running stack, the development CA, virtual security keys, the four-eyes and special-grant journeys | ADR-016, ADR-020, ADR-026 |
 | [Audit trail with signed checkpoints](audit-trail.md) | Recording events, Java chain verification, OpenBao-signed checkpoints, offline verification, DDD packaging of a module | ADR-007, ADR-021 |
 
 ## How every guide is written

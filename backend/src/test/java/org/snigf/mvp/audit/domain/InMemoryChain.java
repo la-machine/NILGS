@@ -69,6 +69,11 @@ final class InMemoryChain implements AuditEventRepository {
     }
 
     @Override
+    public List<ChainedEvent> search(org.snigf.mvp.audit.AuditEventFilter filter, int limit, int offset) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public Optional<ChainHead> head() {
         return rows.isEmpty() ? Optional.empty()
                 : Optional.of(new ChainHead(rows.lastKey(), rows.lastEntry().getValue().hash()));

@@ -28,3 +28,8 @@ One file per decision: context, decision, alternatives considered, consequences.
 | [020](020-container-and-network-hardening.md) | Container and network hardening |
 | [021](021-ddd-layering-inside-modules.md) | Domain-driven layering inside each module (domain, application, infrastructure) |
 | [022](022-plain-value-sessions.md) | Sessions hold plain values; principal rebuilt per request; `__Host-` cookies; answers that reveal nothing |
+| [023](023-webauthn-second-factor-implementation.md) | WebAuthn second factor on Spring Security's relying party; server-side ceremonies; keyed recovery codes; TOTP deferred |
+| [024](024-no-totp-fallback.md) | No TOTP fallback: two keys, recovery codes and a supervised administrator reset |
+| [025](025-fine-grained-permissions-and-special-grants.md) | Fine-grained permissions; administrator-defined roles over an immutable baseline; four-eyes special grants limited by time and uses |
+| [026](026-approval-workflow-enforced-by-the-database.md) | Four eyes on every role assignment; approval workflow, approver rights and separation of duties enforced by the database; supervisors verify the chain |
+| [027](027-office-context-on-audit-events.md) | Office on audit events taken from the record at the time of the event, never retrospectively from a user's current office; office-scoped audit reading closed until then |

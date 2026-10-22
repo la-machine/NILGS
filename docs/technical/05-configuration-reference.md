@@ -104,6 +104,24 @@ an environment variable of the same name.
 | `SNIGF_CSRF_COOKIE_NAME` | `__Host-snigf-xsrf` | Cookie holding the CSRF token; `__Host-` prefix required outside tests | compose, `application.yaml` |
 | `SNIGF_CSRF_HEADER_NAME` | `X-XSRF-TOKEN` | Header in which the page sends the token back | compose, `application.yaml` |
 
+### Second factor (WebAuthn)
+
+| Setting | Development value | Meaning | Read by |
+| --- | --- | --- | --- |
+| `SNIGF_WEBAUTHN_RP_ID` | `localhost` | Relying-party id: the host users see; credentials are bound to it, so changing it invalidates every registered authenticator | compose, `application.yaml` |
+| `SNIGF_WEBAUTHN_RP_NAME` | `SNIGF-NILGS demo` | Name the authenticator shows when registering | compose, `application.yaml` |
+| `SNIGF_WEBAUTHN_ORIGINS` | `https://localhost:47000,https://localhost:47173` | Exact origins allowed to run ceremonies; each host must be the relying-party id or a subdomain; https outside tests | compose, `application.yaml` |
+| `SNIGF_WEBAUTHN_TIMEOUT` | `2m` | How long a registration or verification may take (also the server-side ceremony lifetime) | compose, `application.yaml` |
+| `SNIGF_WEBAUTHN_ATTESTATION` | `none` | `none`, `indirect` or `direct` (direct needs a device trust list) | compose, `application.yaml` |
+| `SNIGF_WEBAUTHN_MIN_AUTHENTICATORS` | `2` | Authenticators a staff member registers before enrolment completes; at least 2 outside tests (ADR-016) | compose, `application.yaml` |
+| `SNIGF_MFA_RECOVERY_CODES` | `10` | One-time recovery codes issued at enrolment (5 to 20) | compose, `application.yaml` |
+
+### Administration (ADR-025)
+
+| Setting | Development value | Meaning | Read by |
+| --- | --- | --- | --- |
+| `SNIGF_ADMIN_REQUEST_TTL` | `7d` | How long a role change or special grant request waits for a second administrator; after that it can only be rejected or requested again. Between `1h` and `30d` | compose, `application.yaml` |
+
 ### Audit trail
 
 | Setting | Development value | Meaning | Read by |
@@ -126,6 +144,7 @@ an environment variable of the same name.
 | `SNIGF_WEB_MEMORY` / `SNIGF_WEB_CPUS` / `SNIGF_WEB_PIDS` | `256m` / `1` / `128` | web container limits | compose |
 | `SNIGF_MIGRATE_MEMORY` | `512m` | migrate container memory | compose |
 | `SNIGF_BAO_MEMORY` / `SNIGF_BAO_CPUS` / `SNIGF_BAO_PIDS` | `512m` / `1` / `256` | openbao container limits | compose |
+| `SNIGF_E2E_MEMORY` / `SNIGF_E2E_CPUS` / `SNIGF_E2E_PIDS` / `SNIGF_E2E_SHM` | `2g` / `2` / `1024` / `512m` | e2e container limits and shared memory for Chromium ([guide](../guides/end-to-end-testing.md)) | compose |
 
 ## Variables set by the stack, not by `.env`
 
@@ -154,7 +173,7 @@ Bound and validated in `SnigfProperties` (shared) and `AuditProperties` (audit).
 | `snigf.keys.openbao.*` | `application-key-custody.yaml` | https URL, TLS 1.3 bundle |
 | `snigf.keys.names.*` | `SNIGF_KEY_*` | six distinct names |
 | `snigf.audit.*` | `SNIGF_AUDIT_*` | schedules enabled outside tests; absolute directory outside dev |
-| `snigf.identity.*` | `SNIGF_PASSWORD_*`, `SNIGF_LOGIN_*`, `SNIGF_RATE_*`, `SNIGF_SESSION_ABSOLUTE_TIMEOUT`, `SNIGF_CSRF_*` | checked by `IdentityConfiguration` (see chapter 8) |
+| `snigf.identity.*` | `SNIGF_PASSWORD_*`, `SNIGF_LOGIN_*`, `SNIGF_RATE_*`, `SNIGF_SESSION_ABSOLUTE_TIMEOUT`, `SNIGF_CSRF_*`, `SNIGF_WEBAUTHN_*`, `SNIGF_ADMIN_REQUEST_TTL` | checked by `IdentityConfiguration` (see chapter 8) |
 | `server.servlet.session.*`, `spring.session.*` | `SNIGF_SESSION_*` | cookie Secure, HttpOnly, `__Host-`, SameSite Strict or Lax outside tests |
 
 ## Secrets (`infra/secrets/`)

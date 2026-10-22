@@ -15,3 +15,5 @@ var/
 .vscode/
 *.iml
 .DS_Store
+# End-to-end test output (reports, traces, per-run state with the run password)
+e2e/out/

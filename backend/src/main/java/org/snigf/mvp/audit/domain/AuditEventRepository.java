@@ -25,6 +25,9 @@ public interface AuditEventRepository {
 
     Optional<byte[]> hashAt(long chainPos);
 
+    /** Events matching the filter, newest first; {@code limit} rows from {@code offset}. */
+    java.util.List<ChainedEvent> search(org.snigf.mvp.audit.AuditEventFilter filter, int limit, int offset);
+
     /** Every event between two positions (inclusive), in chain order. */
     void forEach(long fromPos, long toPos, Consumer<ChainedEvent> action);
 }

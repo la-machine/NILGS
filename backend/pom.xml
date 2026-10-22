@@ -42,6 +42,8 @@
         <!-- Not managed by Spring Boot: pinned here, upgraded deliberately. -->
         <bouncycastle.version>1.86</bouncycastle.version>
         <bucket4j.version>8.21.0</bucket4j.version>
+        <!-- Must equal the webauthn4j-core that spring-security-webauthn brings. -->
+        <webauthn4j.version>0.31.9.RELEASE</webauthn4j.version>
     </properties>
 
     <dependencyManagement>
@@ -81,6 +83,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-session-jdbc</artifactId>
+        </dependency>
+        <!-- ADR-016: WebAuthn second factor (relying-party operations on webauthn4j). -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-webauthn</artifactId>
         </dependency>
         <!-- Argon2id password hashing (Spring Security's Argon2PasswordEncoder uses it). -->
         <dependency>
@@ -123,6 +130,26 @@
         <dependency>
             <groupId>org.springframework.modulith</groupId>
             <artifactId>spring-modulith-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- WebAuthn authenticator emulator for tests (same webauthn4j as spring-security-webauthn);
+             Bouncy Castle aligned on the version the application uses. -->
+        <dependency>
+            <groupId>com.webauthn4j</groupId>
+            <artifactId>webauthn4j-test</artifactId>
+            <version>${webauthn4j.version}</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.bouncycastle</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
             <scope>test</scope>
         </dependency>
         <!-- ADR-003: integration tests run against real PostGIS, never H2. -->

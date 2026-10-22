@@ -180,8 +180,9 @@ public class SessionSecurityContextRepository implements SecurityContextReposito
         List<GrantedAuthority> authorities = new ArrayList<>();
         authorities.add(new SimpleGrantedAuthority(user.level().authority()));
         if (user.fullyAuthenticated()) {
-            // Roles count only once every factor is proven.
+            // Roles and permissions count only once every factor is proven.
             user.roles().forEach(role -> authorities.add(new SimpleGrantedAuthority("ROLE_" + role)));
+            user.permissions().forEach(p -> authorities.add(new SimpleGrantedAuthority(p)));
         }
         return authorities;
     }

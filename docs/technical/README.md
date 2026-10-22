@@ -26,6 +26,7 @@ approved or deployed by any government institution.
 | 7 | [Testing](07-testing.md) | run, read or write tests; know what each suite proves |
 | 8 | [Operations and troubleshooting](08-operations-and-troubleshooting.md) | operate the stack, diagnose an error, respond to an incident |
 | 9 | [Documentation rules](09-documentation-rules.md) | change anything: which documents must change with it |
+| 10 | [Frontend architecture](10-frontend-architecture.md) | find a screen or an endpoint call, add a feature, debug the interface |
 
 ## Where else to look
 

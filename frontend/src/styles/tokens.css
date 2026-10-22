@@ -1,5 +1,7 @@
 /* SNIGF/NILGS - Copyright (c) 2026 FLYT. */
 /* Author: Pythagore. */
+/* Colours and typography: change the look here. */
+
 :root {
   --color-text: #1b1f1d;
   --color-bg: #f7f8f7;
@@ -9,26 +11,4 @@
   line-height: 1.5;
   color: var(--color-text);
   background: var(--color-bg);
-}
-
-body {
-  margin: 0;
-}
-
-.demo-banner {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1rem;
-  justify-content: center;
-  padding: 0.5rem 1rem;
-  background: var(--color-banner-bg);
-  color: var(--color-banner-text);
-  font-weight: 600;
-  font-size: 0.875rem;
-}
-
-main {
-  max-width: 60rem;
-  margin: 0 auto;
-  padding: 2rem 1rem;
 }

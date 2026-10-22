@@ -7,8 +7,12 @@ Status: implemented. Database layer: migrations `V3__audit.sql` and
 `06_function_hardening.sql`) and the concurrent chain test in `infra/scripts/db-test.sh`.
 Application layer: module `org.snigf.mvp.audit` (recorder, Java verifier, checkpoints
 signed by OpenBao), tested by `ChainVerifierTest`, `AuditRecorderIT`,
-`CanonicalHashParityIT` and `AuditChainIT`. The auditor's HTTP API arrives with
-authentication (E-06, security step 4). How it was built: `docs/guides/audit-trail.md`.
+`CanonicalHashParityIT` and `AuditChainIT`. The auditor's API (`/api/v1/audit/*`,
+permissions `audit.event.search`, `audit.chain.verify`, `audit.checkpoint.create`,
+`audit.checkpoint.list`, `audit.checkpoint.download` and `audit.key.read`, role AUDITOR;
+ADR-025; supervisors may verify the chain, which shows no event content, ADR-026) is tested by `AuditApiIT`;
+every search and checkpoint download is itself audited (`AUDIT_EVENTS_READ`). How it was
+built: `docs/guides/audit-trail.md` and `docs/guides/roles-and-administration.md`.
 
 ## What is guaranteed
 
@@ -76,7 +80,10 @@ Each checkpoint is stored twice: a row in `audit_checkpoint` (key id
 
 `checkpoint-keys.json` beside it lists every version of the public key (raw and PEM).
 The directory is a volume of the application container only; files are written once
-(flushed, read-only, renamed into place) and never replaced.
+(flushed, read-only, then published under its name with a hard link, which fails if the
+name exists, so even two racing writers cannot replace a file) and never replaced (decision
+D5). The database keeps one checkpoint per position (V9). Office context on events:
+[ADR-027](adr/027-office-context-on-audit-events.md).
 
 **The auditor's routine.** Copy the directory to a separate machine after each
 checkpoint. Pin `checkpoint-keys.json` from the first copy and update it only through a

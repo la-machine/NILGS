@@ -20,7 +20,8 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
  *
  * <ul>
  *   <li><b>Default deny.</b> Health and info, the CSRF token, login and registration are
- *       public; the session view and logout need any authenticated session; everything else
+ *       public; the session view, logout and second-factor endpoints need any authenticated
+ *       session (the service checks the level); everything else
  *       under {@code /api/v1} needs a fully authenticated session ({@link AuthLevel#FULL})
  *       and, per method, its permission ({@code @PreAuthorize}); anything else is denied.</li>
  *   <li><b>Sessions</b> in PostgreSQL (Spring Session), holding only plain values
@@ -51,7 +52,7 @@ public class SecurityConfiguration {
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                 .requestMatchers(HttpMethod.GET, API + "/auth/csrf").permitAll()
                 .requestMatchers(HttpMethod.POST, API + "/auth/login", API + "/auth/register").permitAll()
-                .requestMatchers(API + "/auth/session", API + "/auth/logout").authenticated()
+                .requestMatchers(API + "/auth/session", API + "/auth/logout", API + "/auth/mfa/**").authenticated()
                 .requestMatchers(API + "/**").hasAuthority(AuthLevel.FULL.authority())
                 .anyRequest().denyAll())
             .exceptionHandling(errors -> errors

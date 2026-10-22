@@ -66,14 +66,16 @@ public class LoginService {
     private final LockoutPolicy lockout;
     private final AuditRecorder audit;
     private final Clock clock;
+    private final AuthorizationService authorization;
 
     public LoginService(UserRepository users, PasswordHasher hasher, LockoutPolicy lockout, AuditRecorder audit,
-                        Clock clock) {
+                        Clock clock, AuthorizationService authorization) {
         this.users = users;
         this.hasher = hasher;
         this.lockout = lockout;
         this.audit = audit;
         this.clock = clock;
+        this.authorization = authorization;
     }
 
     @Transactional
@@ -115,8 +117,7 @@ public class LoginService {
         AuthLevel level = user.accountType() == AccountType.STAFF ? AuthLevel.PASSWORD : AuthLevel.FULL;
         NextStep next = user.accountType() != AccountType.STAFF ? NextStep.DONE
                 : user.secondFactorReady() ? NextStep.MFA_CHALLENGE : NextStep.MFA_ENROLMENT;
-        AuthenticatedUser principal = new AuthenticatedUser(user.id(), user.displayName(), user.accountType(),
-                users.activeRoles(user.id()), level, now);
+        AuthenticatedUser principal = authorization.principal(user, level, now);
 
         Map<String, Object> details = new LinkedHashMap<>();
         details.put("factor", "PASSWORD");
@@ -137,8 +138,18 @@ public class LoginService {
     public Optional<AuthenticatedUser> restore(UUID userId, AuthLevel level, Instant authenticatedAt) {
         return users.findById(userId)
                 .filter(UserAccount::enabled)
-                .map(u -> new AuthenticatedUser(u.id(), u.displayName(), u.accountType(), users.activeRoles(u.id()),
-                        u.accountType() == AccountType.STAFF ? level : AuthLevel.FULL, authenticatedAt));
+                .map(u -> authorization.principal(u, u.accountType() == AccountType.STAFF ? level : AuthLevel.FULL,
+                        authenticatedAt));
+    }
+
+    /** What the session still needs: nothing, or the staff member's second factor. */
+    @Transactional(readOnly = true)
+    public NextStep nextStep(AuthenticatedUser user) {
+        if (user.fullyAuthenticated()) {
+            return NextStep.DONE;
+        }
+        return users.findById(user.userId()).filter(UserAccount::secondFactorReady).isPresent()
+                ? NextStep.MFA_CHALLENGE : NextStep.MFA_ENROLMENT;
     }
 
     /** Records the logout of the current principal; the caller ends the session. */

@@ -6,6 +6,9 @@ import java.sql.Array;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +18,7 @@ import java.util.function.Consumer;
 import javax.sql.DataSource;
 
 import org.snigf.mvp.audit.AuditEvent;
+import org.snigf.mvp.audit.AuditEventFilter;
 import org.snigf.mvp.audit.application.AuditProperties;
 import org.snigf.mvp.audit.domain.Actor;
 import org.snigf.mvp.audit.domain.AuditEventRepository;
@@ -88,6 +92,44 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
                 .param("pos", chainPos)
                 .query((rs, n) -> rs.getBytes(1))
                 .optional();
+    }
+
+    /** Fixed conditions; only their presence varies, values are always parameters. */
+    @Override
+    public List<ChainedEvent> search(AuditEventFilter filter, int limit, int offset) {
+        StringBuilder where = new StringBuilder("TRUE");
+        Map<String, Object> params = new HashMap<>();
+        if (filter.entityType() != null) {
+            where.append(" AND entity_type = :entityType");
+            params.put("entityType", filter.entityType());
+        }
+        if (filter.entityId() != null) {
+            where.append(" AND entity_id = :entityId");
+            params.put("entityId", filter.entityId());
+        }
+        if (filter.actorId() != null) {
+            where.append(" AND actor_id = :actorId");
+            params.put("actorId", filter.actorId());
+        }
+        if (filter.action() != null) {
+            where.append(" AND action = :action");
+            params.put("action", filter.action());
+        }
+        if (filter.from() != null) {
+            where.append(" AND occurred_at >= :from");
+            params.put("from", OffsetDateTime.ofInstant(filter.from(), ZoneOffset.UTC));
+        }
+        if (filter.to() != null) {
+            where.append(" AND occurred_at < :to");
+            params.put("to", OffsetDateTime.ofInstant(filter.to(), ZoneOffset.UTC));
+        }
+        params.put("limit", limit);
+        params.put("offset", offset);
+        return jdbc.sql("SELECT " + COLUMNS + " FROM audit_event WHERE " + where
+                        + " ORDER BY chain_pos DESC LIMIT :limit OFFSET :offset")
+                .params(params)
+                .query((rs, n) -> event(rs))
+                .list();
     }
 
     /**

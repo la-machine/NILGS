@@ -51,6 +51,7 @@ flowchart LR
 | `dbtest` | built from `infra/db/test.Dockerfile` | pgTAP suite and concurrent chain test in a throwaway server | profile `test` | none | postgres |
 | `security-probe` | `snigf-probe:local` | Asserts every transport and key-custody guarantee against the running stack | profile `test` | app-net, data-net, key-net | probe |
 | `segmentation-probe` | `snigf-probe:local` | Asserts what the proxy's network cannot reach | profile `test` | app-net | probe |
+| `e2e` | `snigf-e2e:local` (Playwright 1.64.0, pinned by digest) | Chromium end-to-end tests with virtual security keys ([guide](../guides/end-to-end-testing.md)) | profile `e2e`, run by `infra/scripts/e2e.sh` | the proxy's network namespace (`service:web`) | pwuser |
 
 ### Start order
 
@@ -116,7 +117,13 @@ backend/                     Spring Boot application (Java 25, Maven wrapper)
   src/main/resources/        application*.yaml, db/migration (Flyway)
   src/test/java/             unit (*Test) and integration (*IT) tests
   src/test/sql/              pgTAP tests, helpers, pgbench script
-frontend/                    React 19 + TypeScript + Vite
+frontend/                    React 19 + TypeScript + Vite (chapter 10, src/README.md)
+  src/app/                   shell: screen flow, layout, panels by permission
+  src/features/              auth, accounts, roles, grants, audit: api.ts + screens + index.ts
+  src/shared/                HTTP client with CSRF, session and access, texts FR/EN, UI pieces
+  src/styles/                tokens, base, layout, components
+  public/brand/              logo files derived from the official logo (BRAND.md)
+e2e/                         Chromium end-to-end tests (Playwright), run by infra/scripts/e2e.sh
 infra/
   db/                        roles script, pg_hba.conf, start wrapper, database test image
   openbao/                   OpenBao images, configuration template, provisioning, policy

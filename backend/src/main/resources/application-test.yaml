@@ -40,6 +40,18 @@ snigf:
     csrf:
       cookie-name: __Host-snigf-xsrf
       header-name: X-XSRF-TOKEN
+    # The emulated authenticator in tests uses this origin; one authenticator suffices in tests.
+    webauthn:
+      rp-id: localhost
+      rp-name: SNIGF test
+      allowed-origins: https://localhost:47000
+      timeout: 2m
+      attestation: none
+      min-authenticators: 2
+      recovery-codes: 10
+    # Four-eyes administration (ADR-025): unapproved requests expire.
+    administration:
+      request-time-to-live: 7d
     rate-limit:
       login-per-minute: 20
       register-per-hour: 10

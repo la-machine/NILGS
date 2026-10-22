@@ -41,8 +41,10 @@ import tools.jackson.databind.json.JsonMapper;
 /**
  * The checkpoint directory: one {@code checkpoint-<pos>.json} per checkpoint, plus
  * {@value #KEYS_FILE} with the public keys. It is a volume of the app container only,
- * never the database's. Each file is flushed to disk, made read-only and renamed into
- * place, so a reader never sees a partial file; a checkpoint file is never replaced.
+ * never the database's. Each file is flushed to disk and made read-only before it gets its
+ * name, so a reader never sees a partial file; a checkpoint file is never replaced, not even
+ * by two writers racing (hard link, see {@link #writeOnce}). Only the public key list is
+ * rewritten, from OpenBao's keys.
  */
 @Component
 public class FileCheckpointArchive implements CheckpointArchive {
@@ -154,20 +156,24 @@ public class FileCheckpointArchive implements CheckpointArchive {
         return "checkpoint-" + chainPos + ".json";
     }
 
+    /**
+     * Publishes a complete file under {@code name} only if no file has that name (D5). A hard
+     * link is created atomically and fails when the name exists, whoever wrote it, unlike a
+     * rename, which on POSIX silently replaces the target. A file system without hard links
+     * makes the checkpoint fail; it never falls back to a replacing write.
+     */
     private void writeOnce(String name, byte[] content) {
         Path target = directory.resolve(name);
-        if (Files.exists(target)) {
-            throw new IllegalStateException("checkpoint file " + name + " already exists; files are never replaced");
-        }
         Path temp = writeTemp(name, content);
         try {
-            Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE);
+            Files.createLink(target, temp);
         } catch (FileAlreadyExistsException e) {
+            throw new IllegalStateException("checkpoint file " + name + " already exists; files are never replaced", e);
+        } catch (IOException | UnsupportedOperationException e) {
+            throw new IllegalStateException("cannot publish checkpoint file " + name
+                    + " without replacing (the directory must support hard links)", e);
+        } finally {
             deleteQuietly(temp);
-            throw new IllegalStateException("checkpoint file " + name + " already exists", e);
-        } catch (IOException e) {
-            deleteQuietly(temp);
-            throw new UncheckedIOException("cannot write checkpoint file " + name, e);
         }
     }
 

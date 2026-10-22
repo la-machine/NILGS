@@ -30,6 +30,12 @@ public interface AuditTrail {
      */
     Checkpoint createCheckpoint();
 
+    /**
+     * Searches the events, newest first. The search itself is audited
+     * ({@code AUDIT_EVENTS_READ}, with the criteria): reading audit data is audited.
+     */
+    AuditEventView.Page events(AuditEventFilter filter);
+
     /** Every checkpoint in the database, oldest first. */
     List<Checkpoint> checkpoints();
 

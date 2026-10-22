@@ -1,0 +1,7 @@
+/* SNIGF/NILGS - Copyright (c) 2026 FLYT. */
+/* Author: Pythagore. */
+/* Global styles, in cascade order. Feature screens use these classes; none has its own CSS. */
+@import './tokens.css';
+@import './base.css';
+@import './layout.css';
+@import './components.css';

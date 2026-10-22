@@ -15,7 +15,7 @@ is an **application module** (a bounded context). Spring Modulith verifies on ev
 | Shared | `org.snigf.mvp.shared` | open module: configuration guard, web filters, security baseline, ids | implemented |
 | Keys | `org.snigf.mvp.keys` | technical: key custody through OpenBao | implemented |
 | Audit | `org.snigf.mvp.audit` | business: audit trail, verification, checkpoints | implemented |
-| Identity | `org.snigf.mvp.identity` | business: accounts, password login, sessions, CSRF, throttling; second factor and roles next | step 4a implemented ([guide](../guides/authentication-and-sessions.md)) |
+| Identity | `org.snigf.mvp.identity` | business: accounts, password login, sessions, CSRF, throttling, WebAuthn second factor, recovery codes, roles and permissions, administration | security step 4 implemented ([authentication guide](../guides/authentication-and-sessions.md), [roles guide](../guides/roles-and-administration.md)) |
 | Parcel | `org.snigf.mvp.parcel` | business: parcels, versions, geometry | slice 1 |
 | Application | `org.snigf.mvp.application` | business: land applications | later slices |
 | Conflict | `org.snigf.mvp.conflict` | business: overlaps and disputes | later slices |
@@ -127,14 +127,19 @@ A browser call to `GET https://localhost:47000/api/v1/...`:
    - the CSRF filter checks the `X-XSRF-TOKEN` header on every state-changing call;
    - access rules apply: public health, CSRF, login and registration; any session for
      `/auth/session` and `/auth/logout`; a **full** session for everything else under
-     `/api/v1`, plus the method's `@PreAuthorize`; everything else denied.
+     `/api/v1`, plus the method's `@PreAuthorize`, which is always
+     `@access.can(authentication, '<permission>')` or `@access.canAt(..., officeCode)`
+     (ADR-025): a role permission, or else a special grant in force, whose use `Access`
+     takes before the controller runs; everything else denied.
 
    Without a session the answer is 401 `AUTH_REQUIRED`. A refused authenticated call
    gets 403 `ACCESS_DENIED` (or `CSRF_INVALID`) and an `ACCESS_DENIED` audit event.
 7. **Controller → service.** The service runs the business transaction and calls
    `AuditRecorder.record(...)` inside it. The actor, roles, address and correlation id
    come from the security context and the request.
-8. **Errors** are RFC 9457 problem details with stable codes. Stack traces, messages
+8. **Special-grant uses** are settled by `SpecialGrantUseInterceptor` when the response is
+   complete: kept and audited on success, given back and audited on failure.
+9. **Errors** are RFC 9457 problem details with stable codes. Stack traces, messages
    and exception names are never returned to clients.
 
 ## Cross-cutting conventions

@@ -8,10 +8,11 @@
 | --- | --- | --- | --- |
 | Backend unit (`*Test`) | `cd backend && ./mvnw test` | JDK 25 | domain rules, guards, encodings, layering, module boundaries |
 | Backend integration (`*IT`) | `cd backend && ./mvnw verify` | JDK 25 + Docker | the application against real PostGIS, as `snigf_app` |
-| Database (pgTAP) | `docker compose --profile test run --rm --build dbtest` | Docker | grants, constraints, triggers, geometry, audit chain, function hardening; concurrent chain test with pgbench |
+| Database (pgTAP) | `docker compose --profile test run --rm --build dbtest` | Docker | grants, constraints, triggers, geometry, audit chain, function hardening, roles and grants (09), the approval workflow (10); concurrent chain test with pgbench |
+| End-to-end (Chromium) | `bash infra/scripts/e2e.sh` | running development stack | sign-in with security keys, four-eyes role assignment and custom role, special grant spent only by the confirmed action, audit verification by auditor and supervisor ([guide](../guides/end-to-end-testing.md)) |
 | Security probe | `docker compose --profile test run --rm --build security-probe` | running stack | every transport and key-custody guarantee, each refusal for its reason |
 | Segmentation probe | `docker compose --profile test run --rm segmentation-probe` | running stack | the proxy's network reaches neither the database, OpenBao nor the internet |
-| Frontend | `cd frontend && npm run lint && npm run build` | Node 24 | lint, type-check, build |
+| Frontend | `cd frontend && npm run lint && npm run build` | Node 24 | lint (oxlint), structure rules and signatures (`scripts/check-architecture.mjs`), type-check (English texts against French), build |
 | Offline checkpoint | `bash infra/scripts/verify-checkpoint.sh keys.json checkpoint-*.json` | bash, OpenSSL 3 | checkpoint files are authentic |
 
 On Windows, set `JAVA_HOME` to a JDK 25 before running Maven. The enforcer rule refuses
@@ -26,8 +27,10 @@ older JDKs with "Detected JDK ... is version 17 ... not in the allowed range [25
 | Web | `CorrelationIdFilterTest`, `ClientCertificateFilterTest`, `ClientAddressTest` |
 | Keys | `EphemeralKeyServiceTest`, `OpenBaoKeyServiceTest` (OpenBao HTTP contract with a mock server) |
 | Audit domain | `ChainVerifierTest` (every tampering kind against an in-memory chain), `AuditDomainRulesTest` |
+| Audit rules (D5, D6) | `FileCheckpointArchiveTest` (a checkpoint file is never replaced, even by racing writers), `AuditReadingScopeTest` (no office-scoped audit reading before ADR-027) |
 | Audit integration | `AuditRecorderIT` (transactions, actors, immutability), `CanonicalHashParityIT` (Java and SQL produce identical bytes), `AuditChainIT` (checkpoints, offline verification, superuser tampering) |
-| Identity | `IdentityRulesTest` (password policy, e-mail, lockout), `IdentityInfrastructureTest` (peppered Argon2id, plain-value sessions, pinned password list), `SessionSecurityContextRepositoryTest` (absolute limit, authorities), `AuthFlowIT` (13 end-to-end scenarios), `EndpointAnnotationArchTest` |
+| Identity | `IdentityRulesTest` (password policy, e-mail, lockout), `IdentityInfrastructureTest` (peppered Argon2id, plain-value sessions, pinned password list), `SessionSecurityContextRepositoryTest` (absolute limit, authorities), `AuthFlowIT` (13 end-to-end scenarios), `MfaFlowIT` (10 WebAuthn scenarios with webauthn4j authenticator emulators: enrolment, login, phishing origin, replay, another account's key, recovery, lockout), `RecoveryCodeTest`, `CeremonyStoreTest`, `EndpointAnnotationArchTest` |
+| Roles and administration | `PermissionMatrixTest` (document = code, catalogue rules, scopes, no combined role, custom role validation), `PermissionCatalogueCheckTest`, `RoleSeedIT` (V7 seeded exactly the code's catalogue and baseline roles), `PermissionMatrixIT` (every staff role × every protected endpoint, applicants none), `AdminFlowIT` (four-eyes role requests, revocations, SoD, what the application's database account can no longer do, second-factor reset), `RoleAdministrationIT` (four eyes, self-benefit, immutable baseline, retirement, SoD, the new role takes effect), `SpecialGrantIT` (four eyes, beneficiary, end date, use limit, concurrent uses, refund on failure, audit of uses, revocation, administration not delegable), `AuditApiIT` (search audited, checkpoint verifiable offline, broken chain refused, auditors only) |
 | Whole application | `ApplicationSmokeIT` (health, 401 for anonymous calls, least-privilege role) |
 | Ids | `UuidV7Test` |
 
@@ -46,6 +49,9 @@ and key custody are covered by the probes and the startup self-test instead.
 
 The database is shared by every test in the run, so:
 
+- every integration test class extends `PostgisIntegrationTest`, so they share one
+  application context (the test profile's in-memory keys are per context: checkpoints
+  signed in one context fail verification in another);
 - tests use positions and rows they created themselves;
 - tampering tests (`AuditChainIT`) use `superuserConnection()` in a transaction they roll
   back, or restore what they changed in a `finally` block;

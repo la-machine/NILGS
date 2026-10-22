@@ -28,110 +28,11 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-
 /**
  * Security step 4a end to end, through the real filter chain, Spring Session in PostgreSQL
  * and the audit trail (Slice 1 design §5 and §6; P5, P6, P7).
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@ActiveProfiles("test")
-class AuthFlowIT {
-
-    static final String SESSION_COOKIE = "__Host-snigf-session";
-    static final String CSRF_COOKIE = "__Host-snigf-xsrf";
-    static final String CSRF_HEADER = "X-XSRF-TOKEN";
-    static final String PASSWORD = "Correct-Horse-Battery-42";
-
-    @DynamicPropertySource
-    static void database(DynamicPropertyRegistry registry) {
-        PostgisDatabase db = PostgisDatabase.shared();
-        registry.add("spring.datasource.url", db::jdbcUrl);
-        registry.add("spring.datasource.password", db::appPassword);
-    }
-
-    /** Offices are reference data the application can only read; seed one demo office. */
-    @org.junit.jupiter.api.BeforeAll
-    static void demoOffice() throws Exception {
-        try (java.sql.Connection su = PostgisDatabase.shared().superuserConnection();
-             java.sql.Statement statement = su.createStatement()) {
-            statement.execute("INSERT INTO office (id, code, name_fr, name_en) VALUES ("
-                    + "'00000000-0000-7000-8000-0000000000a1', 'DEMOIT', 'Bureau de test', 'Test office')"
-                    + " ON CONFLICT (code) DO NOTHING");
-            su.commit();
-        }
-    }
-
-    @Autowired
-    MockMvc mvc;
-
-    @Autowired
-    JdbcTemplate jdbc;
-
-    @Autowired
-    PasswordHasher hasher;
-
-    /** A browser: keeps cookies, fetches and echoes the CSRF token, uses one client address. */
-    final class Browser {
-        final Map<String, String> cookies = new LinkedHashMap<>();
-        final String address;
-
-        Browser() {
-            this("192.0.2." + (1 + (int) (Math.random() * 250)));
-        }
-
-        Browser(String address) {
-            this.address = address;
-        }
-
-        MockHttpServletResponse send(MockHttpServletRequestBuilder request) throws Exception {
-            request.with(r -> {
-                r.setRemoteAddr(address);
-                return r;
-            });
-            cookies.forEach((name, value) -> request.cookie(new Cookie(name, value)));
-            if (cookies.containsKey(CSRF_COOKIE)) {
-                request.header(CSRF_HEADER, cookies.get(CSRF_COOKIE));
-            }
-            MockHttpServletResponse response = mvc.perform(request).andReturn().getResponse();
-            for (String header : response.getHeaders(HttpHeaders.SET_COOKIE)) {
-                String pair = header.split(";", 2)[0];
-                String name = pair.substring(0, pair.indexOf('='));
-                String value = pair.substring(pair.indexOf('=') + 1);
-                if (value.isEmpty() || header.contains("Max-Age=0")) {
-                    cookies.remove(name);
-                } else {
-                    cookies.put(name, value);
-                }
-            }
-            return response;
-        }
-
-        MockHttpServletResponse csrf() throws Exception {
-            return send(get("/api/v1/auth/csrf"));
-        }
-
-        MockHttpServletResponse register(String email, String name, String password) throws Exception {
-            csrf();
-            return send(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON).content(
-                    "{\"email\":\"" + email + "\",\"displayName\":\"" + name + "\",\"password\":\"" + password
-                            + "\",\"preferredLanguage\":\"fr\"}"));
-        }
-
-        MockHttpServletResponse login(String email, String password) throws Exception {
-            csrf();
-            return send(post("/api/v1/auth/login").contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"email\":\"" + email + "\",\"password\":\"" + password + "\"}"));
-        }
-
-        MockHttpServletResponse session() throws Exception {
-            return send(get("/api/v1/auth/session"));
-        }
-    }
-
-    static String email() {
-        return "user-" + UUID.randomUUID() + "@demo.invalid";
-    }
+class AuthFlowIT extends IdentityIntegrationTest {
 
     @Test
     void theCsrfTokenTravelsInAHostCookieAndIsRequiredEvenForLogin() throws Exception {
@@ -283,7 +184,8 @@ class AuthFlowIT {
         MockHttpServletResponse login = browser.login(email, PASSWORD);
         assertThat(login.getStatus()).isEqualTo(200);
         assertThat(login.getContentAsString()).contains("\"nextStep\":\"MFA_ENROLMENT\"");
-        assertThat(browser.session().getContentAsString()).contains("\"authLevel\":\"PASSWORD\"");
+        assertThat(browser.session().getContentAsString()).contains("\"authLevel\":\"PASSWORD\"")
+                .contains("\"nextStep\":\"MFA_ENROLMENT\"");
 
         MockHttpServletResponse denied = browser.send(get("/api/v1/parcels"));
         assertThat(denied.getStatus()).isEqualTo(403);
@@ -350,28 +252,5 @@ class AuthFlowIT {
         MockHttpServletResponse response = new Browser().send(get("/api/v1/parcels"));
         assertThat(response.getStatus()).isEqualTo(401);
         assertThat(response.getContentAsString()).contains("AUTH_REQUIRED");
-    }
-
-    private void assertWeak(MockHttpServletResponse response, String violation) throws Exception {
-        assertThat(response.getStatus()).isEqualTo(422);
-        assertThat(response.getContentAsString()).contains("PASSWORD_WEAK").contains(violation);
-    }
-
-    private UUID userId(String email) {
-        return jdbc.queryForObject("SELECT id FROM app_user WHERE lower(email) = lower(?)", UUID.class, email);
-    }
-
-    private List<String> actions(UUID user) {
-        return jdbc.queryForList("SELECT action FROM audit_event WHERE entity_id = ? ORDER BY chain_pos", String.class, user);
-    }
-
-    private UUID insertStaff(String email, String role) {
-        UUID id = UUID.randomUUID();
-        jdbc.update("INSERT INTO app_user (id, email, display_name, password_hash, account_type) VALUES (?, ?, ?, ?, 'STAFF')",
-                id, email, "Demo Officer", hasher.hash(PASSWORD));
-        UUID office = jdbc.queryForObject("SELECT id FROM office ORDER BY code LIMIT 1", UUID.class);
-        jdbc.update("INSERT INTO role_assignment (id, user_id, role, office_id, grant_reason) VALUES (?, ?, ?, ?, 'test seed')",
-                UUID.randomUUID(), id, role, office);
-        return id;
     }
 }

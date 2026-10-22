@@ -24,7 +24,9 @@ public record IdentityProperties(
         @NotNull @Valid Lockout lockout,
         @NotNull @Valid Session session,
         @NotNull @Valid Csrf csrf,
-        @NotNull @Valid RateLimit rateLimit) {
+        @NotNull @Valid RateLimit rateLimit,
+        @NotNull @Valid WebAuthn webauthn,
+        @NotNull @Valid Administration administration) {
 
     /**
      * Password policy P7 and Argon2id cost.
@@ -70,6 +72,37 @@ public record IdentityProperties(
      * @param headerName header the browser sends it back in
      */
     public record Csrf(@NotBlank String cookieName, @NotBlank String headerName) {
+    }
+
+    /**
+     * WebAuthn second factor (ADR-016).
+     *
+     * @param rpId              relying-party id: the site's registrable domain, the host the
+     *                          browser shows (credentials are bound to it)
+     * @param rpName            name the authenticator shows
+     * @param allowedOrigins    exact origins ({@code https://host:port}) that may run ceremonies
+     * @param timeout           how long a ceremony may take
+     * @param attestation       attestation preference: {@code none}, {@code indirect} or {@code direct}
+     * @param minAuthenticators authenticators a staff member registers before enrolment completes
+     * @param recoveryCodes     one-time recovery codes issued at enrolment
+     */
+    public record WebAuthn(
+            @NotBlank String rpId,
+            @NotBlank String rpName,
+            @NotNull java.util.List<@NotBlank String> allowedOrigins,
+            @NotNull Duration timeout,
+            @NotBlank @jakarta.validation.constraints.Pattern(regexp = "none|indirect|direct") String attestation,
+            @Min(1) @Max(10) int minAuthenticators,
+            @Min(5) @Max(20) int recoveryCodes) {
+    }
+
+    /**
+     * Four-eyes administration (ADR-025).
+     *
+     * @param requestTimeToLive how long a role change or special grant request may wait for
+     *                          approval before it can no longer be approved
+     */
+    public record Administration(@NotNull Duration requestTimeToLive) {
     }
 
     /**

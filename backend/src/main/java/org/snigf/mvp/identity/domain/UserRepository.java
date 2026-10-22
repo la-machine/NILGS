@@ -7,6 +7,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.snigf.mvp.identity.RoleGrant;
+
 /** The account store. Every change is a single atomic statement; nothing is read-modify-write. */
 public interface UserRepository {
 
@@ -37,6 +39,6 @@ public interface UserRepository {
     /** Replaces the hash (stronger parameters or a newer pepper version). */
     void updatePasswordHash(UUID id, String passwordHash);
 
-    /** Names of the roles currently held (not revoked). */
-    Set<String> activeRoles(UUID id);
+    /** Roles currently held (not revoked), with their offices. */
+    Set<RoleGrant> activeGrants(UUID id);
 }

@@ -122,6 +122,18 @@ snigf:
     csrf:
       cookie-name: ${SNIGF_CSRF_COOKIE_NAME}
       header-name: ${SNIGF_CSRF_HEADER_NAME}
+    # WebAuthn second factor (ADR-016): relying party, origins, policy.
+    webauthn:
+      rp-id: ${SNIGF_WEBAUTHN_RP_ID}
+      rp-name: ${SNIGF_WEBAUTHN_RP_NAME}
+      allowed-origins: ${SNIGF_WEBAUTHN_ORIGINS}
+      timeout: ${SNIGF_WEBAUTHN_TIMEOUT}
+      attestation: ${SNIGF_WEBAUTHN_ATTESTATION}
+      min-authenticators: ${SNIGF_WEBAUTHN_MIN_AUTHENTICATORS}
+      recovery-codes: ${SNIGF_MFA_RECOVERY_CODES}
+    # Four-eyes administration (ADR-025): unapproved requests expire.
+    administration:
+      request-time-to-live: ${SNIGF_ADMIN_REQUEST_TTL}
     rate-limit:
       login-per-minute: ${SNIGF_RATE_LOGIN_PER_MINUTE}
       register-per-hour: ${SNIGF_RATE_REGISTER_PER_HOUR}

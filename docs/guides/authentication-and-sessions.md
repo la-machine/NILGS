@@ -22,10 +22,13 @@ Decisions: [ADR-004](../adr/004-server-side-sessions.md) (sessions),
 [ADR-018](../adr/018-openbao-key-management.md) (the pepper key). Rules P5 (session
 limits), P6 (lockout and throttling) and P7 (password policy) come from the Slice 1 design.
 
-**Status:** security step 4a is implemented: password login, sessions, CSRF, lockout,
-throttling and auditing. Security step 4b adds the WebAuthn second factor, the TOTP
-fallback, recovery codes and the screens. **Until then, staff accounts stop at the
-second factor and can call nothing else.**
+**Status:**
+
+- **Security step 4a:** password login, sessions, CSRF, lockout, throttling and auditing.
+- **Security step 4b:** the WebAuthn second factor for staff (two authenticators), the
+  recovery codes and the sign-in screens ([ADR-023](../adr/023-webauthn-second-factor-implementation.md)).
+- **Still to come (step 4c):** role administration, the administrator-assisted reset,
+  and the decision on a TOTP fallback.
 
 ## Where
 
@@ -48,6 +51,15 @@ The identity module follows [ADR-021](../adr/021-ddd-layering-inside-modules.md)
 | `identity/infrastructure/session/SessionSerializationConfiguration` | infrastructure | Plain values only in sessions |
 | `identity/infrastructure/config/IdentityConfiguration` | infrastructure | Policies as beans, session cookie, startup checks |
 | `identity/infrastructure/web/AuthController`, `AuthExceptionHandler`, `AuthRateLimiter` | infrastructure | Endpoints, error codes, throttling |
+| `identity/domain/RecoveryCode`, `RecoveryCodeHasher`, `SecondFactorRepository` | domain | Recovery codes and the ports for their storage and hashing |
+| `identity/application/SecondFactorService`, `WebAuthnCeremonies` | application | Enrolment, proof at login, recovery; the WebAuthn port |
+| `identity/infrastructure/webauthn/SpringWebAuthnCeremonies`, `CeremonyStore` | infrastructure | Relying party on Spring Security / webauthn4j; single-use server-side ceremonies |
+| `identity/infrastructure/crypto/KeyedRecoveryCodeHasher` | infrastructure | HMAC of recovery codes with the OpenBao pepper (domain-separated) |
+| `identity/infrastructure/persistence/JdbcSecondFactorRepository` | infrastructure | Enrolment flag and recovery codes |
+| `identity/infrastructure/web/MfaController` | infrastructure | `/api/v1/auth/mfa/*` |
+| `db/migration/V6__webauthn.sql` | database | `user_entities`, `user_credentials`, enrolment trigger |
+| `frontend/src/features/auth/` (`api.ts`, `webauthn.ts`, `screens/`), `app/App.tsx`, `shared/api/client.ts`, `shared/i18n/` | interface | Sign-in, registration, enrolment, second factor, recovery, codes, session screens (FR/EN); the shell follows the server's `nextStep` |
+| `infra/scripts/dev-make-staff.sh` | development | Turns a registered account into staff at a demo office (dev profile only, audited) |
 | `shared/security/PublicEndpoint` | shared | Marks deliberately public endpoints; `EndpointAnnotationArchTest` checks every endpoint |
 | `resources/identity/common-passwords.txt` (+ `.NOTICE.md`) | data | 29,982 common passwords of 12+ characters, checksum-pinned |
 | `db/migration/V5__sessions.sql` | database | Spring Session tables |
@@ -62,8 +74,13 @@ The identity module follows [ADR-021](../adr/021-ddd-layering-inside-modules.md)
 | `GET /csrf` | public | none | 200 `{cookieName, headerName}`, sets the token cookie | none |
 | `POST /register` | public, throttled | `email`, `displayName`, `password`, `preferredLanguage` (`fr`/`en`) | 201, whether or not the address existed | 422 `PASSWORD_WEAK` or `VALIDATION_FAILED` with `violations`; 429 `RATE_LIMITED`; 503 `BUSY` |
 | `POST /login` | public, throttled | `email`, `password` | 200 `{nextStep: DONE \| MFA_ENROLMENT \| MFA_CHALLENGE}`, new session | 401 `AUTH_FAILED` (always the same); 429; 503 |
-| `GET /session` | any session | none | 200 user id, name, type, roles, `authLevel`, `identityVerified: false` | 401 `AUTH_REQUIRED` |
+| `GET /session` | any session | none | 200 user id, name, type, roles, `authLevel`, `nextStep`, `identityVerified: false` | 401 `AUTH_REQUIRED` |
 | `POST /logout` | any session | none | 204, session deleted on the server | 401 |
+| `POST /mfa/webauthn/registration/options` | staff: password session before enrolment, FULL after | none | 200 WebAuthn creation options (JSON) | 403 `MFA_NOT_ALLOWED` |
+| `POST /mfa/webauthn/registration` | same | `{"publicKey": {"credential": <PublicKeyCredential JSON>, "label": "..."}}` | 200 `{registered, required, enrolmentComplete, nextStep, recoveryCodes?}`; at completion a new FULL session | 422 `WEBAUTHN_REJECTED`; 403 |
+| `POST /mfa/webauthn/assertion/options` | staff password session, enrolled | none | 200 WebAuthn request options (JSON) | 403 |
+| `POST /mfa/webauthn/assertion` | same, throttled | `<PublicKeyCredential JSON>` | 200 `{nextStep: DONE}`, new FULL session | 401 `SECOND_FACTOR_INVALID` (session ended if the account locks); 429 |
+| `POST /mfa/recovery` | same, throttled | `{code}` | 200 `{nextStep, remainingRecoveryCodes, replaceAuthenticator: true}`, new FULL session | 401 `SECOND_FACTOR_INVALID`; 429 |
 
 Every state-changing call needs the CSRF header. Other `/api/v1` paths need a **full**
 session and their own `@PreAuthorize`; anything else is denied.
@@ -92,6 +109,42 @@ session and their own `@PreAuthorize`; anything else is denied.
    renewed.
 6. **Session cookie.** Spring Session writes the row and sets `__Host-snigf-session`
    (Secure, HttpOnly, path `/`, SameSite Strict).
+
+### The second factor (staff)
+
+**Enrolment.** It happens the first time a staff member logs in, with `nextStep`
+`MFA_ENROLMENT`.
+
+1. The page asks for creation options. The server starts a registration ceremony, keeps
+   its options in `CeremonyStore`, and puts only the ceremony id in the session. The
+   options require user verification, exclude the account's existing keys, and name
+   the user by account id.
+2. The browser calls `navigator.credentials.create`. The authenticator checks the
+   PIN or biometric and creates a key pair; the private key never leaves it.
+3. The page posts the credential and a label. webauthn4j verifies challenge, origin,
+   relying-party id, user verification and the attestation format, and the public key
+   is stored. `MFA_ENROLLED` is audited.
+4. When `SNIGF_WEBAUTHN_MIN_AUTHENTICATORS` keys are registered:
+   - `app_user.mfa_enrolled_at` is set (the V6 trigger checks a credential exists);
+   - ten recovery codes are generated and returned once (only their HMACs are stored);
+   - the session is replaced by a FULL one, and the CSRF token is renewed.
+
+**Every later login.** `nextStep` is `MFA_CHALLENGE`.
+
+1. The request options allow only the account's credentials and require user
+   verification.
+2. `navigator.credentials.get` signs the challenge.
+3. The server verifies the signature, the origin, user verification and the counter,
+   checks that the credential's owner is the account, and audits `MFA_VERIFIED`.
+4. The session becomes FULL with a new id.
+
+**Recovery.** The user types a code. Case, spaces, dashes and look-alikes are forgiven.
+The code is matched by HMAC, consumed atomically and audited as
+`MFA_RECOVERY_CODE_USED`, and the interface asks for a replacement authenticator.
+
+**Failures.** A wrong assertion or code counts toward the lockout, is audited as
+`LOGIN_FAILED` (reason `SECOND_FACTOR_INVALID` or `RECOVERY_CODE_INVALID`), and ends
+the session when the account locks.
 
 ### Every later request
 
@@ -165,6 +218,19 @@ Outside tests the application refuses to start with:
 - `SameSite` other than Strict or Lax;
 - an idle limit above the absolute limit.
 
+### Try the second factor in a browser (development)
+
+1. Trust the development CA once (README "Run the stack"), then open
+   <https://localhost:47000>.
+2. Register an account in the interface, then make it staff:
+   `bash infra/scripts/dev-make-staff.sh you@demo.invalid CADASTRAL_OFFICER`.
+3. Provide two authenticators, for example:
+   - Chrome DevTools, "More tools", "WebAuthn", "Enable virtual authenticator
+     environment", then add two authenticators (ctap2, user verification supported);
+   - or Windows Hello and a security key.
+4. Log in: register both authenticators and store the recovery codes. Then log out, log
+   in again and use either key, or a recovery code.
+
 ### Refresh the common-password list
 
 Follow `backend/src/main/resources/identity/common-passwords.NOTICE.md`, then update the
@@ -212,6 +278,21 @@ docker compose exec -u postgres db psql -d snigf -c \
 - a planted serialized object refused, ending the session;
 - 401 for anonymous API calls.
 
+`MfaFlowIT` drives emulated FIDO2 authenticators (webauthn4j-test) through the real
+endpoints. It proves that:
+
+- enrolment of two keys completes with recovery codes and a FULL session;
+- either key works at the next login;
+- a response from another origin (phishing) or a replayed response is refused and counts
+  toward the lockout;
+- another account's key is refused even when it signs the right challenge;
+- a recovery code works once;
+- five wrong second factors lock the account and end the session;
+- a password session cannot add keys once enrolled;
+- applicants have no second factor;
+- a ceremony belongs to the session that started it;
+- only public keys are stored, and options require user verification.
+
 ## Pitfalls we hit
 
 | Symptom | Cause | Fix |
@@ -222,6 +303,11 @@ docker compose exec -u postgres db psql -d snigf -c \
 | A 10,000-character session string passed the filter's 4 KB limit | `ObjectInputFilter`'s `maxbytes` is not consulted for plain strings | Refuse values larger than 4 KB before deserializing |
 | `loadDeferredContext` does not compile | Spring Security 7 returns `DeferredSecurityContext`, not `Supplier` | Implement `DeferredSecurityContext` (memoised) |
 | The mock response shows no `SameSite` on the CSRF cookie | `MockHttpServletResponse` does not print the attribute | Assert `getCookie(...).getAttribute("SameSite")`; the probe checks the real header |
+| `cannot execute UPDATE in a read-only transaction` when starting a registration | The first registration creates the WebAuthn user entity | `beginRegistration` runs in a writable transaction |
+| `violates check constraint "ck_mfa_enrolled_has_secret"` | V1 required a TOTP secret for any enrolment | V6 replaces it with a trigger accepting a WebAuthn credential or a TOTP secret |
+| Spring Security has no WebAuthn classes in `spring-security-web` 7.x | WebAuthn moved to the module `spring-security-webauthn` | Add that dependency (webauthn4j comes with it) |
+| `webauthn4j-test` breaks dependency convergence | It brings Bouncy Castle 1.85 while the application uses 1.86 | Exclude its Bouncy Castle and add `bcpkix-jdk18on` at the application's version, test scope |
+| The headless browser refuses `https://localhost:47000` (`ERR_CERT_AUTHORITY_INVALID`) | The development CA is not trusted on the machine | Trust it for your user (README), or test the ceremonies with the emulators |
 | The 10k common-password list adds nothing | Only 10 of its entries have 12+ characters | Use the 1M list filtered to 12 to 128 characters (29,982 entries) |
 
 ## Production differences
@@ -232,5 +318,10 @@ docker compose exec -u postgres db psql -d snigf -c \
   (ADR-022); hashing them is a pilot backlog item.
 - **Argon2 cost:** raise it if the hosts allow (measure at about 0.5 s per hash), and
   size `SNIGF_PASSWORD_MAX_CONCURRENT_HASHES` × memory within the heap.
-- **Staff onboarding** needs the second-factor screens (security step 4b) and
-  administrator-created accounts (security step 4c). Staff never self-register.
+- **Staff onboarding** needs administrator-created accounts (security step 4c). Staff
+  never self-register; `dev-make-staff.sh` exists for development only.
+- **WebAuthn:**
+  - Set `SNIGF_WEBAUTHN_RP_ID` to the public domain before the first enrolment;
+    changing it later invalidates every key.
+  - Consider attestation `direct` with an approved-device list.
+  - Keep ceremonies in the database when running several instances.

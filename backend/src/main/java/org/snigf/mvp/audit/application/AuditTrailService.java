@@ -15,6 +15,8 @@ import org.slf4j.LoggerFactory;
 import org.snigf.mvp.audit.AuditAction;
 import org.snigf.mvp.audit.AuditEncoding;
 import org.snigf.mvp.audit.AuditEvent;
+import org.snigf.mvp.audit.AuditEventFilter;
+import org.snigf.mvp.audit.AuditEventView;
 import org.snigf.mvp.audit.AuditIntegrityException;
 import org.snigf.mvp.audit.AuditOutcome;
 import org.snigf.mvp.audit.AuditRecorder;
@@ -151,6 +153,49 @@ public class AuditTrailService implements AuditTrail {
         }
         long last = checkpoints.all().stream().mapToLong(Checkpoint::chainPos).max().orElse(0);
         return last == 0 || head.get().chainPos() > last + 1;
+    }
+
+    @Override
+    public AuditEventView.Page events(AuditEventFilter filter) {
+        List<AuditEventView> found = events.search(filter, filter.size() + 1, filter.page() * filter.size()).stream()
+                .map(AuditTrailService::view).toList();
+        boolean more = found.size() > filter.size();
+        Map<String, Object> details = new LinkedHashMap<>();
+        if (filter.entityType() != null) {
+            details.put("entityType", filter.entityType());
+        }
+        if (filter.entityId() != null) {
+            details.put("entityId", filter.entityId());
+        }
+        if (filter.actorId() != null) {
+            details.put("actorId", filter.actorId());
+        }
+        if (filter.action() != null) {
+            details.put("action", filter.action());
+        }
+        if (filter.from() != null) {
+            details.put("from", filter.from().toString());
+        }
+        if (filter.to() != null) {
+            details.put("to", filter.to().toString());
+        }
+        details.put("page", filter.page());
+        details.put("returned", Math.min(found.size(), filter.size()));
+        writing.executeWithoutResult(tx -> recorder.record(AuditEvent.of(AuditAction.AUDIT_EVENTS_READ, AuditOutcome.SUCCESS)
+                .withEntity(ENTITY_CHAIN, null).withDetails(details)));
+        return new AuditEventView.Page(more ? found.subList(0, filter.size()) : found, filter.page(), filter.size(), more);
+    }
+
+    /** Records that someone downloaded a checkpoint file: reading audit data is audited. */
+    public void recordCheckpointDownload(long chainPos) {
+        writing.executeWithoutResult(tx -> recorder.record(AuditEvent.of(AuditAction.AUDIT_EVENTS_READ, AuditOutcome.SUCCESS)
+                .withEntity(ENTITY_CHECKPOINT, null).withDetails(Map.of("checkpointFile", chainPos))));
+    }
+
+    private static AuditEventView view(org.snigf.mvp.audit.domain.ChainedEvent e) {
+        return new AuditEventView(e.chainPos(), e.id(), e.occurredAt(), e.actorType(), e.actorId(), e.actorLabel(),
+                e.actorRoles(), e.action(), e.entityType(), e.entityId(), e.entityRef(), e.outcome(), e.reason(),
+                e.correlationId(), e.sourceIp(), e.details(), AuditEventView.hex(e.prevHash()), AuditEventView.hex(e.hash()));
     }
 
     @Override

@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "lint": "oxlint",
+    "lint": "oxlint && node scripts/check-architecture.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

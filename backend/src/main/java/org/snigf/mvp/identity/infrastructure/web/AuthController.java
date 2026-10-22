@@ -3,6 +3,7 @@
 package org.snigf.mvp.identity.infrastructure.web;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -12,7 +13,9 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import org.snigf.mvp.identity.ActiveGrant;
 import org.snigf.mvp.identity.AuthenticatedUser;
+import org.snigf.mvp.identity.RoleGrant;
 import org.snigf.mvp.identity.application.IdentityProperties;
 import org.snigf.mvp.identity.application.LoginService;
 import org.snigf.mvp.identity.application.RegistrationService;
@@ -91,8 +94,15 @@ class AuthController {
     record LoginResponse(LoginService.NextStep nextStep) {
     }
 
-    record SessionResponse(UUID userId, String displayName, String accountType, Set<String> roles, String authLevel,
-                           boolean identityVerified, Instant authenticatedAt) {
+    /**
+     * The session as the interface needs it. {@code permissions} lists the permission
+     * authorities in force (empty until every factor is proven), so the interface shows only
+     * what the server will allow; the server checks again on every call.
+     */
+    record SessionResponse(UUID userId, String displayName, String accountType, Set<String> roles,
+                           Set<RoleGrant> grants, Set<String> permissions, List<ActiveGrant> specialGrants,
+                           String authLevel,
+                           LoginService.NextStep nextStep, boolean identityVerified, Instant authenticatedAt) {
     }
 
     /** Writes the token cookie (if absent); the page echoes it in the header on every change. */
@@ -132,7 +142,9 @@ class AuthController {
     @PreAuthorize("isAuthenticated()")
     SessionResponse session(@AuthenticationPrincipal AuthenticatedUser user) {
         return new SessionResponse(user.userId(), user.displayName(), user.accountType().name(), user.roles(),
-                user.level().name(), false, user.authenticatedAt());
+                user.grants(), user.fullyAuthenticated() ? user.permissions() : Set.of(),
+                user.fullyAuthenticated() ? user.specialGrants() : List.of(),
+                user.level().name(), logins.nextStep(user), false, user.authenticatedAt());
     }
 
     @PostMapping("/logout")

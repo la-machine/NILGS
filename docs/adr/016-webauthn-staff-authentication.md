@@ -4,7 +4,7 @@
 
 | Status | Date | Deciders |
 | --- | --- | --- |
-| Accepted (supersedes ADR-005) | 2026-10-20 | Pythagore (FLYT) |
+| Accepted (supersedes ADR-005), implemented by ADR-023; TOTP fallback replaced by ADR-024 (proposed) | 2026-10-20 | Pythagore (FLYT) |
 
 ## Context
 

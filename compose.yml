@@ -231,6 +231,14 @@ services:
       SNIGF_SESSION_CLEANUP_CRON: ${SNIGF_SESSION_CLEANUP_CRON:?set in .env}
       SNIGF_CSRF_COOKIE_NAME: ${SNIGF_CSRF_COOKIE_NAME:?set in .env}
       SNIGF_CSRF_HEADER_NAME: ${SNIGF_CSRF_HEADER_NAME:?set in .env}
+      SNIGF_WEBAUTHN_RP_ID: ${SNIGF_WEBAUTHN_RP_ID:?set in .env}
+      SNIGF_WEBAUTHN_RP_NAME: ${SNIGF_WEBAUTHN_RP_NAME:?set in .env}
+      SNIGF_WEBAUTHN_ORIGINS: ${SNIGF_WEBAUTHN_ORIGINS:?set in .env}
+      SNIGF_WEBAUTHN_TIMEOUT: ${SNIGF_WEBAUTHN_TIMEOUT:?set in .env}
+      SNIGF_WEBAUTHN_ATTESTATION: ${SNIGF_WEBAUTHN_ATTESTATION:?set in .env}
+      SNIGF_WEBAUTHN_MIN_AUTHENTICATORS: ${SNIGF_WEBAUTHN_MIN_AUTHENTICATORS:?set in .env}
+      SNIGF_MFA_RECOVERY_CODES: ${SNIGF_MFA_RECOVERY_CODES:?set in .env}
+      SNIGF_ADMIN_REQUEST_TTL: ${SNIGF_ADMIN_REQUEST_TTL:?set in .env}
       SNIGF_AUDIT_CHECKPOINT_CRON: ${SNIGF_AUDIT_CHECKPOINT_CRON:?set in .env}
       SNIGF_AUDIT_VERIFY_CRON: ${SNIGF_AUDIT_VERIFY_CRON:?set in .env}
       SNIGF_AUDIT_SCHEDULE_ZONE: ${SNIGF_AUDIT_SCHEDULE_ZONE:?set in .env}
@@ -365,6 +373,36 @@ services:
       - ./infra/probe/security-probe.sh:/probe/security-probe.sh:ro
     networks: [app-net]
     command: ["sh", "/probe/security-probe.sh", "segmentation"]
+
+  # --- End-to-end tests (profile "e2e") ---------------------------------------------
+
+  # Chromium against the running stack (run with infra/scripts/e2e.sh). It shares the
+  # proxy's network namespace, so the browser opens https://localhost:<SNIGF_HTTPS_PORT>,
+  # the origin WebAuthn credentials are bound to; it trusts the development CA, never
+  # ignores certificate errors, and writes only to /tmp and e2e/out.
+  e2e:
+    profiles: ["e2e"]
+    build: e2e
+    image: snigf-e2e:local
+    network_mode: "service:web"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      E2E_BASE_URL: https://${SNIGF_PUBLIC_HOSTNAME:?set in .env}:${SNIGF_HTTPS_PORT:?set in .env}
+      # The office dev-make-staff.sh assigns roles at.
+      E2E_OFFICE: DEMO1
+      HOME: /tmp/home
+    secrets:
+      - pki_ca_chain_crt
+    tmpfs:
+      - /tmp:mode=1777
+    shm_size: ${SNIGF_E2E_SHM:?set in .env}
+    volumes:
+      - ./e2e/out:/out
+    mem_limit: ${SNIGF_E2E_MEMORY:?set in .env}
+    cpus: ${SNIGF_E2E_CPUS:?set in .env}
+    pids_limit: ${SNIGF_E2E_PIDS:?set in .env}
 
 networks:
   edge: {}

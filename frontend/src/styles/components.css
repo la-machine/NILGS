@@ -1,0 +1,67 @@
+/* SNIGF/NILGS - Copyright (c) 2026 FLYT. */
+/* Author: Pythagore. */
+/* Messages, recovery codes, account cards, tags, the audit table. */
+
+.error {
+  color: #8a1c1c;
+  font-weight: 600;
+}
+
+.notice {
+  padding: 0.75rem;
+  background: #eaf4ee;
+  border-left: 4px solid #1f5c46;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.875rem;
+}
+
+.codes {
+  columns: 2;
+  font-size: 1.05rem;
+}
+
+.account {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #d9dedb;
+}
+
+.account small {
+  font-weight: 400;
+  color: #4b5550;
+}
+
+.tags span {
+  display: inline-block;
+  margin-right: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  background: #eef1ef;
+  border-radius: 1rem;
+  font-size: 0.8rem;
+}
+
+.tags span.warn {
+  background: #fbe3e3;
+  color: #8a1c1c;
+}
+
+table.events {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+table.events th,
+table.events td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid #e3e7e5;
+  text-align: left;
+  vertical-align: top;
+}
+
+table.events code {
+  word-break: break-all;
+}

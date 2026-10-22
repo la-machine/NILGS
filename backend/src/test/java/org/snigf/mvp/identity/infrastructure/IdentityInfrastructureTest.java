@@ -74,7 +74,10 @@ class IdentityInfrastructureTest {
                 new IdentityProperties.Lockout(5, Duration.ofMinutes(15)),
                 new IdentityProperties.Session(Duration.ofHours(8), sessionCookie, sameSite),
                 new IdentityProperties.Csrf(csrfCookie, "X-XSRF-TOKEN"),
-                new IdentityProperties.RateLimit(20, 10, 1000));
+                new IdentityProperties.RateLimit(20, 10, 1000),
+                new IdentityProperties.WebAuthn("localhost", "SNIGF test", java.util.List.of("https://localhost:47000"),
+                        Duration.ofMinutes(2), "none", 2, 10),
+                new IdentityProperties.Administration(Duration.ofDays(7)));
     }
 
     static final IdentityProperties SAFE = properties(19_456, 2, 12, "__Host-snigf-session", "__Host-snigf-xsrf", "Strict");
@@ -153,6 +156,51 @@ class IdentityInfrastructureTest {
                 .singleElement().asString().contains("IDLE_TIMEOUT");
         assertThat(IdentityConfigurationProbe.check(properties(1024, 1, 8, "SESSION", "XSRF", "Strict"),
                 DeploymentEnvironment.TEST, idle)).as("cheap settings allowed in tests").isEmpty();
+    }
+
+    @Test
+    void webAuthnOriginsMustMatchTheRelyingPartyAndUseHttps() {
+        Duration idle = Duration.ofMinutes(30);
+        DeploymentEnvironment prod = DeploymentEnvironment.PROD;
+        assertThat(IdentityConfigurationProbe.check(withWebAuthn("snigf.example.cm",
+                List.of("https://snigf.example.cm", "https://app.snigf.example.cm:47000"), 2), prod, idle)).isEmpty();
+        assertThat(IdentityConfigurationProbe.check(withWebAuthn("snigf.example.cm",
+                List.of("https://evil.example"), 2), prod, idle)).singleElement().asString().contains("RP_ID");
+        assertThat(IdentityConfigurationProbe.check(withWebAuthn("snigf.example.cm",
+                List.of("https://notsnigf.example.cm"), 2), prod, idle)).as("suffix, not substring")
+                .singleElement().asString().contains("RP_ID");
+        assertThat(IdentityConfigurationProbe.check(withWebAuthn("localhost",
+                List.of("http://localhost:47000"), 2), prod, idle)).singleElement().asString().contains("https");
+        assertThat(IdentityConfigurationProbe.check(withWebAuthn("localhost",
+                List.of("https://localhost:47000/path"), 2), prod, idle)).singleElement().asString().contains("scheme://host");
+        assertThat(IdentityConfigurationProbe.check(withWebAuthn("localhost",
+                List.of("https://localhost:47000"), 1), prod, idle)).singleElement().asString().contains("MIN_AUTHENTICATORS");
+        assertThat(IdentityConfigurationProbe.check(withWebAuthn("localhost",
+                List.of("http://localhost:47000"), 1), DeploymentEnvironment.TEST, idle)).isEmpty();
+    }
+
+    @Test
+    void recoveryCodeHashesAreKeyedDomainSeparatedAndVersioned() {
+        TwoVersionPepper keys = new TwoVersionPepper();
+        org.snigf.mvp.identity.infrastructure.crypto.KeyedRecoveryCodeHasher hasher =
+                new org.snigf.mvp.identity.infrastructure.crypto.KeyedRecoveryCodeHasher(keys);
+        String stored = hasher.hash("ABCDEFGHJKMNPQRS");
+
+        assertThat(stored).matches("v1:[0-9a-f]{64}");
+        assertThat(hasher.matches("ABCDEFGHJKMNPQRS", stored)).isTrue();
+        assertThat(hasher.matches("ABCDEFGHJKMNPQRT", stored)).isFalse();
+        assertThat(hasher.matches("ABCDEFGHJKMNPQRS", "garbage")).isFalse();
+        assertThat(stored.substring(3)).as("never equal to the password MAC of the same text").isNotEqualTo(
+                HexFormat.of().formatHex(keys.mac(MacKey.PASSWORD_PEPPER,
+                        "ABCDEFGHJKMNPQRS".getBytes(StandardCharsets.UTF_8)).value()));
+        keys.current = 2;
+        assertThat(hasher.matches("ABCDEFGHJKMNPQRS", stored)).as("old version still checks").isTrue();
+    }
+
+    static IdentityProperties withWebAuthn(String rpId, List<String> origins, int minAuthenticators) {
+        return new IdentityProperties(SAFE.password(), SAFE.lockout(), SAFE.session(), SAFE.csrf(), SAFE.rateLimit(),
+                new IdentityProperties.WebAuthn(rpId, "SNIGF", origins, Duration.ofMinutes(2), "none", minAuthenticators, 10),
+                SAFE.administration());
     }
 
     /** common-passwords.NOTICE.md: the bundled list cannot change unnoticed. */

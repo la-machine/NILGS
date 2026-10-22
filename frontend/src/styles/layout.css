@@ -1,0 +1,73 @@
+/* SNIGF/NILGS - Copyright (c) 2026 FLYT. */
+/* Author: Pythagore. */
+/* The frame: notice banner, header, logo, panels, form rows. */
+
+.demo-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  justify-content: center;
+  padding: 0.5rem 1rem;
+  background: var(--color-banner-bg);
+  color: var(--color-banner-text);
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+main {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2rem 1rem;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brand img {
+  flex: none;
+}
+
+/* The full logo (public/brand), above the sign-in and registration forms. */
+.brand-logo {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  /* Centred over the sign-in card (.panel, 32rem wide at most). */
+  margin: 0 0 1rem calc(min(32rem, 100%) / 2 - 120px);
+}
+
+.panel {
+  max-width: 32rem;
+  padding: 1.5rem;
+  background: #fff;
+  border: 1px solid #d9dedb;
+  border-radius: 0.5rem;
+}
+
+.panel.wide {
+  max-width: none;
+  margin-top: 1.5rem;
+}
+
+form.inline,
+form.grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.75rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+}

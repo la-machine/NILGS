@@ -44,6 +44,7 @@ The module follows ADR-021: a published API, then `domain`, `application` and
 | `shared/id/UuidV7`, `shared/web/ClientAddress` | shared | Event ids (ADR-008); the browser address, believed from the proxy only |
 | `db/migration/V3__audit.sql`, `V4__function_search_path.sql` | database | Chain trigger, append-only grants and triggers, SQL verifier, pinned `search_path` |
 | `infra/scripts/verify-checkpoint.sh` | auditor | Offline verification with bash and OpenSSL |
+| `audit/infrastructure/web/AuditController` | infrastructure | The auditor's API: search, verify, checkpoint, download ([roles guide](roles-and-administration.md#endpoints)) |
 | `compose.yml` (volume `audit-checkpoints`), `backend/Dockerfile` | runtime | Checkpoint directory, mounted into the application only |
 | `test/.../DddLayeringTest` | build | Enforces the layer rules of ADR-021 |
 
@@ -195,6 +196,7 @@ Each case must be detected at the expected position and with the expected kind.
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| A checkpoint file could be replaced by a second writer racing the first | `Files.move(..., ATOMIC_MOVE)` is a POSIX `rename()`, which silently replaces an existing target; the existence check before it left a window | Publish with `Files.createLink(target, temp)`, which fails atomically if the name exists (decision D5, `FileCheckpointArchiveTest`) |
 | `audit_verify_chain()` as `postgres`: `type "audit_event" does not exist` | The V1–V3 functions resolved names through the caller's `search_path`; pgTAP sets a path containing `snigf`, so tests never saw it | V4 pins `pg_catalog, snigf, public, pg_temp` on every function; pgTAP test 06 checks it and was proven to fail without V4 |
 | A pinned path still let a temporary table shadow a real one | PostgreSQL searches the caller's temporary schema **first** unless `pg_temp` is named in the path | Put `pg_temp` last, explicitly |
 | `dev-setup.sh`: `.env: line 88: 0: command not found` | The scripts sourced `.env` as shell code; a cron value with spaces became a command (and any line could have run code) | `dev-pki.sh` reads `SNIGF_*=value` lines as data (`load_env`) |

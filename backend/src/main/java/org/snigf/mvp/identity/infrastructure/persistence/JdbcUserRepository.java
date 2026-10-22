@@ -13,6 +13,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.snigf.mvp.identity.AccountType;
+import org.snigf.mvp.identity.RoleGrant;
 import org.snigf.mvp.identity.domain.EmailAddress;
 import org.snigf.mvp.identity.domain.LockoutPolicy;
 import org.snigf.mvp.identity.domain.UserAccount;
@@ -113,11 +114,12 @@ public class JdbcUserRepository implements UserRepository {
     }
 
     @Override
-    public Set<String> activeRoles(UUID id) {
-        return new LinkedHashSet<>(jdbc.sql(
-                        "SELECT DISTINCT role FROM role_assignment WHERE user_id = :id AND revoked_at IS NULL ORDER BY role")
+    public Set<RoleGrant> activeGrants(UUID id) {
+        return new LinkedHashSet<>(jdbc.sql("""
+                        SELECT r.role, o.code FROM role_assignment r LEFT JOIN office o ON o.id = r.office_id
+                         WHERE r.user_id = :id AND r.revoked_at IS NULL ORDER BY r.role, o.code""")
                 .param("id", id)
-                .query(String.class)
+                .query((rs, n) -> new RoleGrant(rs.getString(1), rs.getString(2)))
                 .list());
     }
 

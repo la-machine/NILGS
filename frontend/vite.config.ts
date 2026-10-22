@@ -47,6 +47,13 @@ export default defineConfig(({ command, mode }) => {
           target: `https://localhost:${required('SNIGF_APP_PORT')}`,
           secure: true,
           agent: toBackend,
+          // Like Caddy's header_up: the browser's address, overwriting any client value.
+          configure: (proxy) => {
+            const header = required('SNIGF_PROXY_CLIENT_ADDRESS_HEADER')
+            proxy.on('proxyReq', (proxyReq, req) => {
+              proxyReq.setHeader(header, req.socket.remoteAddress ?? '')
+            })
+          },
         },
       },
     },

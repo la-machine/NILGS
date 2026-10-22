@@ -19,6 +19,10 @@ wrong.
 | A module or a layer inside it | chapter 2; [ADR-021](../adr/021-ddd-layering-inside-modules.md) if the rule changes |
 | A health contributor | chapter 2 "Health contributors"; chapter 8 if it can fail |
 | An audit action | chapter 4 "Audit actions" |
+| A permission, a baseline role or a scope | `Permission.java` / `BaselineRole.java`, a migration that changes the seeded rows the same way, `docs/permission-matrix.md` (paste the tables `PermissionMatrixTest` prints), `PermissionMatrixIT.ENDPOINTS` |
+| A custom role | nothing in the repository: it is data, requested and approved in the application and audited |
+| A screen or a security journey | `e2e/tests/flows.spec.ts` and the [end-to-end guide](../guides/end-to-end-testing.md) |
+| A frontend feature, layer or rule | `frontend/src/README.md`, [chapter 10](10-frontend-architecture.md), `frontend/scripts/check-architecture.mjs` if the rule changes |
 | A startup refusal or a new error message | chapter 8 "Error catalogue" |
 | A security control | chapter 3; the probe; the guide |
 | A decision (technology, rule, trade-off) | a new ADR in `docs/adr/` and its index; a changed decision gets a new ADR that supersedes the old one |
