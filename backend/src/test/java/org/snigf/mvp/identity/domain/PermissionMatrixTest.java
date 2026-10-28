@@ -90,10 +90,22 @@ class PermissionMatrixTest {
                         "audit.checkpoint.list", "audit.checkpoint.download", "audit.key.read", "parcel.read",
                         "application.read");
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("SUPERVISOR", "DEMO2")), roles))
-                .contains("audit.event.search@DEMO2", "audit.chain.verify").doesNotContain("audit.event.search");
+                .contains("audit.event.search@DEMO2", "audit.chain.verify", "identity.reset.confirm@DEMO2")
+                .doesNotContain("audit.event.search", "identity.reset.confirm");
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("SYSTEM_ADMIN", "DEMO1")), roles))
                 .hasSize(13).allMatch(a -> a.startsWith("admin."));
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("NOT_A_ROLE", "DEMO1")), roles)).isEmpty();
+    }
+
+    @Test
+    void relativeScopesNeverCountAsEverywhere() {
+        Map<String, RoleDefinition> roles = baseline();
+        Set<String> applicant = EffectivePermissions.authorities(Set.of(new RoleGrant("APPLICANT", null)), roles);
+        assertThat(applicant).contains("parcel.read#linked", "application.read#own", "payment.pay#own")
+                .doesNotContain("parcel.read", "application.read", "payment.pay");
+        assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("REVIEWER", "DEMO1")), roles))
+                .contains("parcel.read", "application.read#assigned", "review.recommend#assigned")
+                .doesNotContain("application.read", "review.recommend");
     }
 
     @Test

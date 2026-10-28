@@ -21,7 +21,7 @@ public enum Permission {
     ADMIN_ASSIGNMENT_READ("admin.assignment.read", Family.ADMINISTRATION, false, "Read role assignment requests", "Consulter les demandes d’attribution de rôle"),
     ADMIN_ASSIGNMENT_APPROVE("admin.assignment.approve", Family.ADMINISTRATION, false, "Approve or reject role assignment requests", "Approuver ou rejeter les demandes d’attribution de rôle"),
     ADMIN_ROLE_REVOKE("admin.role.revoke", Family.ADMINISTRATION, false, "Revoke a role from a staff account", "Retirer un rôle à un compte agent"),
-    ADMIN_MFA_RESET("admin.mfa.reset", Family.ADMINISTRATION, false, "Reset a lost second factor", "Réinitialiser un deuxième facteur perdu"),
+    ADMIN_MFA_RESET("admin.mfa.reset", Family.ADMINISTRATION, false, "Request the reset of a lost second factor", "Demander la réinitialisation d’un deuxième facteur perdu"),
     ADMIN_ROLE_READ("admin.role.read", Family.ADMINISTRATION, false, "Read roles, the permission catalogue and role change requests", "Consulter les rôles, le catalogue et les demandes"),
     ADMIN_ROLE_DEFINE("admin.role.define", Family.ADMINISTRATION, false, "Request the creation, change or retirement of a role", "Demander la création, la modification ou le retrait d’un rôle"),
     ADMIN_ROLE_APPROVE("admin.role.approve", Family.ADMINISTRATION, false, "Approve or reject role change requests", "Approuver ou rejeter les demandes sur les rôles"),
@@ -54,7 +54,9 @@ public enum Permission {
     DECISION_RECORD("decision.record", Family.BUSINESS, true, "Record a decision", "Enregistrer une décision", Scope.ASSIGNED),
     REPORT_WORKLOAD("report.workload", Family.BUSINESS, true, "Read workload reports", "Consulter la charge de travail", Scope.OFFICE, Scope.ANY),
     PAYMENT_PAY("payment.pay", Family.BUSINESS, true, "Pay a fee (simulated)", "Payer des frais (simulé)", Scope.OWN),
-    PAYMENT_RECONCILE("payment.reconcile", Family.BUSINESS, true, "Reconcile payment exceptions", "Rapprocher les paiements", Scope.ANY);
+    PAYMENT_RECONCILE("payment.reconcile", Family.BUSINESS, true, "Reconcile payment exceptions", "Rapprocher les paiements", Scope.ANY),
+    /** The supervisor's in-application confirmation of a second-factor reset (ADR-028); business, so supervisors keep their audit permissions. */
+    IDENTITY_RESET_CONFIRM("identity.reset.confirm", Family.BUSINESS, false, "Confirm the identity of a person whose second factor is reset", "Confirmer l’identité d’une personne dont le deuxième facteur est réinitialisé", Scope.OFFICE);
 
     /** Families that must never meet in one role or one person (separation of duties). */
     public enum Family { ADMINISTRATION, AUDIT, BUSINESS }
@@ -97,6 +99,18 @@ public enum Permission {
     /** The authority for this permission held at one office. */
     public String at(String officeCode) {
         return code + "@" + officeCode;
+    }
+
+    /**
+     * The authority for this permission held for records related to the user only
+     * (ASSIGNED, OWN, LINKED): {@code application.read#assigned}. Never equal to the bare code,
+     * so an endpoint requiring the permission everywhere refuses it.
+     */
+    public String within(Scope scope) {
+        if (scope == Scope.ANY || scope == Scope.OFFICE) {
+            throw new IllegalArgumentException("not a relative scope: " + scope);
+        }
+        return code + "#" + scope.name().toLowerCase(java.util.Locale.ROOT);
     }
 
     public Family family() {

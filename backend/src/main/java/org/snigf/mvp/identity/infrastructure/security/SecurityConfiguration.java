@@ -20,7 +20,8 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
  *
  * <ul>
  *   <li><b>Default deny.</b> Health and info, the CSRF token, login and registration are
- *       public; the session view, logout and second-factor endpoints need any authenticated
+ *       public, and so are the payment provider's callbacks, which carry no session and are
+ *       authenticated by the proxy's provider listener and their signature (ADR-037); the session view, logout and second-factor endpoints need any authenticated
  *       session (the service checks the level); everything else
  *       under {@code /api/v1} needs a fully authenticated session ({@link AuthLevel#FULL})
  *       and, per method, its permission ({@code @PreAuthorize}); anything else is denied.</li>
@@ -29,7 +30,8 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
  *       Basic, no remember-me.</li>
  *   <li><b>CSRF</b> on every state-changing call, including login (login CSRF): Spring's
  *       single-page-application mode, the token in a {@code __Host-} cookie the browser
- *       script reads and echoes in a header.</li>
+ *       script reads and echoes in a header. Provider callbacks are not browser calls and are
+ *       exempt.</li>
  *   <li><b>Errors</b>: 401 {@code AUTH_REQUIRED} without a session, 403 {@code ACCESS_DENIED}
  *       or {@code CSRF_INVALID} otherwise; refusals of authenticated users are audited.</li>
  * </ul>
@@ -39,6 +41,8 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 public class SecurityConfiguration {
 
     public static final String API = "/api/v1";
+    /** Provider callbacks (ADR-037): no session, no CSRF token; the proxy and the signature authenticate them. */
+    static final String PROVIDER_CALLBACKS = API + "/payments/callbacks/**";
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, SessionSecurityContextRepository contexts,
@@ -47,11 +51,13 @@ public class SecurityConfiguration {
         http
             .securityContext(context -> context.securityContextRepository(contexts))
             .requestCache(cache -> cache.disable())
-            .csrf(csrf -> csrf.spa().csrfTokenRepository(csrfTokens))
+            .csrf(csrf -> csrf.spa().csrfTokenRepository(csrfTokens)
+                .ignoringRequestMatchers(PROVIDER_CALLBACKS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                 .requestMatchers(HttpMethod.GET, API + "/auth/csrf").permitAll()
                 .requestMatchers(HttpMethod.POST, API + "/auth/login", API + "/auth/register").permitAll()
+                .requestMatchers(HttpMethod.POST, PROVIDER_CALLBACKS).permitAll()
                 .requestMatchers(API + "/auth/session", API + "/auth/logout", API + "/auth/mfa/**").authenticated()
                 .requestMatchers(API + "/**").hasAuthority(AuthLevel.FULL.authority())
                 .anyRequest().denyAll())

@@ -47,6 +47,7 @@ fi
 : "${SNIGF_PKI_RENEW_BEFORE_DAYS:?set in .env}" "${SNIGF_PUBLIC_HOSTNAME:?set in .env}"
 : "${SNIGF_PROXY_CLIENT_CN:?set in .env}" "${SNIGF_BAO_APP_CLIENT_CN:?set in .env}"
 : "${SNIGF_BAO_ADMIN_CLIENT_CN:?set in .env}" "${SNIGF_BAO_HEALTH_CLIENT_CN:?set in .env}"
+: "${SNIGF_PAYMENT_SIM_CLIENT_CN:?set in .env}" "${SNIGF_PAYMENT_APP_CLIENT_CN:?set in .env}"
 
 ROTATE=false
 [[ "${1:-}" == "--rotate" ]] && ROTATE=true
@@ -145,6 +146,13 @@ issue bao_tls            server openbao "DNS:openbao,DNS:localhost,IP:127.0.0.1"
 issue app_bao_client     client "$SNIGF_BAO_APP_CLIENT_CN"
 issue bao_admin_client   client "$SNIGF_BAO_ADMIN_CLIENT_CN"
 issue bao_health_client  client "$SNIGF_BAO_HEALTH_CLIENT_CN"
+# Simulated payment (ADR-037): the proxy's provider listener ("web" on provider-in); the
+# simulator's server identity and its client identity (towards the proxy and OpenBao); the
+# application's identity towards the simulator.
+issue web_provider_tls     server web         "DNS:web"
+issue payment_sim_tls      server payment-sim "DNS:payment-sim,DNS:localhost,IP:127.0.0.1"
+issue payment_sim_client   client "$SNIGF_PAYMENT_SIM_CLIENT_CN"
+issue app_provider_client  client "$SNIGF_PAYMENT_APP_CLIENT_CN"
 
 # Docker Compose (outside Swarm) mounts secret files with their host permissions, so
 # containers running as non-root users must be able to read them. The directory itself

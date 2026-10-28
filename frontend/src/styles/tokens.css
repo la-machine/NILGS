@@ -1,14 +1,141 @@
 /* SNIGF/NILGS - Copyright (c) 2026 FLYT. */
 /* Author: Pythagore. */
-/* Colours and typography: change the look here. */
+/* Design tokens: every colour, size and duration of the interface is named here, and
+   components use the names. The palette comes from the SNIGF logo: forest green as the
+   institutional anchor, warm neutrals, the gold of the flag used sparingly. */
 
 :root {
-  --color-text: #1b1f1d;
-  --color-bg: #f7f8f7;
-  --color-banner-bg: #fff4d6;
+  /* Brand */
+  --green-950: #0b2a1c;
+  --green-900: #0f3a27;
+  --green-800: #154d34;
+  --green-700: #1b6142;
+  --green-600: #237a53;
+  --green-100: #e3efe8;
+  --green-50: #f1f7f3;
+  --gold-600: #b7860b;
+  --gold-100: #fbf1d6;
+
+  /* Neutrals (warm grey) */
+  --grey-950: #171a18;
+  --grey-800: #2f3532;
+  --grey-700: #46504b;
+  --grey-600: #5d6762;
+  --grey-500: #7b847f;
+  --grey-300: #c8cec9;
+  --grey-200: #dfe3df;
+  --grey-100: #eef0ed;
+  --grey-50: #f7f8f6;
+  --white: #ffffff;
+
+  /* Semantic */
+  --color-text: var(--grey-950);
+  --color-text-muted: var(--grey-600);
+  --color-text-inverse: var(--white);
+  --color-bg: var(--grey-50);
+  --color-surface: var(--white);
+  --color-surface-sunken: var(--grey-100);
+  --color-border: var(--grey-200);
+  --color-border-strong: var(--grey-300);
+  --color-primary: var(--green-700);
+  --color-primary-hover: var(--green-800);
+  --color-primary-soft: var(--green-50);
+  --color-accent: var(--gold-600);
+  --color-focus: #2563a8;
+
+  --color-success: #1d6b3f;
+  --color-success-soft: #e4f2e9;
+  --color-info: #1f5582;
+  --color-info-soft: #e5eef6;
+  --color-warning: #8a5a00;
+  --color-warning-soft: #fdf2d8;
+  --color-danger: #a12a24;
+  --color-danger-hover: #841f1a;
+  --color-danger-soft: #fbe9e7;
+
+  --color-sidebar: var(--green-950);
+  --color-sidebar-text: #c9dbd1;
+  --color-sidebar-active: rgba(255, 255, 255, 0.1);
+
+  --color-banner-bg: var(--gold-100);
   --color-banner-text: #5c4300;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.5;
+
+  /* Map */
+  --map-paper: #fcfcfb;
+  --map-grid: #e3e7e4;
+  --map-grid-label: #7b847f;
+  --map-parcel: #c2410c;
+  --map-parcel-fill: rgba(194, 65, 12, 0.12);
+  --map-measure: #1f5582;
+  /* Alert review: the two compared parcels and what they share */
+  --map-alert-a: #1f5582;
+  --map-alert-a-fill: rgba(31, 85, 130, 0.14);
+  --map-alert-b: #6b3fa0;
+  --map-alert-b-fill: rgba(107, 63, 160, 0.14);
+  --map-overlap: #a12a24;
+  /* Paper: printed decisions */
+  --print-ink: #000000;
+  --print-paper: #ffffff;
+  --print-rule: #999999;
+  --map-overlap-fill: rgba(161, 42, 36, 0.12);
+
+  /* Typography: the system's own interface font, with tabular figures for numbers */
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Roboto, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-md: 1.0625rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 1.875rem;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --leading-tight: 1.25;
+  --leading: 1.5;
+
+  /* Space (4 px scale) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  /* Shape and elevation */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+  --radius-full: 999px;
+  --shadow-sm: 0 1px 2px rgba(16, 24, 20, 0.06);
+  --shadow: 0 1px 3px rgba(16, 24, 20, 0.08), 0 1px 2px rgba(16, 24, 20, 0.04);
+  --shadow-lg: 0 12px 32px rgba(16, 24, 20, 0.16), 0 2px 6px rgba(16, 24, 20, 0.08);
+
+  /* Layout */
+  --sidebar-width: 16rem;
+  --topbar-height: 3.75rem;
+  --content-max: 82rem;
+  --control-height: 2.375rem;
+
+  /* Motion */
+  --duration: 140ms;
+  --easing: cubic-bezier(0.2, 0, 0, 1);
+
+  font-family: var(--font-sans);
+  font-size: 100%;
+  line-height: var(--leading);
   color: var(--color-text);
   background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration: 0ms;
+  }
 }

@@ -14,6 +14,9 @@
 #   * Networks: edge (published proxy port), app-net (web ↔ app), data-net (app, migrate ↔ db),
 #     key-net (app, bao-init ↔ openbao). All but edge are internal (no internet). The proxy
 #     reaches neither the database nor OpenBao.
+#   * The DEMO payment simulator (ADR-037) has three peers, one network each: provider-out
+#     (app → payment-sim, charges), provider-in (payment-sim → web's provider listener,
+#     callbacks) and provider-key (payment-sim → openbao, HMAC only). No real money moves.
 #   * Keys live in OpenBao (ADR-018): the app signs, wraps data keys and computes HMACs
 #     there over mutual TLS and never holds a long-term key.
 #   * Containers: read-only root filesystem, all capabilities dropped, no-new-privileges,
@@ -24,6 +27,8 @@
 name: snigf
 
 x-postgis-image: &postgis-image postgis/postgis:18-3.6@sha256:b4466ea2ba7e3af54fcbba996d45325720f4b3ecb4f43f99b2f41367dc196f23
+# Map tools (ADR-029, profile "maps"); GDAL and go-pmtiles are pinned in infra/maps/Dockerfile.
+x-planetiler-image: &planetiler-image ghcr.io/onthegomap/planetiler:0.10.2@sha256:cf32202dbc001a9ab4bc11534b642b13de3798179817da8558e567a3d13dd403
 
 # Key custody settings shared by the provisioning job and the application (ADR-018).
 x-key-names: &key-names
@@ -145,7 +150,7 @@ services:
     tmpfs:
       - /run/snigf-bao:uid=100,gid=1000,mode=0700
       - /tmp
-    networks: [key-net]
+    networks: [key-net, provider-key]
     mem_limit: ${SNIGF_BAO_MEMORY:?set in .env}
     cpus: ${SNIGF_BAO_CPUS:?set in .env}
     pids_limit: ${SNIGF_BAO_PIDS:?set in .env}
@@ -179,6 +184,8 @@ services:
       SNIGF_KEY_ROTATE_SIGNING: ${SNIGF_KEY_ROTATE_SIGNING:?set in .env}
       SNIGF_KEY_ROTATE_DATA_ENCRYPTION: ${SNIGF_KEY_ROTATE_DATA_ENCRYPTION:?set in .env}
       SNIGF_KEY_ROTATE_PAYMENT_CALLBACK: ${SNIGF_KEY_ROTATE_PAYMENT_CALLBACK:?set in .env}
+      SNIGF_BAO_PAYMENT_SIM_ROLE: ${SNIGF_BAO_PAYMENT_SIM_ROLE:?set in .env}
+      SNIGF_PAYMENT_SIM_CLIENT_CN: ${SNIGF_PAYMENT_SIM_CLIENT_CN:?set in .env}
     secrets:
       - pki_ca_chain_crt
       - bao_admin_client_crt
@@ -239,6 +246,44 @@ services:
       SNIGF_WEBAUTHN_MIN_AUTHENTICATORS: ${SNIGF_WEBAUTHN_MIN_AUTHENTICATORS:?set in .env}
       SNIGF_MFA_RECOVERY_CODES: ${SNIGF_MFA_RECOVERY_CODES:?set in .env}
       SNIGF_ADMIN_REQUEST_TTL: ${SNIGF_ADMIN_REQUEST_TTL:?set in .env}
+      SNIGF_PARCEL_REFERENCE_ZONE: ${SNIGF_PARCEL_REFERENCE_ZONE:?set in .env}
+      SNIGF_PARCEL_PAGE_SIZE: ${SNIGF_PARCEL_PAGE_SIZE:?set in .env}
+      SNIGF_CONFLICT_MIN_OVERLAP_M2: ${SNIGF_CONFLICT_MIN_OVERLAP_M2:?set in .env}
+      SNIGF_CONFLICT_DUPLICATE_SHARE: ${SNIGF_CONFLICT_DUPLICATE_SHARE:?set in .env}
+      SNIGF_APPLICATION_TYPES: ${SNIGF_APPLICATION_TYPES:?set in .env}
+      SNIGF_APPLICATION_REFERENCE_ZONE: ${SNIGF_APPLICATION_REFERENCE_ZONE:?set in .env}
+      SNIGF_APPLICATION_PAGE_SIZE: ${SNIGF_APPLICATION_PAGE_SIZE:?set in .env}
+      SNIGF_APPLICATION_MAX_DRAFTS: ${SNIGF_APPLICATION_MAX_DRAFTS:?set in .env}
+      SNIGF_REPORTING_TARGET_COMPLETENESS_REVIEW: ${SNIGF_REPORTING_TARGET_COMPLETENESS_REVIEW:?set in .env}
+      SNIGF_REPORTING_TARGET_INFO_REQUESTED: ${SNIGF_REPORTING_TARGET_INFO_REQUESTED:?set in .env}
+      SNIGF_REPORTING_TARGET_UNDER_REVIEW: ${SNIGF_REPORTING_TARGET_UNDER_REVIEW:?set in .env}
+      SNIGF_REPORTING_TARGET_PENDING_DECISION: ${SNIGF_REPORTING_TARGET_PENDING_DECISION:?set in .env}
+      SNIGF_REPORTING_DURATION_WINDOW: ${SNIGF_REPORTING_DURATION_WINDOW:?set in .env}
+      SNIGF_REPORTING_PAGE_SIZE: ${SNIGF_REPORTING_PAGE_SIZE:?set in .env}
+      # Simulated payment (ADR-037): no real money moves.
+      SNIGF_PAYMENT_FEES: ${SNIGF_PAYMENT_FEES:?set in .env}
+      SNIGF_PAYMENT_REQUIRED_BEFORE_ACCEPTANCE: ${SNIGF_PAYMENT_REQUIRED_BEFORE_ACCEPTANCE:?set in .env}
+      SNIGF_PAYMENT_PENDING_TTL: ${SNIGF_PAYMENT_PENDING_TTL:?set in .env}
+      SNIGF_PAYMENT_PROVIDER: ${SNIGF_PAYMENT_PROVIDER:?set in .env}
+      SNIGF_PAYMENT_CALLBACK_MAX_SKEW: ${SNIGF_PAYMENT_CALLBACK_MAX_SKEW:?set in .env}
+      SNIGF_PAYMENT_PROVIDER_CLIENT_CNS: ${SNIGF_PAYMENT_PROVIDER_CLIENT_CNS:?set in .env}
+      SNIGF_PROXY_PROVIDER_CLIENT_HEADER: ${SNIGF_PROXY_PROVIDER_CLIENT_HEADER:?set in .env}
+      SNIGF_PAYMENT_EXPIRY_CRON: ${SNIGF_PAYMENT_EXPIRY_CRON:?set in .env}
+      SNIGF_PAYMENT_PAGE_SIZE: ${SNIGF_PAYMENT_PAGE_SIZE:?set in .env}
+      SNIGF_PAYMENT_SIMULATOR_URL: https://payment-sim:${SNIGF_PAYMENT_SIM_PORT:?set in .env}
+      SNIGF_PAYMENT_SIMULATOR_CONNECT_TIMEOUT: ${SNIGF_PAYMENT_SIMULATOR_CONNECT_TIMEOUT:?set in .env}
+      SNIGF_PAYMENT_SIMULATOR_REQUEST_TIMEOUT: ${SNIGF_PAYMENT_SIMULATOR_REQUEST_TIMEOUT:?set in .env}
+      # Documents (ADR-033): the volume document-data, mounted into the app only.
+      SNIGF_DOCUMENT_DIRECTORY: /var/lib/snigf/documents
+      SNIGF_DOCUMENT_MAX_BYTES: ${SNIGF_DOCUMENT_MAX_BYTES:?set in .env}
+      SNIGF_DOCUMENT_MAX_VERSIONS: ${SNIGF_DOCUMENT_MAX_VERSIONS:?set in .env}
+      SNIGF_DOCUMENT_MAX_PIXELS: ${SNIGF_DOCUMENT_MAX_PIXELS:?set in .env}
+      SNIGF_DOCUMENT_ORPHAN_GRACE: ${SNIGF_DOCUMENT_ORPHAN_GRACE:?set in .env}
+      SNIGF_DOCUMENT_CLEANUP_CRON: ${SNIGF_DOCUMENT_CLEANUP_CRON:?set in .env}
+      SNIGF_PROXY_MAX_BODY_BYTES: ${SNIGF_PROXY_MAX_BODY_BYTES:?set in .env}
+      # Map data: the read-only volume map-data (ADR-029), filled by the maps tools.
+      SNIGF_MAP_DATA_DIRECTORY: /maps
+      SNIGF_MAP_EXTERNAL_PROVIDERS: ${SNIGF_MAP_EXTERNAL_PROVIDERS:?set in .env}
       SNIGF_AUDIT_CHECKPOINT_CRON: ${SNIGF_AUDIT_CHECKPOINT_CRON:?set in .env}
       SNIGF_AUDIT_VERIFY_CRON: ${SNIGF_AUDIT_VERIFY_CRON:?set in .env}
       SNIGF_AUDIT_SCHEDULE_ZONE: ${SNIGF_AUDIT_SCHEDULE_ZONE:?set in .env}
@@ -254,6 +299,8 @@ services:
       - app_tls_key
       - app_bao_client_crt
       - app_bao_client_key
+      - app_provider_client_crt
+      - app_provider_client_key
       - pki_ca_chain_crt
     tmpfs:
       - /tmp
@@ -262,7 +309,11 @@ services:
     # database container, so whoever controls the database cannot rewrite them.
     volumes:
       - audit-checkpoints:/var/lib/snigf/audit-checkpoints
-    networks: [app-net, data-net, key-net]
+      # Map data (ADR-029): read-only for the application; written only by the maps tools.
+      - map-data:/maps:ro
+      # Documents (ADR-033): the application's alone; no other container mounts it.
+      - document-data:/var/lib/snigf/documents
+    networks: [app-net, data-net, key-net, provider-out]
     mem_limit: ${SNIGF_APP_MEMORY:?set in .env}
     cpus: ${SNIGF_APP_CPUS:?set in .env}
     pids_limit: ${SNIGF_APP_PIDS:?set in .env}
@@ -282,21 +333,68 @@ services:
       SNIGF_HTTPS_PORT: ${SNIGF_HTTPS_PORT:?set in .env}
       SNIGF_APP_PORT: ${SNIGF_APP_PORT:?set in .env}
       SNIGF_PROXY_CLIENT_ADDRESS_HEADER: ${SNIGF_PROXY_CLIENT_ADDRESS_HEADER:?set in .env}
+      SNIGF_PROXY_MAX_BODY_BYTES: ${SNIGF_PROXY_MAX_BODY_BYTES:?set in .env}
+      SNIGF_PROVIDER_CALLBACK_PORT: ${SNIGF_PROVIDER_CALLBACK_PORT:?set in .env}
+      SNIGF_PROXY_PROVIDER_CLIENT_HEADER: ${SNIGF_PROXY_PROVIDER_CLIENT_HEADER:?set in .env}
     secrets:
       - web_tls_crt
       - web_tls_key
       - web_client_crt
       - web_client_key
+      - web_provider_tls_crt
+      - web_provider_tls_key
       - pki_ca_chain_crt
     tmpfs:
       - /data:uid=10002,gid=10002,mode=0700
       - /config:uid=10002,gid=10002,mode=0700
     ports:
       - "127.0.0.1:${SNIGF_HTTPS_PORT:?set in .env}:${SNIGF_HTTPS_PORT:?set in .env}"
-    networks: [edge, app-net]
+    networks: [edge, app-net, provider-in]
     mem_limit: ${SNIGF_WEB_MEMORY:?set in .env}
     cpus: ${SNIGF_WEB_CPUS:?set in .env}
     pids_limit: ${SNIGF_WEB_PIDS:?set in .env}
+
+  # DEMO payment simulator (ADR-037). NO REAL MONEY MOVES. Takes charges from the app only
+  # (mutual TLS, the app's provider-client certificate), signs callbacks with the callback key
+  # inside OpenBao (its own login, HMAC only) and sends them through the proxy's provider
+  # listener. It never reaches the database; the app, which calls it on provider-out, refuses
+  # its certificate (only the proxy's is admitted), so callbacks come in through the proxy only.
+  payment-sim:
+    <<: *hardened
+    build: infra/payment-sim
+    image: snigf-payment-sim:local
+    depends_on:
+      bao-init:
+        condition: service_completed_successfully
+      openbao:
+        condition: service_healthy
+    environment:
+      SNIGF_PAYMENT_SIM_PORT: ${SNIGF_PAYMENT_SIM_PORT:?set in .env}
+      SNIGF_PAYMENT_APP_CLIENT_CN: ${SNIGF_PAYMENT_APP_CLIENT_CN:?set in .env}
+      SNIGF_PAYMENT_SIM_CALLBACK_URL: https://web:${SNIGF_PROVIDER_CALLBACK_PORT:?set in .env}/api/v1/payments/callbacks/demo-simulator
+      SNIGF_PAYMENT_SIM_CALLBACK_DELAY_MS: ${SNIGF_PAYMENT_SIM_CALLBACK_DELAY_MS:?set in .env}
+      SNIGF_BAO_URL: https://openbao:${SNIGF_BAO_PORT:?set in .env}
+      SNIGF_BAO_AUTH_MOUNT: ${SNIGF_BAO_AUTH_MOUNT:?set in .env}
+      SNIGF_BAO_PAYMENT_SIM_ROLE: ${SNIGF_BAO_PAYMENT_SIM_ROLE:?set in .env}
+      SNIGF_BAO_TRANSIT_MOUNT: ${SNIGF_BAO_TRANSIT_MOUNT:?set in .env}
+      SNIGF_KEY_PAYMENT_CALLBACK: ${SNIGF_KEY_PAYMENT_CALLBACK:?set in .env}
+    secrets:
+      - payment_sim_tls_crt
+      - payment_sim_tls_key
+      - payment_sim_client_crt
+      - payment_sim_client_key
+      - pki_ca_chain_crt
+    tmpfs:
+      - /tmp
+    networks: [provider-out, provider-in, provider-key]
+    mem_limit: ${SNIGF_PAYMENT_SIM_MEMORY:?set in .env}
+    cpus: ${SNIGF_PAYMENT_SIM_CPUS:?set in .env}
+    pids_limit: ${SNIGF_PAYMENT_SIM_PIDS:?set in .env}
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('net').connect(Number(process.env.SNIGF_PAYMENT_SIM_PORT),'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   # --- Test harnesses (profile "test") --------------------------------------------
 
@@ -341,12 +439,17 @@ services:
       SNIGF_KEY_PASSWORD_PEPPER: ${SNIGF_KEY_PASSWORD_PEPPER:?set in .env}
       SNIGF_CSRF_COOKIE_NAME: ${SNIGF_CSRF_COOKIE_NAME:?set in .env}
       SNIGF_CSRF_HEADER_NAME: ${SNIGF_CSRF_HEADER_NAME:?set in .env}
+      SNIGF_PROVIDER_CALLBACK_PORT: ${SNIGF_PROVIDER_CALLBACK_PORT:?set in .env}
+      SNIGF_BAO_PAYMENT_SIM_ROLE: ${SNIGF_BAO_PAYMENT_SIM_ROLE:?set in .env}
+      SNIGF_KEY_PAYMENT_CALLBACK: ${SNIGF_KEY_PAYMENT_CALLBACK:?set in .env}
     secrets:
       - pki_ca_chain_crt
       - app_bao_client_crt
       - app_bao_client_key
       - web_client_crt
       - web_client_key
+      - payment_sim_client_crt
+      - payment_sim_client_key
       - db_app_password
       - app_db_client_crt
       - app_db_client_key
@@ -356,7 +459,7 @@ services:
       - ./infra/probe/security-probe.sh:/probe/security-probe.sh:ro
     tmpfs:
       - /tmp
-    networks: [app-net, data-net, key-net]
+    networks: [app-net, data-net, key-net, provider-in]
     command: ["sh", "/probe/security-probe.sh"]
 
   # Runs on app-net only, like the proxy, and must not reach the database.
@@ -404,13 +507,141 @@ services:
     cpus: ${SNIGF_E2E_CPUS:?set in .env}
     pids_limit: ${SNIGF_E2E_PIDS:?set in .env}
 
+  # --- Map data tools (profile "maps", ADR-029) ---------------------------------------
+  # Throwaway jobs run by infra/scripts/maps-*.sh, never part of the running stack. Only the
+  # two fetch jobs have a network, and they write only the sources volume; building and
+  # importing run without network; maps-install alone writes map-data. Volumes are mounted
+  # with nocopy: an empty volume must keep the owner maps-install gave it, not the image's.
+
+  maps-tools:
+    profiles: ["maps"]
+    build: infra/maps
+    image: snigf-maps-tools:local
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: none
+    volumes:
+      - {type: volume, source: map-sources, target: /sources, read_only: true, volume: {nocopy: true}}
+      - {type: volume, source: map-work, target: /work, volume: {nocopy: true}}
+      - ${SNIGF_MAPS_IMPORT_DIRECTORY:?set in .env}:/import:ro
+    tmpfs:
+      - /tmp
+    mem_limit: ${SNIGF_MAPS_MEMORY:?set in .env}
+    cpus: ${SNIGF_MAPS_CPUS:?set in .env}
+    pids_limit: ${SNIGF_MAPS_PIDS:?set in .env}
+
+  # Downloads the label glyph archive (pinned by SHA-256) into the sources volume.
+  maps-fetch:
+    profiles: ["maps"]
+    image: snigf-maps-tools:local
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      SNIGF_MAPS_FONTS_URL: ${SNIGF_MAPS_FONTS_URL:?set in .env}
+      SNIGF_MAPS_FONTS_SHA256: ${SNIGF_MAPS_FONTS_SHA256:?set in .env}
+      SNIGF_MAPS_SATELLITE_COUNTRY: ${SNIGF_MAPS_SATELLITE_COUNTRY:?set in .env}
+      SNIGF_MAPS_SATELLITE_BUFFER_KM: ${SNIGF_MAPS_SATELLITE_BUFFER_KM:?set in .env}
+      SNIGF_MAPS_SATELLITE_FIRST_PLACES: ${SNIGF_MAPS_SATELLITE_FIRST_PLACES-}
+      SNIGF_MAPS_SENTINEL_STAC_URL: ${SNIGF_MAPS_SENTINEL_STAC_URL:?set in .env}
+      SNIGF_MAPS_SENTINEL_TOKEN_URL: ${SNIGF_MAPS_SENTINEL_TOKEN_URL-}
+      SNIGF_MAPS_SENTINEL_FROM: ${SNIGF_MAPS_SENTINEL_FROM:?set in .env}
+      SNIGF_MAPS_SENTINEL_TO: ${SNIGF_MAPS_SENTINEL_TO-}
+      SNIGF_MAPS_SENTINEL_MAX_CLOUD: ${SNIGF_MAPS_SENTINEL_MAX_CLOUD:?set in .env}
+      SNIGF_MAPS_SENTINEL_MAX_SCENES: ${SNIGF_MAPS_SENTINEL_MAX_SCENES:?set in .env}
+      SNIGF_MAPS_SENTINEL_TILES: ${SNIGF_MAPS_SENTINEL_TILES-}
+      SNIGF_MAPS_AERIAL_CATALOGUE_URL: ${SNIGF_MAPS_AERIAL_CATALOGUE_URL:?set in .env}
+      SNIGF_MAPS_AERIAL_IMAGES: ${SNIGF_MAPS_AERIAL_IMAGES-}
+      SNIGF_MAPS_AERIAL_LICENCES: ${SNIGF_MAPS_AERIAL_LICENCES:?set in .env}
+    volumes:
+      - {type: volume, source: map-sources, target: /sources, volume: {nocopy: true}}
+    tmpfs:
+      - /tmp
+    networks: [maps-egress]
+    mem_limit: ${SNIGF_MAPS_MEMORY:?set in .env}
+    cpus: ${SNIGF_MAPS_CPUS:?set in .env}
+    pids_limit: ${SNIGF_MAPS_PIDS:?set in .env}
+
+  # Planetiler downloads the OpenStreetMap extract, water polygons and Natural Earth.
+  planetiler-fetch:
+    profiles: ["maps"]
+    image: *planetiler-image
+    user: "10003:10003"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx${SNIGF_MAPS_JAVA_HEAP:?set in .env}
+    # Planetiler writes data/tmp relative to its working directory.
+    working_dir: /sources
+    volumes:
+      - {type: volume, source: map-sources, target: /sources, volume: {nocopy: true}}
+    tmpfs:
+      - /tmp
+    networks: [maps-egress]
+    mem_limit: ${SNIGF_MAPS_MEMORY:?set in .env}
+    cpus: ${SNIGF_MAPS_CPUS:?set in .env}
+    pids_limit: ${SNIGF_MAPS_PIDS:?set in .env}
+
+  # Planetiler builds the vector tiles (OpenMapTiles schema) offline from those sources.
+  planetiler:
+    profiles: ["maps"]
+    image: *planetiler-image
+    user: "10003:10003"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: none
+    environment:
+      # SQLite (Natural Earth) unpacks a native library: into the build volume, since /tmp is
+      # mounted without execute rights.
+      JAVA_TOOL_OPTIONS: -Xmx${SNIGF_MAPS_JAVA_HEAP:?set in .env} -Dorg.sqlite.tmpdir=/work/tmp
+    working_dir: /work
+    volumes:
+      - {type: volume, source: map-sources, target: /sources, read_only: true, volume: {nocopy: true}}
+      - {type: volume, source: map-work, target: /work, volume: {nocopy: true}}
+    tmpfs:
+      - /tmp
+    mem_limit: ${SNIGF_MAPS_MEMORY:?set in .env}
+    cpus: ${SNIGF_MAPS_CPUS:?set in .env}
+    pids_limit: ${SNIGF_MAPS_PIDS:?set in .env}
+
+  # The only writer of map-data: publishes a staged directory (infra/maps/install.sh).
+  maps-install:
+    profiles: ["maps"]
+    image: snigf-maps-tools:local
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: none
+    volumes:
+      - {type: volume, source: map-sources, target: /sources, volume: {nocopy: true}}
+      - {type: volume, source: map-work, target: /work, volume: {nocopy: true}}
+      - {type: volume, source: map-data, target: /maps, volume: {nocopy: true}}
+    entrypoint: ["bash", "/opt/snigf-maps/install.sh"]
+    mem_limit: ${SNIGF_MAPS_MEMORY:?set in .env}
+    cpus: ${SNIGF_MAPS_CPUS:?set in .env}
+    pids_limit: ${SNIGF_MAPS_PIDS:?set in .env}
+
 networks:
   edge: {}
+  # Internet access for the map fetch jobs only (profile "maps").
+  maps-egress: {}
   app-net:
     internal: true
   data-net:
     internal: true
   key-net:
+    internal: true
+  # DEMO payment simulator (ADR-037): one network per peer.
+  provider-out:
+    internal: true
+  provider-in:
+    internal: true
+  provider-key:
     internal: true
 
 secrets:
@@ -441,6 +672,14 @@ secrets:
   bao_admin_client_key:       {file: ./infra/secrets/bao_admin_client_key}
   bao_health_client_crt:      {file: ./infra/secrets/bao_health_client_crt}
   bao_health_client_key:      {file: ./infra/secrets/bao_health_client_key}
+  web_provider_tls_crt:       {file: ./infra/secrets/web_provider_tls_crt}
+  web_provider_tls_key:       {file: ./infra/secrets/web_provider_tls_key}
+  payment_sim_tls_crt:        {file: ./infra/secrets/payment_sim_tls_crt}
+  payment_sim_tls_key:        {file: ./infra/secrets/payment_sim_tls_key}
+  payment_sim_client_crt:     {file: ./infra/secrets/payment_sim_client_crt}
+  payment_sim_client_key:     {file: ./infra/secrets/payment_sim_client_key}
+  app_provider_client_crt:    {file: ./infra/secrets/app_provider_client_crt}
+  app_provider_client_key:    {file: ./infra/secrets/app_provider_client_key}
 
 volumes:
   db-data:
@@ -448,3 +687,7 @@ volumes:
   bao-audit:     # OpenBao audit log
   bao-keys:      # development custody of the unseal shares (ADR-018)
   audit-checkpoints:  # signed audit checkpoint files; the auditor copies them off-host (ADR-007)
+  document-data: # uploaded document files under random keys (ADR-033), mounted into the app only
+  map-data:      # map tile archives and manifests (ADR-029), written only by maps-install
+  map-sources:   # downloaded map sources (OSM extract, water polygons, glyphs), profile "maps"
+  map-work:      # map build workspace and staged archives, profile "maps"

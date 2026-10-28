@@ -42,8 +42,9 @@ and all recovery codes, and that identity verification, audit logging and separa
 duties are confirmed. The procedure, what the system enforces, what remains procedural,
 and the evidence are in
 [chapter 8, account recovery procedure](../technical/08-operations-and-troubleshooting.md#account-recovery-procedure).
-Two gaps found by that verification are listed there and must be closed or accepted
-before go-live.
+The two gaps found by that verification (lost keys stayed registered; the identity
+confirmation was free text) are closed by
+[ADR-028](028-key-removal-and-supervised-reset.md).
 
 ## Alternatives considered
 

@@ -9,8 +9,8 @@ The files in `public/brand/` are derived from it so that pages load little:
 
 | File | Size | Used for |
 | --- | --- | --- |
-| `snigf-logo-480.png` | full logo, 480 px wide, 256-colour palette (about 27 KB) | sign-in and registration screens, shown at 240 px |
-| `snigf-emblem-96.png` | the circular emblem without lettering, 96 px | header, shown at 48 px |
+| `snigf-logo-480.png` | full logo, 480 px wide, 256-colour palette (about 27 KB) | the institution side of the sign-in screens, shown at 168 px on a white tile (72 px on small screens) |
+| `snigf-emblem-96.png` | the circular emblem without lettering, 96 px | the sidebar of the signed-in shell, shown at 36 px on a white disc |
 | `favicon-32.png`, `favicon-64.png` | emblem | browser tab |
 | `apple-touch-icon-180.png` | emblem on white | home-screen icon |
 

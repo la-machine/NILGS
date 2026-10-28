@@ -35,6 +35,7 @@ import static org.snigf.mvp.shared.security.Permission.AUDIT_CHECKPOINT_LIST;
 import static org.snigf.mvp.shared.security.Permission.AUDIT_EVENT_SEARCH;
 import static org.snigf.mvp.shared.security.Permission.AUDIT_KEY_READ;
 import static org.snigf.mvp.shared.security.Permission.COMPLETENESS_REQUEST_INFO;
+import static org.snigf.mvp.shared.security.Permission.IDENTITY_RESET_CONFIRM;
 import static org.snigf.mvp.shared.security.Permission.COMPLETENESS_REVIEW;
 import static org.snigf.mvp.shared.security.Permission.DECISION_RECORD;
 import static org.snigf.mvp.shared.security.Permission.PARCEL_CORRECT;
@@ -70,7 +71,7 @@ public enum BaselineRole {
             PARCEL_READ, Scope.ANY, APPLICATION_READ, Scope.ASSIGNED, DECISION_RECORD, Scope.ASSIGNED)),
     SUPERVISOR("Superviseur", "Supervisor", entries(
             PARCEL_READ, Scope.ANY, APPLICATION_READ, Scope.OFFICE, REPORT_WORKLOAD, Scope.OFFICE,
-            AUDIT_EVENT_SEARCH, Scope.OFFICE, AUDIT_CHAIN_VERIFY, Scope.ANY)),
+            AUDIT_EVENT_SEARCH, Scope.OFFICE, AUDIT_CHAIN_VERIFY, Scope.ANY, IDENTITY_RESET_CONFIRM, Scope.OFFICE)),
     AUDITOR("Auditeur", "Auditor", entries(
             PARCEL_READ, Scope.ANY, APPLICATION_READ, Scope.ANY,
             AUDIT_EVENT_SEARCH, Scope.ANY, AUDIT_CHAIN_VERIFY, Scope.ANY, AUDIT_CHECKPOINT_CREATE, Scope.ANY,

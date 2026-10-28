@@ -38,9 +38,10 @@ Nobody holds administration and audit together. Sources:
 | `identity/application/AuthorizationService.java` | Builds the principal's permissions and special grants on every request; SoD checks |
 | `identity/application/RoleAdministrationService.java` | Custom role requests, approval, rejection |
 | `identity/application/SpecialGrantService.java` | Special grant requests, approval, rejection, revocation; use reservation and audit |
-| `identity/application/AccountAdministrationService.java` | Directory, role requests, approval and rejection, revocation, second-factor reset |
+| `identity/application/AccountAdministrationService.java` | Directory, role requests, approval and rejection, revocation |
+| `identity/application/SecondFactorResetService.java`, `infrastructure/web/RecoveryController.java` | Second-factor reset: request by an administrator, confirmation by the person's supervisor (ADR-028) |
 | `identity/domain/RoleAssignmentRequest.java`, `infrastructure/web/AssignmentController.java` | A requested role assignment; `/api/v1/admin/assignment-requests` |
-| `identity/infrastructure/security/Access.java` | `@access.can(...)` and `@access.canAt(...)`: the one check every endpoint uses |
+| `identity/infrastructure/security/Access.java` | `@access.can(...)`, `@access.canAt(...)`, `@access.canAtAny(...)` (a record of several offices), `@access.canOwn(...)` (the caller's own records) and `@access.canSomewhere(...)`: the one check every endpoint uses |
 | `identity/infrastructure/security/SpecialGrantUseInterceptor.java` | Keeps or gives back a special-grant use when the request ends |
 | `identity/infrastructure/config/PermissionCatalogueCheck.java` | Refuses to start when the database catalogue differs from the code |
 | `identity/infrastructure/persistence/JdbcAuthorizationRepository.java` | Roles, requests, grants; atomic use counting |
@@ -157,7 +158,11 @@ and can no longer be assigned.
 | `POST /api/v1/admin/assignment-requests/{id}/approve` | `admin.assignment.approve` | `reason` | 204; the assignment exists, with the request's id | 403 `SOD_FOUR_EYES` (the requester or the beneficiary); 404 `REQUEST_NOT_FOUND`; 409 `REQUEST_NOT_PENDING`, `REQUEST_EXPIRED`, `ROLE_ALREADY_ACTIVE`, `SOD_CONFLICT`, `REFUSED_BY_DATABASE`; 422 `ROLE_NOT_ASSIGNABLE` |
 | `POST /api/v1/admin/assignment-requests/{id}/reject` | `admin.assignment.approve` | `reason` | 204 | 403 `SOD_FOUR_EYES` (the beneficiary); 409 `REQUEST_NOT_PENDING` |
 | `DELETE /api/v1/admin/users/{id}/roles/{assignmentId}` | `admin.role.revoke` | `reason` | 204 | 403 `SOD_SELF_ASSIGNMENT`; 404 `ASSIGNMENT_NOT_FOUND`; 409 `ASSIGNMENT_ALREADY_REVOKED` |
-| `POST /api/v1/admin/users/{id}/mfa-reset` | `admin.mfa.reset` | `reason` (10+), `confirmedBy` | 204 | 403 `SOD_SELF_ACTION`; 422 `REASON_REQUIRED`, `CONFIRMATION_REQUIRED`, `ACCOUNT_NOT_STAFF` |
+| `POST /api/v1/admin/users/{id}/mfa-reset` | `admin.mfa.reset` | `reason` (10+) | 202 `{requestId}`: requested, nothing reset yet (ADR-028) | 403 `SOD_SELF_ACTION`; 404 `USER_NOT_FOUND`; 409 `REQUEST_ALREADY_OPEN`; 422 `REASON_REQUIRED`, `ACCOUNT_NOT_STAFF` |
+| `GET /api/v1/admin/mfa-reset-requests?status=` | `admin.mfa.reset` | none | 200 reset requests with the person's name, e-mail and offices | 403 |
+| `GET /api/v1/identity/reset-confirmations` | `identity.reset.confirm` at some office | none | 200 pending resets of people holding a role at the caller's offices | 403 |
+| `POST /api/v1/identity/reset-confirmations/{id}/confirm` | same | `identityCheck` (3..200) | 204; the database resets: keys removed, codes invalidated, enrolment cleared; sessions ended | 403 `SOD_FOUR_EYES`; 404 `REQUEST_NOT_FOUND` (also another office's request); 409 `REQUEST_NOT_PENDING`, `REQUEST_EXPIRED`, `REFUSED_BY_DATABASE`; 422 `IDENTITY_CHECK_REQUIRED` |
+| `POST /api/v1/identity/reset-confirmations/{id}/reject` | same | `reason` | 204 | 403 `SOD_FOUR_EYES`; 404; 409 `REQUEST_NOT_PENDING` |
 | `GET /api/v1/admin/permissions` | `admin.role.read` | none | 200 the catalogue | 403 |
 | `GET /api/v1/admin/roles` | `admin.role.read` | none | 200 every role with its permissions and scopes | 403 |
 | `GET /api/v1/admin/role-requests?status=` | `admin.role.read` | none | 200 requests, newest first | 403 |
@@ -210,7 +215,8 @@ as well, or rely on a role that holds it.
    scopes, descriptions) **and** a migration inserting the same `permission` row; the
    application will not start otherwise.
 2. Annotate the method: `@PreAuthorize("@access.can(authentication, 'code')")`, or
-   `canAt(authentication, 'code', #body.officeCode())` for an office.
+   `canAt(authentication, 'code', #body.officeCode())` for an office, or
+   `canAtAny(authentication, 'code', @alertOffices.of(#id))` for a record of several offices.
    `EndpointAnnotationArchTest` fails on anything else and on unknown codes.
 3. Add the endpoint to `PermissionMatrixIT.ENDPOINTS`.
 4. For `assigned`, `own` or `linked` scopes, check the record in the service and answer 404
@@ -257,16 +263,18 @@ four-eyes control, never by a script anyone can run.
 
 ### Reset a lost second factor (procedure)
 
-The complete procedure (one key lost, both keys lost, everything lost), what the system
-enforces and the gaps to close before go-live are in
+The complete procedure (one key lost, both keys lost, everything lost) and what the system
+enforces are in
 [chapter 8](../technical/08-operations-and-troubleshooting.md#account-recovery-procedure).
 In short:
 
 1. The staff member reports the loss of both keys and all recovery codes.
-2. Their supervisor confirms their identity out of band and tells an administrator.
-3. The administrator (not the staff member) resets with a reason and the confirmation.
-4. The staff member logs in and enrols two new keys. `MFA_RESET` in the audit trail holds
-   the reason, who confirmed, how many keys were removed and how many sessions ended.
+2. An administrator (not the staff member) requests the reset with a reason.
+3. The person's supervisor checks their identity out of band and confirms in the
+   application, saying how ([ADR-028](../adr/028-key-removal-and-supervised-reset.md)); the
+   database then resets.
+4. The staff member logs in and enrols two new keys. `MFA_RESET` names the supervisor, the
+   requester, the identity check, the keys removed and the sessions ended.
 
 ## How to verify
 

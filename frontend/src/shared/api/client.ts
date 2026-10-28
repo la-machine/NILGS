@@ -43,19 +43,25 @@ async function csrfHeader(): Promise<[string, string]> {
   return [csrf.headerName, token]
 }
 
-/** Calls `/api/v1{path}`; throws {@link ApiError} for any status outside 2xx. */
-export async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' }
+/**
+ * Calls `/api/v1{path}`; throws {@link ApiError} for any status outside 2xx. `extraHeaders`
+ * carries request headers an endpoint needs, such as `Idempotency-Key` (ADR-013). A `FormData`
+ * body (a file upload) is sent as multipart, its boundary set by the browser; anything else as JSON.
+ */
+export async function call<T>(method: string, path: string, body?: unknown,
+  extraHeaders: Record<string, string> = {}): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json', ...extraHeaders }
   if (method !== 'GET') {
     const [name, token] = await csrfHeader()
     headers[name] = token
   }
-  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  const form = typeof FormData !== 'undefined' && body instanceof FormData
+  if (body !== undefined && !form) headers['Content-Type'] = 'application/json'
   const response = await fetch(`${API}${path}`, {
     method,
     headers,
     credentials: 'same-origin',
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : form ? body : JSON.stringify(body),
   })
   const text = await response.text()
   const parsed = text ? JSON.parse(text) : {}

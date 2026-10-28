@@ -21,6 +21,14 @@ export interface KeyRegistered {
   recoveryCodes?: string[]
 }
 
+/** A registered security key, as its owner sees it: never key material. */
+export interface SecurityKey {
+  id: string
+  label: string
+  created: string | null
+  lastUsed: string | null
+}
+
 export const authApi = {
   session: () => call<Session>('GET', '/auth/session'),
   register: (body: Registration) => call<void>('POST', '/auth/register', body),
@@ -32,6 +40,9 @@ export const authApi = {
     call<KeyRegistered>('POST', '/auth/mfa/webauthn/registration', { publicKey: { credential, label } }),
   assertionOptions: () => call<Record<string, unknown>>('POST', '/auth/mfa/webauthn/assertion/options'),
   proveKey: (credential: unknown) => call<{ nextStep: NextStep }>('POST', '/auth/mfa/webauthn/assertion', credential),
+  keys: () => call<{ keys: SecurityKey[]; required: number }>('GET', '/auth/mfa/keys'),
+  removeKey: (id: string) =>
+    call<{ remaining: number; required: number }>('DELETE', `/auth/mfa/keys/${encodeURIComponent(id)}`),
   recover: (code: string) =>
     call<{ nextStep: NextStep; remainingRecoveryCodes: number; replaceAuthenticator: boolean }>(
       'POST', '/auth/mfa/recovery', { code }),

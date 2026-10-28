@@ -33,6 +33,14 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  # Uploads (ADR-033): parsed only when the document endpoint reads them, so its own checks
+  # answer first; never larger than the document limit, the request than the proxy's limit.
+  servlet:
+    multipart:
+      resolve-lazily: true
+      max-file-size: ${SNIGF_DOCUMENT_MAX_BYTES}B
+      max-request-size: ${SNIGF_PROXY_MAX_BODY_BYTES}B
+      file-size-threshold: 0B
   threads:
     virtual:
       enabled: true
@@ -101,6 +109,58 @@ snigf:
   keys:
     # Safe default: keys in OpenBao. Only the test profile may choose EPHEMERAL.
     provider: OPENBAO
+  # Parcels (MVP-01).
+  parcel:
+    reference-zone: ${SNIGF_PARCEL_REFERENCE_ZONE}
+    page-size: ${SNIGF_PARCEL_PAGE_SIZE}
+  # Overlap and duplicate detection (MVP-04, ADR-030): applied to the database's policy at startup.
+  conflict:
+    min-overlap-m2: ${SNIGF_CONFLICT_MIN_OVERLAP_M2}
+    duplicate-share: ${SNIGF_CONFLICT_DUPLICATE_SHARE}
+  # Applications (MVP-02, ADR-032): the type catalogue is applied at startup.
+  application:
+    types: ${SNIGF_APPLICATION_TYPES}
+    reference-zone: ${SNIGF_APPLICATION_REFERENCE_ZONE}
+    page-size: ${SNIGF_APPLICATION_PAGE_SIZE}
+    max-drafts: ${SNIGF_APPLICATION_MAX_DRAFTS}
+  # Tracking and workload report (MVP-06, ADR-036): DEMO stage targets, checked at startup.
+  reporting:
+    target-completeness-review: ${SNIGF_REPORTING_TARGET_COMPLETENESS_REVIEW}
+    target-info-requested: ${SNIGF_REPORTING_TARGET_INFO_REQUESTED}
+    target-under-review: ${SNIGF_REPORTING_TARGET_UNDER_REVIEW}
+    target-pending-decision: ${SNIGF_REPORTING_TARGET_PENDING_DECISION}
+    duration-window: ${SNIGF_REPORTING_DURATION_WINDOW}
+    page-size: ${SNIGF_REPORTING_PAGE_SIZE}
+  # Simulated payment (ADR-037): no real money moves; the only provider is the DEMO simulator.
+  payment:
+    fees: ${SNIGF_PAYMENT_FEES}
+    required-before-acceptance: ${SNIGF_PAYMENT_REQUIRED_BEFORE_ACCEPTANCE}
+    pending-ttl: ${SNIGF_PAYMENT_PENDING_TTL}
+    provider: ${SNIGF_PAYMENT_PROVIDER}
+    callback-max-skew: ${SNIGF_PAYMENT_CALLBACK_MAX_SKEW}
+    provider-client-names: ${SNIGF_PAYMENT_PROVIDER_CLIENT_CNS}
+    provider-identity-header: ${SNIGF_PROXY_PROVIDER_CLIENT_HEADER}
+    expiry-cron: ${SNIGF_PAYMENT_EXPIRY_CRON}
+    page-size: ${SNIGF_PAYMENT_PAGE_SIZE}
+    simulator:
+      channel: HTTPS
+      # Compose sets SNIGF_PAYMENT_SIMULATOR_URL (https://payment-sim:<port>).
+      url: ${SNIGF_PAYMENT_SIMULATOR_URL:https://localhost:${SNIGF_PAYMENT_SIM_PORT}}
+      ssl-bundle: snigf-payment-provider
+      connect-timeout: ${SNIGF_PAYMENT_SIMULATOR_CONNECT_TIMEOUT}
+      request-timeout: ${SNIGF_PAYMENT_SIMULATOR_REQUEST_TIMEOUT}
+  # Documents (ADR-033): files under random keys, recognised from their bytes.
+  document:
+    directory: ${SNIGF_DOCUMENT_DIRECTORY}
+    max-bytes: ${SNIGF_DOCUMENT_MAX_BYTES}
+    max-versions: ${SNIGF_DOCUMENT_MAX_VERSIONS}
+    max-pixels: ${SNIGF_DOCUMENT_MAX_PIXELS}
+    orphan-grace: ${SNIGF_DOCUMENT_ORPHAN_GRACE}
+    cleanup-cron: ${SNIGF_DOCUMENT_CLEANUP_CRON}
+  # Map views (ADR-029): map data is ours, external providers are disabled.
+  maps:
+    data-directory: ${SNIGF_MAP_DATA_DIRECTORY}
+    external-providers: ${SNIGF_MAP_EXTERNAL_PROVIDERS}
   # Authentication (ADR-004, ADR-016; Slice 1 design P5, P6, P7): every value from .env.
   identity:
     password:

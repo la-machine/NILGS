@@ -16,16 +16,19 @@ is an **application module** (a bounded context). Spring Modulith verifies on ev
 | Keys | `org.snigf.mvp.keys` | technical: key custody through OpenBao | implemented |
 | Audit | `org.snigf.mvp.audit` | business: audit trail, verification, checkpoints | implemented |
 | Identity | `org.snigf.mvp.identity` | business: accounts, password login, sessions, CSRF, throttling, WebAuthn second factor, recovery codes, roles and permissions, administration | security step 4 implemented ([authentication guide](../guides/authentication-and-sessions.md), [roles guide](../guides/roles-and-administration.md)) |
-| Parcel | `org.snigf.mvp.parcel` | business: parcels, versions, geometry | slice 1 |
-| Application | `org.snigf.mvp.application` | business: land applications | later slices |
-| Conflict | `org.snigf.mvp.conflict` | business: overlaps and disputes | later slices |
-| Document | `org.snigf.mvp.document` | business: supporting documents | later slices |
-| Review | `org.snigf.mvp.review` | business: reviews and decisions | later slices |
-| Payment | `org.snigf.mvp.payment` | business: fees and payment callbacks | later slices |
-| Reporting | `org.snigf.mvp.reporting` | business: statistics | later slices |
+| Parcel | `org.snigf.mvp.parcel` | business: parcel references, geometry validation (PostGIS), versions, corrections, idempotent creation | slice 1 implemented |
+| Maps | `org.snigf.mvp.maps` | business: map backgrounds (technical, geographic, satellite), manifests, authenticated tile delivery; no external provider | slice 1 implemented ([ADR-029](../adr/029-map-views-and-sovereign-map-data.md), [map data guide](../guides/map-data.md)) |
+| Application | `org.snigf.mvp.application` | business: service requests: the type catalogue (configured, versioned), the applicant's drafts, the idempotent submission; the nine states guarded by the database | E-12 and E-14 implemented: drafts, submission, the completeness review with staff cases ([ADR-032](../adr/032-applications-drafts-and-submission.md), [ADR-034](../adr/034-completeness-review.md), [guide](../guides/applications.md)); review and decision through the `review` module (E-15), which reads cases through `ApplicationWorkflow` and gives the applicant's view its decision through `DecisionLookup`; the payment gate on acceptance through `PaymentLookup` (E-17) |
+| Conflict | `org.snigf.mvp.conflict` | business: overlap and duplicate alerts between parcel versions (detected by the database on every version written), the detection policy, a parcel's alerts | E-10 and E-11 implemented: detection, review by office, resolution with separation of duties ([ADR-030](../adr/030-overlap-and-duplicate-detection.md), [ADR-031](../adr/031-alert-review-and-resolution.md), [guide](../guides/conflict-detection.md)) |
+| Document | `org.snigf.mvp.document` | business: supporting documents: upload (staged, recognised from the bytes, stored under random keys), versions, downloads with the hash checked, orphan cleanup | E-13 implemented ([ADR-033](../adr/033-documents-upload-and-storage.md), [guide](../guides/documents.md)); scanning and object storage with the pilot (P-02) |
+| Review | `org.snigf.mvp.review` | business: substantive review and simulated decision: assignment by claim, recommendations with findings, returns, decisions with grounds and cited documents; separation of duties and the open-alert gate enforced by the database | E-15 implemented ([ADR-035](../adr/035-review-and-simulated-decision.md), [guide](../guides/applications.md#review-and-simulated-decision-e-15)) |
+| Payment | `org.snigf.mvp.payment` | business: **simulated payment, no real money moves**: the DEMO fee catalogue (configured, versioned), the applicant's payment with an `Idempotency-Key`, the provider port (`PaymentProvider`, only the DEMO simulator approved) and its adapter, signed callbacks reconciled by reference and amount in the database, expiry, the finance officer's exceptions | E-17 implemented ([ADR-037](../adr/037-simulated-payment-and-reconciliation.md), [guide](../guides/payments.md)); implements the `application` module's `PaymentLookup`, which the completeness review asks before acceptance |
+| Reporting | `org.snigf.mvp.reporting` | business: read-only reports: an office's workload (counts per state, cases under way against DEMO stage targets, load per person, stage durations), computed by database functions from the transition table only | E-16 implemented ([ADR-036](../adr/036-tracking-and-workload-report.md), [guide](../guides/tracking-and-workload.md)); the applicant's tracking is the `application` module's `Tracking` projection |
 
 `shared` is declared `Type.OPEN`: every module may use it, and it contains no business
-rules.
+rules. It holds `DatabaseActor` (names the actor of the transaction to the database, for
+row-level security, ADR-032) and `CheckCharacter` (the ISO 7064 check character of every DEMO
+reference).
 
 ## Inside a module: DDD layers
 
@@ -128,8 +131,12 @@ A browser call to `GET https://localhost:47000/api/v1/...`:
    - access rules apply: public health, CSRF, login and registration; any session for
      `/auth/session` and `/auth/logout`; a **full** session for everything else under
      `/api/v1`, plus the method's `@PreAuthorize`, which is always
-     `@access.can(authentication, '<permission>')` or `@access.canAt(..., officeCode)`
-     (ADR-025): a role permission, or else a special grant in force, whose use `Access`
+     `@access.can(authentication, '<permission>')`, `@access.canAt(..., officeCode)`,
+     `@access.canAtAny(..., offices)` for a record of two offices (an alert, ADR-031),
+     `@access.canOwn(...)` for the caller's own records (applications, ADR-032),
+     `@access.canAssigned(...)` for a permission held at scope ASSIGNED (reviews, ADR-035), the
+     service then checking the assignment, or
+     `@access.canSomewhere(...)` (ADR-025): a role permission, or else a special grant in force, whose use `Access`
      takes before the controller runs; everything else denied.
 
    Without a session the answer is 401 `AUTH_REQUIRED`. A refused authenticated call

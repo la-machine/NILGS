@@ -49,7 +49,7 @@ class SessionSecurityContextRepositoryTest {
     /** A reviewer at DEMO1, with the permissions the REVIEWER role gives. */
     private static AuthenticatedUser reviewer(AuthLevel level) {
         return new AuthenticatedUser(USER, "Demo", AccountType.STAFF, Set.of(new org.snigf.mvp.identity.RoleGrant("REVIEWER", "DEMO1")),
-                Set.of("parcel.read", "application.read", "review.recommend"), java.util.List.of(), level, LOGIN);
+                Set.of("parcel.read", "application.read#assigned", "review.recommend#assigned"), java.util.List.of(), level, LOGIN);
     }
 
     private static LoginService restoring(AuthLevel level) {
@@ -88,7 +88,7 @@ class SessionSecurityContextRepositoryTest {
         MockHttpServletRequest done = loggedIn(at(LOGIN, full), AuthLevel.FULL);
         assertThat(at(LOGIN, full).loadDeferredContext(done).get().getAuthentication().getAuthorities())
                 .extracting(GrantedAuthority::getAuthority).containsExactlyInAnyOrder("AUTH_LEVEL_FULL", "ROLE_REVIEWER",
-                        "parcel.read", "application.read", "review.recommend");
+                        "parcel.read", "application.read#assigned", "review.recommend#assigned");
     }
 
     @Test

@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  * Validation errors name the fields, never echo their values.
  */
 @RestControllerAdvice(assignableTypes = {AuthController.class, MfaController.class, AdminController.class,
-        RoleController.class, GrantController.class, AssignmentController.class})
+        RoleController.class, GrantController.class, AssignmentController.class, RecoveryController.class})
 class AuthExceptionHandler {
 
     /** Any failed login: unknown account, wrong password, locked, disabled. */
@@ -43,6 +43,16 @@ class AuthExceptionHandler {
     @ExceptionHandler(SecondFactorFailed.class)
     ResponseEntity<ProblemDetail> secondFactorFailed() {
         return problem(HttpStatus.UNAUTHORIZED, "SECOND_FACTOR_INVALID");
+    }
+
+    @ExceptionHandler(SecondFactorService.KeyNotFound.class)
+    ResponseEntity<ProblemDetail> keyNotFound() {
+        return problem(HttpStatus.NOT_FOUND, "KEY_NOT_FOUND");
+    }
+
+    @ExceptionHandler(SecondFactorService.LastKey.class)
+    ResponseEntity<ProblemDetail> lastKey() {
+        return problem(HttpStatus.CONFLICT, "LAST_KEY");
     }
 
     @ExceptionHandler(SecondFactorService.NotAllowed.class)

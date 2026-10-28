@@ -20,6 +20,47 @@ snigf:
       payment-callback: test-payment-callback
       password-pepper: test-password-pepper
       blind-index: test-blind-index
+  parcel:
+    reference-zone: Africa/Douala
+    page-size: 50
+  conflict:
+    min-overlap-m2: 1.00
+    duplicate-share: 0.95
+  application:
+    types: classpath:application-types.json
+    reference-zone: Africa/Douala
+    page-size: 20
+    max-drafts: 20
+  reporting:
+    target-completeness-review: P5D
+    target-info-requested: P30D
+    target-under-review: P10D
+    target-pending-decision: P5D
+    duration-window: P90D
+    page-size: 50
+  # Charges stay in process (no simulator service); tests sign and post the callbacks.
+  payment:
+    fees: classpath:payment-fees.json
+    required-before-acceptance: true
+    pending-ttl: PT24H
+    provider: DEMO_SIMULATOR
+    callback-max-skew: PT5M
+    provider-client-names: snigf-payment-sim
+    provider-identity-header: X-Snigf-Provider-Client
+    expiry-cron: "-"
+    page-size: 50
+    simulator:
+      channel: IN_PROCESS
+  document:
+    directory: target/test-documents
+    max-bytes: 1048576
+    max-versions: 3
+    max-pixels: 4000000
+    orphan-grace: PT1H
+    cleanup-cron: "-"
+  maps:
+    data-directory: target/test-maps
+    external-providers: none
   # Cheap Argon2 (allowed in tests only) so the suite stays fast; the rules are the same.
   identity:
     password:

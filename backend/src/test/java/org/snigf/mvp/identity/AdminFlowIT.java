@@ -17,8 +17,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 
 /**
  * Role administration with separation of duties (C6c), four eyes on every assignment and the
- * database refusing what a compromised application might try (ADR-026), and the
- * administrator-assisted reset of a lost second factor, through the real endpoints.
+ * database refusing what a compromised application might try (ADR-026), through the real
+ * endpoints. The reset of a lost second factor is {@link SecondFactorResetIT}.
  */
 class AdminFlowIT extends IdentityIntegrationTest {
 
@@ -119,45 +119,6 @@ class AdminFlowIT extends IdentityIntegrationTest {
         assertThat(decide(approver, open, "reject").getStatus()).isEqualTo(204);
         assertThat(approver.browser().send(get("/api/v1/admin/assignment-requests").param("status", "REJECTED"))
                 .getContentAsString()).contains(open);
-    }
-
-    @Test
-    void aResetRemovesKeysEndsEverySessionAndForcesReEnrolment() throws Exception {
-        SignedIn admin = signedIn("SYSTEM_ADMIN");
-        SignedIn officer = signedIn("REVIEWER");
-        assertThat(officer.browser().session().getStatus()).isEqualTo(200);
-
-        MockHttpServletResponse reset = sendJson(admin.browser(), post(ADMIN + "/" + officer.id() + "/mfa-reset"),
-                "{\"reason\":\"Lost both keys during travel\",\"confirmedBy\":\"Supervisor A. Demo, by phone\"}");
-        assertThat(reset.getStatus()).isEqualTo(204);
-
-        assertThat(officer.browser().session().getStatus()).as("existing sessions end").isEqualTo(401);
-        Browser again = new Browser();
-        assertThat(again.login(officer.email(), PASSWORD).getContentAsString()).contains("MFA_ENROLMENT");
-        assertThat(jdbc.queryForObject("""
-                SELECT count(*) FROM user_credentials c JOIN user_entities e ON e.id = c.user_entity_user_id
-                 WHERE e.app_user_id = ?""", Long.class, officer.id())).isZero();
-        assertThat(jdbc.queryForObject("SELECT count(*) FROM mfa_recovery_code WHERE user_id = ? AND used_at IS NULL"
-                + " AND invalidated_at IS NULL", Long.class, officer.id())).isZero();
-        JsonNode details = json.readTree(jdbc.queryForObject("SELECT details::text FROM audit_event WHERE action = 'MFA_RESET'"
-                + " AND entity_id = ?", String.class, officer.id()));
-        assertThat(details.path("confirmedBy").asString("")).isEqualTo("Supervisor A. Demo, by phone");
-        assertThat(details.path("authenticatorsRemoved").asInt()).isEqualTo(2);
-        assertThat(details.path("sessionsRevoked").asInt()).isGreaterThanOrEqualTo(1);
-    }
-
-    @Test
-    void nobodyResetsTheirOwnSecondFactorAndResetsNeedReasonAndConfirmation() throws Exception {
-        SignedIn admin = signedIn("SYSTEM_ADMIN");
-        SignedIn officer = signedIn("REVIEWER");
-
-        assertRefused(sendJson(admin.browser(), post(ADMIN + "/" + admin.id() + "/mfa-reset"),
-                "{\"reason\":\"Resetting my own keys\",\"confirmedBy\":\"myself\"}"), 403, "SOD_SELF_ACTION");
-        assertRefused(sendJson(admin.browser(), post(ADMIN + "/" + officer.id() + "/mfa-reset"),
-                "{\"reason\":\"too short\",\"confirmedBy\":\"Supervisor\"}"), 422, "REASON_REQUIRED");
-        assertRefused(sendJson(admin.browser(), post(ADMIN + "/" + officer.id() + "/mfa-reset"),
-                "{\"reason\":\"Lost both keys during travel\",\"confirmedBy\":\" \"}"), 422, "CONFIRMATION_REQUIRED");
-        assertThat(officer.browser().session().getStatus()).as("untouched").isEqualTo(200);
     }
 
     @Test

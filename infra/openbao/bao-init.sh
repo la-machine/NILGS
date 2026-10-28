@@ -8,7 +8,8 @@
 #      shares, SNIGF_BAO_UNSEAL_THRESHOLD needed), and unseals it if sealed;
 #   2. if the provisioning inputs changed since the last run (or never ran): obtains a
 #      root token, configures transit keys, the application policy and its certificate
-#      login, then REVOKES the root token. No root or admin token is ever stored;
+#      login, the DEMO payment simulator's policy and login (HMAC with the callback key
+#      only, ADR-037), then REVOKES the root token. No root or admin token is ever stored;
 #      the next run generates a fresh one from a quorum of unseal shares.
 #
 # DEVELOPMENT AND DEMO CUSTODY: the unseal shares are files on the bao-keys volume,
@@ -24,6 +25,7 @@ umask 077
 : "${SNIGF_KEY_AUDIT_CHECKPOINT:?}" "${SNIGF_KEY_RECORD_SIGNING:?}" "${SNIGF_KEY_DATA_ENCRYPTION:?}"
 : "${SNIGF_KEY_PAYMENT_CALLBACK:?}" "${SNIGF_KEY_PASSWORD_PEPPER:?}" "${SNIGF_KEY_BLIND_INDEX:?}"
 : "${SNIGF_KEY_ROTATE_SIGNING:?}" "${SNIGF_KEY_ROTATE_DATA_ENCRYPTION:?}" "${SNIGF_KEY_ROTATE_PAYMENT_CALLBACK:?}"
+: "${SNIGF_BAO_PAYMENT_SIM_ROLE:?}" "${SNIGF_PAYMENT_SIM_CLIENT_CN:?}"
 
 ADDR="https://openbao:$SNIGF_BAO_PORT"
 CA=/run/secrets/pki_ca_chain_crt
@@ -100,7 +102,8 @@ until api GET sys/health >/dev/null 2>&1; do
 done
 
 # --- 2. Provisioning, only when its inputs changed ----------------------------------
-fingerprint="$( { cat /etc/snigf/bao-init.sh /etc/snigf/app-policy.hcl.template "$CA"; env | grep -E '^SNIGF_(BAO|KEY)_' | sort; } | sha256sum | cut -d' ' -f1)"
+fingerprint="$( { cat /etc/snigf/bao-init.sh /etc/snigf/app-policy.hcl.template /etc/snigf/payment-sim-policy.hcl.template "$CA";
+                 env | grep -E '^SNIGF_(BAO|KEY|PAYMENT_SIM)_' | sort; } | sha256sum | cut -d' ' -f1)"
 if [ "$(cat "$KEYS/provisioned" 2>/dev/null)" = "$fingerprint" ]; then
   log "provisioning up to date"
   exit 0
@@ -179,8 +182,21 @@ api POST "auth/$SNIGF_BAO_AUTH_MOUNT/certs/$SNIGF_BAO_APP_ROLE" "$(jq -n \
     token_no_default_policy: true, token_type: "service",
     token_ttl: $ttl, token_max_ttl: $max}')" >/dev/null
 
+# The DEMO payment simulator (ADR-037): its own policy and certificate login. It signs its
+# callbacks with the callback key inside OpenBao and can do nothing else.
+sim_policy="$(sed -e "s/@TRANSIT@/$TRANSIT/g" -e "s/@KEY_PAYMENT_CALLBACK@/$SNIGF_KEY_PAYMENT_CALLBACK/g" \
+  /etc/snigf/payment-sim-policy.hcl.template)"
+echo "$sim_policy" | grep -v '^#' | grep -q '@[A-Z_]*@' && die "unrendered placeholder in the simulator policy"
+api PUT "sys/policies/acl/$SNIGF_BAO_PAYMENT_SIM_ROLE" "$(printf '%s' "$sim_policy" | jq -Rs '{policy: .}')" >/dev/null
+api POST "auth/$SNIGF_BAO_AUTH_MOUNT/certs/$SNIGF_BAO_PAYMENT_SIM_ROLE" "$(jq -n \
+  --rawfile ca "$CA" --arg cn "$SNIGF_PAYMENT_SIM_CLIENT_CN" --arg p "$SNIGF_BAO_PAYMENT_SIM_ROLE" \
+  --arg ttl "$SNIGF_BAO_TOKEN_TTL" --arg max "$SNIGF_BAO_TOKEN_MAX_TTL" \
+  '{certificate: $ca, allowed_common_names: [$cn], token_policies: [$p],
+    token_no_default_policy: true, token_type: "service",
+    token_ttl: $ttl, token_max_ttl: $max}')" >/dev/null
+
 api POST auth/token/revoke-self >/dev/null
 api GET auth/token/lookup-self >/dev/null 2>&1 && die "the root token is still valid after revocation"
 trap 'rm -f "$HEADERS"' EXIT
 printf '%s' "$fingerprint" > "$KEYS/provisioned"
-log "provisioned keys, policy and certificate login for $SNIGF_BAO_APP_CLIENT_CN; root token revoked"
+log "provisioned keys, policies and certificate logins for $SNIGF_BAO_APP_CLIENT_CN and $SNIGF_PAYMENT_SIM_CLIENT_CN; root token revoked"

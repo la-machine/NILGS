@@ -1,9 +1,12 @@
 // SNIGF/NILGS - Copyright (c) 2026 FLYT.
 // Author: Pythagore.
-// Applicant self-registration. The answer never says whether the address already existed.
+// Self-registration of an applicant. The answer is the same whether the address was new or
+// not (no account enumeration); staff accounts are never created here.
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import type { Lang, Texts } from '../../../shared/i18n'
+import { Button } from '../../../shared/ui/Button'
+import { Field } from '../../../shared/ui/Field'
 import { Section } from '../../../shared/ui/Section'
 import type { Registration } from '../api'
 
@@ -19,22 +22,29 @@ export function RegisterScreen({ texts, busy, lang, onSubmit, onBack }: {
     onSubmit({ email, displayName, password, preferredLanguage })
   }
   return (
-    <Section title={texts.registerTitle}>
-      <form onSubmit={submit}>
-        <label>{texts.email}<input type="email" autoComplete="email" required value={email}
-          onChange={(e) => setEmail(e.target.value)} /></label>
-        <label>{texts.displayName}<input autoComplete="name" required maxLength={120} value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)} /></label>
-        <label>{texts.password}<input type="password" autoComplete="new-password" required minLength={12} maxLength={128}
-          value={password} onChange={(e) => setPassword(e.target.value)} /></label>
-        <p className="hint">{texts.passwordHint}</p>
-        <label>{texts.language}<select value={preferredLanguage} onChange={(e) => setPreferredLanguage(e.target.value)}>
-          <option value="fr">Français</option>
-          <option value="en">English</option>
-        </select></label>
-        <button type="submit" disabled={busy}>{texts.create}</button>
+    <Section title={texts.registerTitle} intro={texts.auth.registerIntro}>
+      <form onSubmit={submit} className="form">
+        <Field label={texts.email} required requiredLabel={texts.common.required}>
+          <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </Field>
+        <Field label={texts.displayName} required requiredLabel={texts.common.required}>
+          <input autoComplete="name" maxLength={120} value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+        </Field>
+        <Field label={texts.password} hint={texts.passwordHint} required requiredLabel={texts.common.required}>
+          <input type="password" autoComplete="new-password" minLength={12} maxLength={128} value={password}
+            onChange={(e) => setPassword(e.target.value)} />
+        </Field>
+        <Field label={texts.language}>
+          <select value={preferredLanguage} onChange={(e) => setPreferredLanguage(e.target.value)}>
+            <option value="fr">Français</option>
+            <option value="en">English</option>
+          </select>
+        </Field>
+        <Button type="submit" variant="primary" busy={busy} className="btn-block">{texts.create}</Button>
       </form>
-      <p><button type="button" className="link" onClick={onBack}>{texts.haveAccount}</button></p>
+      <div className="auth-alt">
+        <button type="button" className="link-button" onClick={onBack}>{texts.haveAccount}</button>
+      </div>
     </Section>
   )
 }

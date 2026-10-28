@@ -17,8 +17,10 @@
 | Unseal OpenBao after a restart | `docker compose up -d` (re-runs `bao-init`) |
 | Database shell | `docker compose exec -u postgres db psql -d snigf` |
 | Backend from the IDE | see [README "Develop"](../../README.md#develop) |
+| Real satellite imagery for the whole country (Sentinel-2 mosaic and aerial details) | `bash infra/scripts/maps-build-satellite.sh` (resumable; [step-by-step guide](../guides/satellite-imagery.md)) |
+| Demonstration accounts, one per role, with passwords (development only) | `bash infra/scripts/dev-seed-demo.sh`, then read `infra/secrets/demo_accounts` ([guide](../guides/demo-accounts.md)) |
 | Make a registered account staff (development only; also bootstraps the first `SYSTEM_ADMIN` and `AUDITOR`) | `bash infra/scripts/dev-make-staff.sh <email> [ROLE]` |
-| Reset a lost second factor | [account recovery procedure](#account-recovery-procedure): supervisor confirms identity out of band, an administrator who is not the person resets |
+| Reset a lost second factor | [account recovery procedure](#account-recovery-procedure): an administrator who is not the person requests it; the person's supervisor checks the identity out of band and confirms in the application |
 
 ## First five minutes when something is wrong
 
@@ -119,10 +121,15 @@ setting to fix.
 | 403 `SOD_SELF_ASSIGNMENT` / `SOD_SELF_ACTION` | an administrator acted on their own roles or second factor | another administrator must do it (the attempt is audited as DENIED) |
 | 409 `ROLE_ALREADY_ACTIVE` / `ASSIGNMENT_ALREADY_REVOKED` | the grant exists, or the revocation already happened | refresh the directory |
 | 422 `ACCOUNT_NOT_STAFF` | back-office roles go to staff accounts only | the account must be created as staff (onboarding) |
-| 422 `REASON_REQUIRED` / `CONFIRMATION_REQUIRED` | missing reason (10+ characters for a reset) or out-of-band confirmation | supply them; they are kept in the audit trail |
+| 422 `REASON_REQUIRED` | missing reason (10+ characters for a reset request) | supply it; it is kept in the audit trail |
 | 409 `AUDIT_CHAIN_BROKEN` when creating a checkpoint | the chain does not verify since the last checkpoint | audit incident procedure below |
 | 409 `CHECKPOINT_UNAVAILABLE` | empty chain, or another checkpoint is being created | retry |
 | Staff member sees no administration or audit panel | the session is not FULL, or no role or special grant gives `admin.account.list` / `audit.event.search` | check `permissions` and `specialGrants` in `GET /api/v1/auth/session` |
+| 202 on `POST /admin/users/{id}/mfa-reset`, but nothing changes | resets are requests (ADR-028) | the person's supervisor confirms in Identity confirmations |
+| 404 `REQUEST_NOT_FOUND` when a supervisor confirms a reset | the person holds no role at the supervisor's offices | a supervisor of the person's office confirms |
+| 422 `IDENTITY_CHECK_REQUIRED` | the confirmation does not say how the identity was checked | write the means, for example "in person, ID card checked" |
+| 409 `LAST_KEY` | removing the only remaining key | add another key first |
+| 404 `KEY_NOT_FOUND` | the key is not one of the caller's (or was already removed) | refresh the key list |
 | 403 `SOD_FOUR_EYES` | the requester (or, for a role assignment or a grant, the beneficiary) tried to approve | another administrator approves (the attempt is audited as DENIED) |
 | 202 on `POST /admin/users/{id}/roles`, but the person has no new role | role assignments are requests (ADR-026) | another administrator approves it in Administration → pending role assignments (`/admin/assignment-requests`) |
 | 409 `REFUSED_BY_DATABASE`, log `Administrative change refused by the database: ...` | the database refused what the service allowed: a concurrent decision, or an attempt the service did not foresee (approver without the permission, separation of duties) | read the logged message; if it is not a race, treat it as a security event |
@@ -142,6 +149,34 @@ setting to fix.
 | Browser: `InvalidStateError` at registration | this authenticator is already registered for the account | use another authenticator |
 | Registration refused with origin mismatch | the page's origin is not in `SNIGF_WEBAUTHN_ORIGINS` (exact scheme, host and port) | add the origin, then restart the app |
 | TLS handshake failure on 47080 | no client certificate, or TLS 1.2 | expected; only the proxy connects |
+| 422 `GEOMETRY_*` with a `reason` | the geometry is malformed, not a (Multi)Polygon, invalid, too complex, outside the accepted area, or invalid once transformed; never silently repaired | read `reason` (PostGIS's explanation); check longitude/latitude order and the CRS; the refusal is audited (`PARCEL_CREATE_REJECTED`, `PARCEL_CORRECT_REJECTED`) |
+| 422 `CRS_MISSING` / `LOCALITY_INVALID` / `EXTERNAL_REFERENCE_INVALID` / `QUERY_TOO_LONG` | input rules of the parcel API | correct the field |
+| 422 `IDEMPOTENCY_KEY_REQUIRED` / `IDEMPOTENCY_KEY_REUSED` | creating a parcel needs an `Idempotency-Key`; a key may be reused only with the identical request | send a new key per new parcel; resend the same request with the same key after a timeout |
+| 409 `IDEMPOTENCY_IN_PROGRESS` | the same request is still being processed | retry shortly; the answer then carries `Idempotent-Replayed: true` |
+| 409 `STALE_VERSION` | the parcel was corrected since it was read | reload it, then correct |
+| 404 `PARCEL_NOT_FOUND` / `VERSION_NOT_FOUND` / `OFFICE_NOT_FOUND` | unknown reference, version or office (also answered when the reference is malformed) | check the reference and its check character |
+| 409 `ITEMS_MISSING` on accepting a case | the automatic check still finds a required field or document missing (`items` lists them) | request the information; the case page shows the same list |
+| 409 `OPEN_ALERT` on a decision | an overlap or duplicate alert on the application's parcel is open | a cadastral officer of the office resolves it (`#/alerts`); then decide |
+| 409 `ALREADY_ASSIGNED` on a claim | someone claimed the case at that stage first | nothing to do: it is theirs; reassignment comes with E-22 |
+| 403 `RECOMMENDER_CANNOT_DECIDE` | the person recommended on the case and also holds the decision role | another decision authority of the office claims and decides it |
+| 403 `NOT_ASSIGNED` | the action needs the case assigned to the caller at that stage | claim it first, if it is still waiting |
+| 422 `GROUNDS_REQUIRED` / `CITATIONS_REQUIRED` / `FINDING_REQUIRED` / `REASON_REQUIRED` | the text is under 10 or over 4000 characters, or no stored document version is cited | complete the form; cite at least one stored version |
+| 422 `STATE_NOT_LISTED` on the workload queue | the state asked for is not one a case waits in (an ended state, or a draft) | ask for a working state, or none; ended applications are in the counts |
+| A case shown overdue at once, or never | the stage targets (`SNIGF_REPORTING_TARGET_*`) are not what was meant: they are ISO-8601 durations (`P5D`, `PT12H`), and `SUBMITTED` has none | correct `.env`, restart the app; the report uses the new targets for every stay ([guide](../guides/tracking-and-workload.md)) |
+| The workload report is empty for an office | nothing was submitted there yet, or the caller does not hold `report.workload` at that office (the database answers nothing rather than an error) | check the office and the person's roles |
+| 404 on `#/reviews/<id>` | the case is assigned to someone else, or not at the caller's stage: assignees see only their own cases and those waiting to be claimed | expected; office readers see the review on `#/cases/<id>` |
+| 409 `CATEGORY_NOT_REQUESTED` on an upload | the application waits for information, and this category was not asked for | expected: only the requested categories take files until the response |
+| 422 `TYPE_NOT_ALLOWED` / `TYPE_MISMATCH` / `PDF_ACTIVE_CONTENT` / `PDF_ENCRYPTED` / `PDF_MALFORMED` / `IMAGE_TOO_LARGE` on an upload | the file's bytes are not an accepted PDF, JPEG or PNG, its name says otherwise, or it carries active content | expected; the audit event `DOCUMENT_REJECTED` names the code and what the bytes were ([documents guide](../guides/documents.md)) |
+| 413 `FILE_TOO_LARGE`, or 400 "Failed to read request" on a large upload | over `SNIGF_DOCUMENT_MAX_BYTES`; above `SNIGF_PROXY_MAX_BODY_BYTES` the proxy cuts the body and the app sees an incomplete request | expected; raise both settings together if the limit must change |
+| 500 `DOCUMENT_INTEGRITY_FAILED` | the stored file no longer matches its SHA-256 (altered, or restored from another backup than the database) | treat as an incident: `DOCUMENT_INTEGRITY_FAILED` in the audit trail; restore `document-data` and the database from the same backup |
+| Map view disabled: "data not installed" / "data installed but invalid" / "tile file missing" | `NOT_INSTALLED`, `MANIFEST_INVALID` (app log: `Map background ... unavailable: manifest problems [...]`), `FILE_MISSING` | [map data guide](../guides/map-data.md); the technical view and parcels keep working |
+| App refuses to start: `snigf.maps.external-providers` | a value other than `none` | external providers need their own decision (ADR-029) |
+| 409 `PAYMENT_REQUIRED` on an acceptance | the payment gate is on and the application's DEMO fee is not paid | the applicant pays on their application (simulated); the case shows the fee as paid, then accept ([payments guide](../guides/payments.md)) |
+| 503 `PROVIDER_UNAVAILABLE` when paying | the app could not reach `payment-sim` (container down, certificate or name wrong) | `docker compose ps payment-sim`, `docker compose logs payment-sim`; the request waits without a charge, and paying again starts the same one |
+| A payment stays pending, then expires | the scenario was `NO_RESPONSE`, or no callback reached the app: look for `payment-sim: callback ... -> HTTP` in its log, and for `PAYMENT_CALLBACK_REJECTED` in the audit trail | a `401` names why (`SIGNATURE_INVALID`, `TIMESTAMP_OUT_OF_WINDOW`: check the clocks, `PROVIDER_NOT_RECOGNISED`: `SNIGF_PAYMENT_PROVIDER_CLIENT_CNS` and the simulator's certificate); an expired payment can be paid again |
+| `payment-sim: OpenBao refused the certificate login` | `bao-init` has not provisioned the simulator's role (an old fingerprint), or its certificate name differs from `SNIGF_PAYMENT_SIM_CLIENT_CN` | `docker compose up bao-init` (it re-provisions when its inputs change), then restart `payment-sim` |
+| App refuses to start: `snigf.payment.simulator.channel=IN_PROCESS is for the test profile only`, or `snigf.payment.provider` | the in-process channel outside tests, or a provider other than `DEMO_SIMULATOR` | a real provider needs its adapter, a migration and an ADR (ADR-037); never switch one on by setting |
+| An exception on `#/payments` | a provider report matched no pending request of the same amount (`AMOUNT_MISMATCH`, `UNMATCHED_REFERENCE`, `AFTER_EXPIRY`, `ALREADY_SETTLED`) | expected for those DEMO scenarios; the finance officer resolves it (simulated refund or nothing to do), which never pays a request |
 
 ### Audit trail
 
@@ -173,24 +208,28 @@ security key has three ways back, tried in this order. Verified end to end in Ch
 
 1. Sign in with the password, choose **I lost my keys: use a recovery code**, enter one
    code. Each code works once; the screen shows how many remain.
-2. **Add an authenticator** on the session screen, then a second one as soon as possible.
-3. Report the loss. The lost keys stay registered (see the gaps below) until an
-   administrator resets the second factor.
+2. **Add an authenticator** on the session screen.
+3. In **Your security keys**, **Remove (lost)** each lost key: it is no longer offered at
+   sign-in and no longer verifies (ADR-028). The last key cannot be removed.
+4. Add a second key as soon as possible (the screen warns while there are fewer than two),
+   and report the loss to the supervisor.
 
-### C. Every key and every recovery code lost: supervised reset
+### C. Every key and every recovery code lost: supervised reset (ADR-028)
 
-1. The staff member reports to their **supervisor**, who confirms their identity **out of
-   band**: in person with an identity document, or by a call to a number already on file.
-   Never by e-mail or by a call from the person.
-2. The supervisor asks an **administrator who is not the staff member**. In Administration
-   → the person's card → **Reset the second factor**, the administrator enters the reason
-   (10+ characters) and who confirmed the identity and how ("A. Supervisor, in person, ID
-   card checked").
-3. The reset removes every registered key, invalidates every unused recovery code, ends
-   every session, and clears the enrolment.
-4. The staff member signs in with the password and enrols two new keys; ten new recovery
+1. The staff member reports to their **supervisor**.
+2. An **administrator who is not the staff member** requests the reset: Administration → the
+   person's card → **Reset the second factor**, with a reason (10+ characters). Nothing
+   happens yet; the request waits for the supervisor.
+3. The **supervisor**, holding `identity.reset.confirm` at an office where the person holds a
+   role, checks the identity **out of band**: in person with an identity document, or by a
+   call to a number already on file; never by e-mail or by a call from the person. Then, in
+   **Identity confirmations**, they enter how ("In person, national ID card checked") and
+   **Confirm and reset**, or reject.
+4. The confirmation performs the reset in the database: every key removed, every unused
+   recovery code invalidated, the enrolment cleared; every session ends.
+5. The staff member signs in with the password and enrols two new keys; ten new recovery
    codes are shown once.
-5. The supervisor or an auditor checks the audit trail (below).
+6. The supervisor or an auditor checks the audit trail (below).
 
 ### What the system enforces, and what remains procedure
 
@@ -198,33 +237,29 @@ security key has three ways back, tried in this order. Verified end to end in Ch
 | --- | --- | --- |
 | Codes are single use; a used or wrong code is refused | service; stored as keyed hashes | e2e "recovery code, once"; `MfaFlowIT`, `RecoveryCodeTest` |
 | Wrong codes count toward the lockout (5, then 15 min) | service | `MfaFlowIT` |
-| A reset needs a reason (10+) and the name of who confirmed the identity | service | `AdminFlowIT`; e2e reset journey |
-| Nobody resets their own second factor (403 `SOD_SELF_ACTION`, audited DENIED) | service | `AdminFlowIT`; e2e (`SOD_SELF_ACTION` through the API) |
-| Only a holder of `admin.mfa.reset` resets | endpoint permission | `PermissionMatrixIT` |
-| The reset removes every key and every unused code, ends every session | service, in one transaction | e2e: the old code is refused afterwards, the person enrols again; `AdminFlowIT` |
-| Audit: `MFA_RESET` with the administrator as actor, reason, confirmer, keys removed, sessions ended; `MFA_RECOVERY_CODE_USED`, `MFA_ENROLLED` | audit chain (ADR-007) | e2e: the auditor finds the reset with the confirmer and `authenticatorsRemoved` |
-| **Identity verification** | **procedure**: the supervisor's out-of-band check. The system records only the confirmer's name and means as text | — |
+| A lost key can be removed by its owner; a removed key no longer signs in; the last key stays | service and database (V10) | `SecurityKeysIT`; pgTAP `12`; e2e (both lost keys removed) |
+| A reset is requested by a holder of `admin.mfa.reset`, with a reason, never for oneself (`SOD_SELF_ACTION`) | service and database | `SecondFactorResetIT`; pgTAP `12`; e2e |
+| Only the person's supervisor confirms: `identity.reset.confirm` at an office of the person; never the requester or the person; another office's supervisor does not see it | service and database | `SecondFactorResetIT`; pgTAP `12`; e2e (an administrator's confirmation is refused) |
+| The confirmation says how the identity was checked | service and database (`ck_reset_identity_checked`) | `SecondFactorResetIT`; pgTAP `12` |
+| The application's own account cannot clear an enrolment or delete a last key | database (V10) | `SecondFactorResetIT`; pgTAP `12` |
+| The reset removes every key and every unused code, clears the enrolment, ends every session | database trigger; sessions by the service | e2e: the old code is refused, the person enrols again |
+| Audit: `MFA_RESET_REQUESTED` (administrator), `MFA_RESET` (supervisor, with requester, identity check, keys removed, sessions ended) or `MFA_RESET_REJECTED`; `MFA_KEY_REMOVED`; `MFA_RECOVERY_CODE_USED`; `MFA_ENROLLED` | audit chain (ADR-007) | e2e: the auditor finds the reset with both people and the identity check |
+| **The identity check itself** | **procedure**: the supervisor meets or calls the person; the system proves who confirmed and records how | — |
 
-Check a reset in the audit trail:
+Check resets in the audit trail:
 
 ```sql
-SELECT occurred_at, actor_id, reason, details->>'confirmedBy' AS confirmed_by,
-       details->>'authenticatorsRemoved' AS keys_removed, details->>'sessionsRevoked' AS sessions_ended
+SELECT occurred_at, actor_id AS confirmed_by, details->>'requestedBy' AS requested_by,
+       details->>'identityCheck' AS identity_check, details->>'authenticatorsRemoved' AS keys_removed
   FROM snigf.audit_event WHERE action = 'MFA_RESET' ORDER BY chain_pos DESC LIMIT 10;
 ```
 
-### Gaps found by the verification (to close or accept before go-live)
+### Gaps found by the verification
 
-1. **Lost keys stay registered after path B.** Recovering with a code does not remove the
-   lost keys; whoever finds one and knows the password can still sign in, until a reset.
-   Proposed fix: let the person list their keys (label, created, last used) and remove the
-   lost ones from the session screen, offered right after a recovery-code sign-in.
-2. **The identity confirmation is not checked by the system.** The confirmer is free text,
-   and one administrator performs the reset. Proposed fix: the person's supervisor confirms
-   the reset in the application (a second person, recorded as an account, not as text), as
-   role assignments are confirmed (ADR-026).
-3. Separation of duties for resets is enforced by the service only; the database does not
-   know who resets (the reset is a deletion of keys and codes).
+Both gaps found on 22 Oct 2026 are closed by [ADR-028](../adr/028-key-removal-and-supervised-reset.md):
+lost keys are removed by their owner, and a reset needs the supervisor's confirmation in the
+application. Remaining, by design: the identity check is human; a compromised application
+could name another real supervisor (signed approvals, future ADR).
 
 ## Audit incident procedure
 

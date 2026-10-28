@@ -1,0 +1,13 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# OpenBao policy of the DEMO payment simulator (ADR-037). bao-init.sh replaces each @NAME@ with
+# the value from .env. It may compute an HMAC-SHA-256 with the payment callback key, to sign its
+# callbacks, and nothing else: it cannot read, rotate, export or verify with any key, and it never
+# holds the key itself.
+
+# Its own token, for its readiness.
+path "auth/token/lookup-self" {
+  capabilities = ["read"]
+}
+
+path "@TRANSIT@/hmac/@KEY_PAYMENT_CALLBACK@/sha2-256" { capabilities = ["update"] }

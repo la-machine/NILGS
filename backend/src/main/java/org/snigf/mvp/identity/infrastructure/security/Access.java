@@ -3,6 +3,7 @@
 package org.snigf.mvp.identity.infrastructure.security;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -48,9 +49,78 @@ public class Access {
         return check(authentication, permission, null);
     }
 
-    /** The permission held everywhere or at {@code officeCode}. */
+    /**
+     * The permission held everywhere or at {@code officeCode}. Without an office (for example an
+     * unknown record) only "everywhere" can match, so such a holder then gets 404 rather than 403.
+     */
     public boolean canAt(Authentication authentication, String permission, String officeCode) {
-        return officeCode != null && check(authentication, permission, officeCode);
+        return check(authentication, permission, officeCode);
+    }
+
+    /**
+     * The permission held everywhere or at one of {@code officeCodes}, for a record that belongs
+     * to more than one office (an alert between two parcels: {@code @alertOffices.of(#id)}).
+     * At most one special grant use is taken: the first office that matches. Without an office
+     * only "everywhere" can match, as for {@link #canAt}.
+     */
+    public boolean canAtAny(Authentication authentication, String permission, Collection<String> officeCodes) {
+        if (officeCodes == null || officeCodes.isEmpty()) {
+            return check(authentication, permission, null);
+        }
+        for (String officeCode : officeCodes) {
+            if (check(authentication, permission, officeCode)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The permission held for the records assigned to the person ({@code review.recommend#assigned}),
+     * for endpoints whose service then works only on the cases assigned to the caller or open to
+     * them at their stage (row-level security decides which, V16). Role permissions only.
+     */
+    public boolean canAssigned(Authentication authentication, String permission) {
+        if (authentication == null || !authentication.isAuthenticated() || permission == null
+                || !(authentication.getPrincipal() instanceof AuthenticatedUser user) || !user.fullyAuthenticated()) {
+            return false;
+        }
+        String assigned = permission + "#assigned";
+        return authentication.getAuthorities().stream().anyMatch(a -> assigned.equals(a.getAuthority()));
+    }
+
+    /**
+     * The permission held for the person's own records ({@code application.create#own}), for
+     * endpoints whose service then works only on the caller's records (and answers 404 for any
+     * other; row-level security agrees, V13). Role permissions only: such permissions are never
+     * delegable to another person's records.
+     */
+    public boolean canOwn(Authentication authentication, String permission) {
+        if (authentication == null || !authentication.isAuthenticated() || permission == null
+                || !(authentication.getPrincipal() instanceof AuthenticatedUser user) || !user.fullyAuthenticated()) {
+            return false;
+        }
+        String own = permission + "#own";
+        return authentication.getAuthorities().stream().anyMatch(a -> own.equals(a.getAuthority()));
+    }
+
+    /**
+     * The permission held everywhere or at some office, for endpoints whose service then
+     * restricts each record to the offices held (the supervisor's reset confirmations,
+     * ADR-028). Role permissions only: such permissions are never delegable.
+     */
+    public boolean canSomewhere(Authentication authentication, String permission) {
+        if (authentication == null || !authentication.isAuthenticated() || permission == null
+                || !(authentication.getPrincipal() instanceof AuthenticatedUser user) || !user.fullyAuthenticated()) {
+            return false;
+        }
+        for (GrantedAuthority authority : authentication.getAuthorities()) {
+            String granted = authority.getAuthority();
+            if (permission.equals(granted) || granted.startsWith(permission + "@")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean check(Authentication authentication, String permission, String officeCode) {

@@ -2,9 +2,9 @@
 # SNIGF/NILGS - Copyright (c) 2026 FLYT.
 # Author: Pythagore.
 # Asserts the transport, session, key-custody and isolation guarantees of the running
-# stack (ADR-004, ADR-017, ADR-018, ADR-020).
+# stack (ADR-004, ADR-017, ADR-018, ADR-020), and the payment provider path (ADR-037).
 #
-#   docker compose --profile test run --rm --build security-probe        (app-net + data-net + key-net)
+#   docker compose --profile test run --rm --build security-probe        (app-net + data-net + key-net + provider-in)
 #   docker compose --profile test run --rm segmentation-probe            (app-net only)
 #
 # Every "refused" check also asserts WHY it was refused, so a check cannot pass merely
@@ -214,5 +214,55 @@ forbid POST "auth/token/create" '{}'
 [ -z "$denied" ] && ok "app token is refused everything outside its policy (14 operations: export, backup, rotate, reconfigure, create, list, raw encrypt, other algorithm, policies, mounts, auth config, token creation)" \
   || bad "app token is refused everything outside its policy" "$denied"
 rm -f /tmp/bao-token /tmp/foreign.key /tmp/foreign.crt
+
+# --- Payment provider callbacks and the DEMO simulator (ADR-037) ------------------------
+# The browser listener never serves the callback path; the provider listener requires a
+# client certificate, serves nothing else, and the app accepts only an allowed provider's
+# subject; the simulator's certificate is refused by the app itself; its OpenBao login may
+# compute the callback HMAC and nothing else. No real money moves anywhere.
+CB=/api/v1/payments/callbacks/demo-simulator
+PROVIDER="https://web:$SNIGF_PROVIDER_CALLBACK_PORT"
+SIM_ID="--cert /run/secrets/payment_sim_client_crt --key /run/secrets/payment_sim_client_key"
+
+code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$CA" $TO_WEB -X POST -H 'Content-Type: application/json' -d '{}' "$WEB$CB")"
+[ "$code" = "404" ] && ok "the browser listener refuses the provider callback path (404)" \
+  || bad "the browser listener refuses the provider callback path" "HTTP $code"
+
+err="$(curl -sS -m 5 --cacert "$CA" --tlsv1.3 -X POST -H 'Content-Type: application/json' -d '{}' "$PROVIDER$CB" 2>&1)"
+case "$err" in *"alert"*|*"certificate required"*|*"handshake"*|*"SSL"*) ok "the provider listener requires a client certificate" ;;
+  *) bad "the provider listener requires a client certificate" "$err" ;; esac
+
+resp="$(curl -s -w 'HTTP%{http_code}' --cacert "$CA" $SIM_ID -X POST -H 'Content-Type: application/json' -d '{}' "$PROVIDER$CB")"
+case "$resp" in *SIGNATURE_MISSING*HTTP401) ok "an unsigned callback from the simulator's certificate is refused by the app (401 SIGNATURE_MISSING: control of the path)" ;;
+  *) bad "an unsigned callback is refused by the app with SIGNATURE_MISSING" "$resp" ;; esac
+
+resp="$(curl -s -w 'HTTP%{http_code}' --cacert "$CA" --cert /run/secrets/web_client_crt --key /run/secrets/web_client_key \
+  -X POST -H 'Content-Type: application/json' -H 'X-Snigf-Provider-Client: CN=snigf-payment-sim' -d '{}' "$PROVIDER$CB")"
+case "$resp" in *PROVIDER_NOT_RECOGNISED*HTTP401) ok "another certificate of the CA is no provider, whatever header it sends (401 PROVIDER_NOT_RECOGNISED)" ;;
+  *) bad "another certificate of the CA is no provider" "$resp" ;; esac
+
+code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$CA" $SIM_ID "$PROVIDER/api/v1/parcels")"
+[ "$code" = "404" ] && ok "the provider listener serves nothing but callbacks" || bad "the provider listener serves nothing but callbacks" "HTTP $code"
+
+resp="$(curl -s -w 'HTTP%{http_code}' --cacert "$CA" $SIM_ID "$APP/api/v1/parcels")"
+case "$resp" in *TRANSPORT_CLIENT_REJECTED*HTTP403) ok "the app refuses the simulator's certificate: callbacks come in through the proxy only" ;;
+  *) bad "the app refuses the simulator's certificate" "$resp" ;; esac
+
+login="$(curl -sS --cacert "$CA" $SIM_ID -X POST -d "{\"name\":\"$SNIGF_BAO_PAYMENT_SIM_ROLE\"}" "$BAO/auth/$SNIGF_BAO_AUTH_MOUNT/login" 2>&1)"
+SIM_TOKEN="$(printf '%s' "$login" | sed -n 's/.*"client_token":"\([^"]*\)".*/\1/p')"
+printf 'X-Vault-Token: %s\n' "$SIM_TOKEN" > /tmp/sim-token
+resp="$(curl -sS --cacert "$CA" $SIM_ID -H @/tmp/sim-token -X POST -d '{"input":"U05JR0Y="}' "$BAO/$T/hmac/$SNIGF_KEY_PAYMENT_CALLBACK/sha2-256" 2>&1)"
+case "$resp" in *'"hmac":'*) ok "the simulator computes the callback HMAC in OpenBao (control)" ;;
+  *) bad "the simulator computes the callback HMAC in OpenBao (control)" "$resp" ;; esac
+sim_denied=""
+for path in "$T/hmac/$SNIGF_KEY_PASSWORD_PEPPER/sha2-256" "$T/sign/$SNIGF_KEY_AUDIT_CHECKPOINT" "$T/datakey/plaintext/$SNIGF_KEY_DATA_ENCRYPTION"; do
+  code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$CA" $SIM_ID -H @/tmp/sim-token -X POST -d '{"input":"U05JR0Y="}' "$BAO/$path")"
+  [ "$code" = "403" ] || sim_denied="$sim_denied $path -> $code;"
+done
+code="$(curl -s -o /dev/null -w '%{http_code}' --cacert "$CA" $SIM_ID -H @/tmp/sim-token "$BAO/$T/keys/$SNIGF_KEY_PAYMENT_CALLBACK")"
+[ "$code" = "403" ] || sim_denied="$sim_denied read key -> $code;"
+[ -z "$sim_denied" ] && ok "the simulator's token is refused every other key and reading the callback key" \
+  || bad "the simulator's token is refused everything else" "$sim_denied"
+rm -f /tmp/sim-token
 
 finish

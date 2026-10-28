@@ -16,7 +16,9 @@ const secret = (name: string) => readFileSync(`${repoRoot}infra/secrets/${name}`
 // infra/secrets (bash infra/scripts/dev-setup.sh). Production builds need neither.
 export default defineConfig(({ command, mode }) => {
   if (command !== 'serve') {
-    return { plugins: [react()] }
+    // MapLibre (about 1 MB) is its own chunk, loaded only when a geographic or satellite view
+    // is opened; every other chunk stays well under this limit.
+    return { plugins: [react()], build: { chunkSizeWarningLimit: 1100 } }
   }
   const env = loadEnv(mode, repoRoot, 'SNIGF_')
   const required = (key: string) => {

@@ -8,12 +8,13 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
+import org.snigf.mvp.identity.domain.RegisteredKey;
 import org.snigf.mvp.identity.domain.SecondFactorRepository;
 import org.snigf.mvp.shared.id.UuidV7;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
-/** {@code app_user.mfa_enrolled_at} and {@code mfa_recovery_code} (V1 grants). */
+/** {@code app_user.mfa_enrolled_at}, {@code mfa_recovery_code} (V1 grants) and the account's keys in {@code user_credentials}. */
 @Repository
 public class JdbcSecondFactorRepository implements SecondFactorRepository {
 
@@ -69,17 +70,29 @@ public class JdbcSecondFactorRepository implements SecondFactorRepository {
     }
 
     @Override
-    public int resetSecondFactor(UUID userId, Instant at) {
-        int removed = jdbc.sql("""
-                        DELETE FROM user_credentials c USING user_entities e
-                         WHERE c.user_entity_user_id = e.id AND e.app_user_id = :user""")
+    public List<RegisteredKey> keys(UUID userId) {
+        return jdbc.sql("""
+                        SELECT c.credential_id, c.label, c.created, c.last_used
+                          FROM user_credentials c JOIN user_entities e ON e.id = c.user_entity_user_id
+                         WHERE e.app_user_id = :user ORDER BY c.created, c.credential_id""")
                 .param("user", userId)
-                .update();
-        replaceRecoveryCodes(userId, List.of(), at);
-        jdbc.sql("UPDATE app_user SET mfa_enrolled_at = NULL, version = version + 1 WHERE id = :id")
-                .param("id", userId)
-                .update();
-        return removed;
+                .query((rs, n) -> new RegisteredKey(rs.getString(1), rs.getString(2), instant(rs.getObject(3, OffsetDateTime.class)),
+                        instant(rs.getObject(4, OffsetDateTime.class))))
+                .list();
+    }
+
+    @Override
+    public boolean removeKey(UUID userId, String credentialId) {
+        return jdbc.sql("""
+                        DELETE FROM user_credentials c USING user_entities e
+                         WHERE c.user_entity_user_id = e.id AND e.app_user_id = :user AND c.credential_id = :id""")
+                .param("user", userId)
+                .param("id", credentialId)
+                .update() == 1;
+    }
+
+    private static Instant instant(OffsetDateTime value) {
+        return value == null ? null : value.toInstant();
     }
 
     private static OffsetDateTime utc(Instant at) {

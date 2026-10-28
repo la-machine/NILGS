@@ -8,8 +8,11 @@
 # 1. registers this run's six accounts through the interface (Playwright project "accounts");
 # 2. makes five of them staff with dev-make-staff.sh (the superuser bootstrap path, dev only):
 #    two SYSTEM_ADMIN, one REVIEWER, one AUDITOR, one SUPERVISOR;
-# 3. runs the journeys (project "flows"): sign-in with virtual security keys, four-eyes role
-#    assignment and custom role, special grant, audit verification.
+# 3. installs synthetic satellite imagery unless imagery is installed (maps-synthetic-imagery.sh
+#    --if-absent: real imagery is never replaced);
+# 4. runs the journeys (project "flows"): sign-in with virtual security keys, four-eyes role
+#    assignment and custom role, special grant, audit verification, recovery, then parcels and
+#    their three map views.
 # Reports and traces land in e2e/out/ (git-ignored). Each run uses new accounts, so the
 # registration limit (SNIGF_RATE_REGISTER_PER_HOUR, 10 in development) allows one run per
 # hour from this machine.
@@ -30,6 +33,9 @@ fi
 
 RUN="$(date -u +%Y%m%d%H%M%S)"
 mkdir -p e2e/out
+# On Linux the bind mount keeps host ownership: the container's user (pwuser, 1001) must be
+# able to write reports there. Only reports and the 0600 state file are written.
+chmod a+rwx e2e/out 2>/dev/null || true
 # The run's random password is a test credential: removed however the run ends.
 trap 'rm -f "e2e/out/state-$RUN.json"' EXIT
 echo "== e2e run $RUN"
@@ -46,6 +52,16 @@ promote admin2 SYSTEM_ADMIN
 promote officer REVIEWER
 promote auditor AUDITOR
 promote supervisor SUPERVISOR
+# A second cadastral officer at the office: resolves the alert the officer's parcels raise (E-11).
+promote surveyor CADASTRAL_OFFICER
+# The intake officer of the office: reviews completeness (E-14).
+promote intake INTAKE_OFFICER
+# The reviewer and the decision authority of the office: recommend, then decide (E-15).
+promote reviewer REVIEWER
+promote decider DECISION_AUTHORITY
 
-docker compose --profile e2e run --rm -e E2E_RUN_ID="$RUN" e2e --project=flows
+bash infra/scripts/maps-synthetic-imagery.sh --if-absent
+
+# E2E_TOUR=1 also captures the design tour (e2e/out/tour/, tests/tour.ts).
+docker compose --profile e2e run --rm -e E2E_RUN_ID="$RUN" -e E2E_TOUR="${E2E_TOUR:-0}" e2e --project=flows
 echo "== e2e run $RUN passed; report: e2e/out/report/index.html"

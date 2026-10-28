@@ -81,6 +81,8 @@ The identity module follows [ADR-021](../adr/021-ddd-layering-inside-modules.md)
 | `POST /mfa/webauthn/assertion/options` | staff password session, enrolled | none | 200 WebAuthn request options (JSON) | 403 |
 | `POST /mfa/webauthn/assertion` | same, throttled | `<PublicKeyCredential JSON>` | 200 `{nextStep: DONE}`, new FULL session | 401 `SECOND_FACTOR_INVALID` (session ended if the account locks); 429 |
 | `POST /mfa/recovery` | same, throttled | `{code}` | 200 `{nextStep, remainingRecoveryCodes, replaceAuthenticator: true}`, new FULL session | 401 `SECOND_FACTOR_INVALID`; 429 |
+| `GET /mfa/keys` | staff, FULL session | none | 200 `{keys: [{id, label, created, lastUsed}], required}`, never key material | 403 `MFA_NOT_ALLOWED` |
+| `DELETE /mfa/keys/{id}` | staff, FULL session, own key | none | 200 `{remaining, required}`; the key no longer signs in; audited `MFA_KEY_REMOVED` | 403 `MFA_NOT_ALLOWED`; 404 `KEY_NOT_FOUND`; 409 `LAST_KEY` |
 
 Every state-changing call needs the CSRF header. Other `/api/v1` paths need a **full**
 session and their own `@PreAuthorize`; anything else is denied.

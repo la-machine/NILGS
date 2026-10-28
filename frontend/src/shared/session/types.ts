@@ -2,6 +2,7 @@
 // Author: Pythagore.
 // The signed-in session as GET /api/v1/auth/session returns it. Shared because every
 // feature decides what to show from it; the server decides what is allowed.
+import type { Lang, Texts } from '../i18n'
 
 export type NextStep = 'DONE' | 'MFA_ENROLMENT' | 'MFA_CHALLENGE'
 
@@ -33,3 +34,15 @@ export interface Session {
 
 /** Runs an action with the shell's busy state and error message (see app/App.tsx). */
 export type Run = (action: () => Promise<void>) => Promise<void>
+
+/** What every signed-in page receives from the shell. */
+export interface PageContext {
+  texts: Texts
+  lang: Lang
+  session: Session
+  run: Run
+  /** Reads the session again (after a special grant was used, a key was added ...). */
+  refreshSession: () => Promise<void>
+  /** A message from the step before (after a recovery code, for example). */
+  notice?: string
+}

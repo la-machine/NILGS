@@ -1,0 +1,50 @@
+{
+  "types": [
+    {
+      "code": "DEMO_REGISTRATION",
+      "nameFr": "Demande d'immatriculation (DEMO)",
+      "nameEn": "Land registration request (DEMO)",
+      "requirements": {
+        "fields": [
+          {
+            "key": "applicantCapacity", "kind": "CHOICE", "required": true, "maxLength": 0,
+            "options": [
+              { "code": "OWNER", "labelFr": "Propriétaire (DEMO)", "labelEn": "Owner (DEMO)" },
+              { "code": "HEIR", "labelFr": "Héritier (DEMO)", "labelEn": "Heir (DEMO)" },
+              { "code": "BUYER", "labelFr": "Acquéreur (DEMO)", "labelEn": "Buyer (DEMO)" }
+            ],
+            "labelFr": "Qualité du demandeur", "labelEn": "Applicant's capacity",
+            "hintFr": null, "hintEn": null
+          },
+          {
+            "key": "landUse", "kind": "CHOICE", "required": true, "maxLength": 0,
+            "options": [
+              { "code": "RESIDENTIAL", "labelFr": "Habitation", "labelEn": "Residential" },
+              { "code": "AGRICULTURAL", "labelFr": "Agricole", "labelEn": "Agricultural" },
+              { "code": "COMMERCIAL", "labelFr": "Commercial", "labelEn": "Commercial" }
+            ],
+            "labelFr": "Usage du terrain", "labelEn": "Land use",
+            "hintFr": null, "hintEn": null
+          },
+          {
+            "key": "representativeName", "kind": "TEXT", "required": false, "maxLength": 120, "options": null,
+            "labelFr": "Représentant (s'il y en a un)", "labelEn": "Representative (if any)",
+            "hintFr": "Nom de la personne qui dépose pour le demandeur.",
+            "hintEn": "Name of the person filing on the applicant's behalf."
+          },
+          {
+            "key": "statement", "kind": "LONG_TEXT", "required": true, "maxLength": 2000, "options": null,
+            "labelFr": "Exposé de la demande", "labelEn": "Statement",
+            "hintFr": "Comment le droit sur la parcelle a été acquis (données fictives).",
+            "hintEn": "How the right to the parcel was acquired (synthetic data)."
+          }
+        ],
+        "documents": [
+          { "code": "DEMO_IDENTITY", "required": true, "labelFr": "Pièce d'identité (DEMO)", "labelEn": "Identity document (DEMO)" },
+          { "code": "DEMO_PROOF_OF_RIGHT", "required": true, "labelFr": "Preuve du droit (DEMO)", "labelEn": "Proof of right (DEMO)" },
+          { "code": "DEMO_SITE_PLAN", "required": false, "labelFr": "Plan de situation (DEMO)", "labelEn": "Site plan (DEMO)" }
+        ]
+      }
+    }
+  ]
+}

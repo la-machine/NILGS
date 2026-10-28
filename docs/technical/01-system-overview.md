@@ -10,8 +10,9 @@ for Cameroon. Slice 1 delivers:
 
 - staff login with strong authentication;
 - role assignment;
-- parcel creation from GeoJSON;
-- a map view;
+- parcel creation and correction from GeoJSON, with validation and versions;
+- three map views over the same authoritative geometry: technical (offline), geographic
+  and satellite (self-hosted map data, [ADR-029](../adr/029-map-views-and-sovereign-map-data.md));
 - a verifiable audit trail.
 
 ## Containers
@@ -33,7 +34,13 @@ flowchart LR
         openbao[openbao<br/>key custody]
         baoinit[bao-init<br/>unseal + provision, one-shot]
     end
+    subgraph provider [networks provider-out, provider-in, provider-key, internal]
+        sim[payment-sim<br/>DEMO payment simulator]
+    end
     web -- "mutual TLS 1.3 :47080" --> app
+    app -- "charges, mutual TLS 1.3 :47091" --> sim
+    sim -- "signed callbacks, mutual TLS 1.3 :47090" --> web
+    sim -- "HMAC only, mutual TLS 1.3 :47820" --> openbao
     app -- "TLS 1.3 + client cert + SCRAM :47432" --> db
     migrate -- "same, as schema owner" --> db
     app -- "mutual TLS 1.3 :47820" --> openbao
@@ -45,13 +52,19 @@ flowchart LR
 | `db` | `postgis/postgis:18-3.6` (pinned by digest) | Data, spatial validation, audit chain trigger | long-running | data-net | postgres (drops from root at start) |
 | `migrate` | `flyway/flyway:12.4.0-alpine` | Applies `backend/src/main/resources/db/migration` as `snigf_migrator` | exits when done | data-net | 10003 |
 | `openbao` | `snigf-openbao:local` (built from pinned OpenBao 2.7.1) | Holds every long-term key; signs, wraps, HMACs | long-running | key-net | 100 |
-| `bao-init` | `snigf-openbao-init:local` | Initialises, unseals, provisions keys, policy and login; revokes its root token | exits when done | key-net | openbao |
-| `app` | `snigf-backend:local` (`backend/Dockerfile`) | REST API, business rules, audit, scheduling | long-running | app-net, data-net, key-net | 10001 |
-| `web` | `snigf-web:local` (`infra/proxy/Dockerfile`) | TLS termination, security headers, static UI, `/api` proxy | long-running | edge, app-net | 10002 |
+| `bao-init` | `snigf-openbao-init:local` | Initialises, unseals, provisions keys, policies and logins (the app's, the payment simulator's); revokes its root token | exits when done | key-net | openbao |
+| `app` | `snigf-backend:local` (`backend/Dockerfile`) | REST API, business rules, audit, scheduling | long-running | app-net, data-net, key-net, provider-out | 10001 |
+| `web` | `snigf-web:local` (`infra/proxy/Dockerfile`) | TLS termination, security headers, static UI, `/api` proxy; a second listener for payment provider callbacks (mutual TLS, ADR-037) | long-running | edge, app-net, provider-in | 10002 |
+| `payment-sim` | `snigf-payment-sim:local` (`infra/payment-sim/Dockerfile`, Node.js 24, no dependency) | **DEMO payment simulator, no real money moves**: takes charges from the app only, signs callbacks with the callback key inside OpenBao (its own login, HMAC only), sends them through the proxy's provider listener ([guide](../guides/payments.md)) | long-running | provider-out, provider-in, provider-key | 10004 |
 | `dbtest` | built from `infra/db/test.Dockerfile` | pgTAP suite and concurrent chain test in a throwaway server | profile `test` | none | postgres |
-| `security-probe` | `snigf-probe:local` | Asserts every transport and key-custody guarantee against the running stack | profile `test` | app-net, data-net, key-net | probe |
+| `security-probe` | `snigf-probe:local` | Asserts every transport and key-custody guarantee against the running stack, and the payment provider path (ADR-037) | profile `test` | app-net, data-net, key-net, provider-in | probe |
 | `segmentation-probe` | `snigf-probe:local` | Asserts what the proxy's network cannot reach | profile `test` | app-net | probe |
 | `e2e` | `snigf-e2e:local` (Playwright 1.64.0, pinned by digest) | Chromium end-to-end tests with virtual security keys ([guide](../guides/end-to-end-testing.md)) | profile `e2e`, run by `infra/scripts/e2e.sh` | the proxy's network namespace (`service:web`) | pwuser |
+| `maps-tools` | `snigf-maps-tools:local` (`infra/maps/Dockerfile`: GDAL 3.13.3, go-pmtiles 1.31.2, pinned by digest) | Imports imagery, generates synthetic test imagery, extracts glyphs, writes manifests ([guide](../guides/map-data.md)) | profile `maps`, run by `infra/scripts/maps-*.sh` | none | 10003 |
+| `maps-fetch` | `snigf-maps-tools:local` | Downloads the label glyph archive (checked against its pinned SHA-256), the Sentinel-2 scenes of the national satellite base (cloud-masked as fetched) and the aerial details | profile `maps` | maps-egress | 10003 |
+| `planetiler-fetch` | `ghcr.io/onthegomap/planetiler:0.10.2` (pinned by digest) | Downloads the OpenStreetMap extract, water polygons and Natural Earth | profile `maps` | maps-egress | 10003 |
+| `planetiler` | the same image | Builds the geographic vector tiles from those sources | profile `maps` | none | 10003 |
+| `maps-install` | `snigf-maps-tools:local` | The only writer of `map-data`: publishes a staged archive by rename | profile `maps` | none | root, no capability but CHOWN |
 
 ### Start order
 
@@ -64,6 +77,8 @@ Compose enforces it with `depends_on` conditions:
    code 0.
 5. `app` starts. It is healthy once its readiness covers the database and key custody.
 6. `web` starts once `app` is healthy.
+7. `payment-sim` starts once `bao-init` has provisioned its OpenBao login; the app reaches it
+   only when an applicant pays.
 
 ## Networks
 
@@ -73,6 +88,10 @@ Compose enforces it with `depends_on` conditions:
 | `app-net` | yes | web, app | The proxy reaches the API and nothing else |
 | `data-net` | yes | app, migrate, db | Only these talk to the database |
 | `key-net` | yes | app, bao-init, openbao | Only these talk to OpenBao |
+| `provider-out` | yes | app, payment-sim | The app starts DEMO charges |
+| `provider-in` | yes | payment-sim, web (and security-probe, profile `test`) | The simulator's callbacks reach the proxy's provider listener, as a future provider's would |
+| `provider-key` | yes | payment-sim, openbao | The simulator signs its callbacks in OpenBao; it is not on key-net, so it never reaches the app's port there |
+| `maps-egress` | no | maps-fetch, planetiler-fetch (profile `maps`) | Downloads map sources; never joined by a running service |
 
 "Internal" means no route to the internet. A compromised proxy reaches neither the
 database nor OpenBao; the segmentation probe proves it.
@@ -89,6 +108,8 @@ Every port is a setting, from the 47xxx block ([ADR-015](../adr/015-non-default-
 | 47432 | `SNIGF_DB_PORT` | db | TLS 1.3 + client certificate | data-net; host loopback with `compose.dev.yml` |
 | 47820 | `SNIGF_BAO_PORT` | openbao | mutual TLS 1.3 | key-net; host loopback with `compose.dev.yml` |
 | 47821 | `SNIGF_BAO_CLUSTER_PORT` | openbao (Raft) | TLS | key-net |
+| 47090 | `SNIGF_PROVIDER_CALLBACK_PORT` | web (provider listener) | mutual TLS 1.3, callbacks only | provider-in; never published |
+| 47091 | `SNIGF_PAYMENT_SIM_PORT` | payment-sim | mutual TLS 1.3 | provider-out |
 | 47173 / 47174 | `SNIGF_VITE_PORT` / `SNIGF_VITE_PREVIEW_PORT` | Vite dev server / preview | HTTPS | host, during frontend work |
 
 ## Volumes
@@ -100,6 +121,10 @@ Every port is a setting, from the 47xxx block ([ADR-015](../adr/015-non-default-
 | `bao-audit` | openbao | OpenBao's audit log | OpenBao's history of key use lost |
 | `bao-keys` | bao-init | **development only**: the unseal shares, standing in for the custodians | OpenBao can never be unsealed again |
 | `audit-checkpoints` | app only | signed audit checkpoints and their public keys | the off-database evidence is lost; the auditor's copies remain |
+| `document-data` | app only | uploaded document files under random keys, read-only once written (ADR-033) | every document's bytes lost: downloads are refused (hash check); back it up with the database |
+| `map-data` | app (read-only), maps-install | map archives and their manifests (ADR-029) | the geographic and satellite views become unavailable until rebuilt or re-imported; parcels are untouched |
+| `map-sources` | map tool jobs | downloaded map sources and the glyph archive | the next build downloads them again |
+| `map-work` | map tool jobs | build workspace and staged archives | nothing installed is lost |
 
 `docker compose down -v` deletes them all together, which is consistent. Never delete
 `bao-keys` or `bao-data` alone.
@@ -112,14 +137,18 @@ backend/                     Spring Boot application (Java 25, Maven wrapper)
     shared/                  cross-cutting: configuration guard, web filters, security baseline, ids
     keys/                    key custody (OpenBao client, KeyService)
     audit/                   audit trail: published API + domain/ application/ infrastructure/
-    identity/ parcel/ application/ conflict/ document/ review/ payment/ reporting/
+    identity/                accounts, sign-in, second factor, roles, grants, recovery
+    parcel/                  parcels: references, geometry validation, versions
+    maps/                    map views: background catalogue, authenticated tile delivery
+    application/ conflict/ document/ review/ payment/ reporting/
                              business modules, filled slice by slice
   src/main/resources/        application*.yaml, db/migration (Flyway)
   src/test/java/             unit (*Test) and integration (*IT) tests
   src/test/sql/              pgTAP tests, helpers, pgbench script
 frontend/                    React 19 + TypeScript + Vite (chapter 10, src/README.md)
   src/app/                   shell: screen flow, layout, panels by permission
-  src/features/              auth, accounts, roles, grants, audit: api.ts + screens + index.ts
+  src/features/              auth, accounts, roles, grants, recovery, audit, parcels, maps:
+                             api.ts + screens + index.ts, unit tests beside them (Vitest)
   src/shared/                HTTP client with CSRF, session and access, texts FR/EN, UI pieces
   src/styles/                tokens, base, layout, components
   public/brand/              logo files derived from the official logo (BRAND.md)
@@ -129,7 +158,11 @@ infra/
   openbao/                   OpenBao images, configuration template, provisioning, policy
   proxy/                     Caddyfile and proxy image
   probe/                     security and segmentation probes
-  scripts/                   dev-setup.sh, dev-pki.sh, db-test.sh, verify-checkpoint.sh
+  maps/                      map tools image and the scripts it runs (ADR-029)
+  scripts/                   dev-setup.sh, dev-pki.sh, dev-make-staff.sh, dev-seed-demo.sh, db-test.sh,
+                             verify-checkpoint.sh, e2e.sh,
+                             maps-build-geographic.sh, maps-build-satellite.sh, maps-import-imagery.sh,
+                             maps-synthetic-imagery.sh
   secrets/                   generated passwords, keys, certificates (git-ignored)
 docs/
   technical/                 this manual

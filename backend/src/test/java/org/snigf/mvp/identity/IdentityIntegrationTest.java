@@ -19,6 +19,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.AbstractMockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -96,7 +97,7 @@ public abstract class IdentityIntegrationTest extends PostgisIntegrationTest {
             this.address = address;
         }
 
-        public MockHttpServletResponse send(MockHttpServletRequestBuilder request) throws Exception {
+        public MockHttpServletResponse send(AbstractMockHttpServletRequestBuilder<?> request) throws Exception {
             request.with(r -> {
                 r.setRemoteAddr(address);
                 return r;
@@ -159,18 +160,28 @@ public abstract class IdentityIntegrationTest extends PostgisIntegrationTest {
     }
 
     protected UUID insertStaff(String email, String role) {
+        return insertStaff(email, role, "DEMOIT");
+    }
+
+    /** A staff account with {@code role} at {@code officeCode} (created if needed). */
+    protected UUID insertStaff(String email, String role, String officeCode) {
         UUID id = UUID.randomUUID();
         jdbc.update("INSERT INTO app_user (id, email, display_name, password_hash, account_type) VALUES (?, ?, ?, ?, 'STAFF')",
                 id, email, "Demo Officer", hasher.hash(PASSWORD));
         // The bootstrap path (V8): only the superuser assigns a role without an approved
         // request, as the deployment procedure does for the first administrators.
         try (java.sql.Connection su = PostgisDatabase.shared().superuserConnection();
+             java.sql.PreparedStatement office = su.prepareStatement("INSERT INTO office (id, code, name_fr, name_en)"
+                     + " VALUES (gen_random_uuid(), ?, 'Bureau de test', 'Test office') ON CONFLICT (code) DO NOTHING");
              java.sql.PreparedStatement insert = su.prepareStatement("INSERT INTO role_assignment"
                      + " (id, user_id, role, office_id, grant_reason) SELECT ?, ?, ?, id, 'test seed' FROM office"
-                     + " WHERE code = 'DEMOIT'")) {
+                     + " WHERE code = ?")) {
+            office.setString(1, officeCode);
+            office.executeUpdate();
             insert.setObject(1, UUID.randomUUID());
             insert.setObject(2, id);
             insert.setString(3, role);
+            insert.setString(4, officeCode);
             insert.executeUpdate();
             su.commit();
         } catch (java.sql.SQLException e) {
@@ -344,8 +355,13 @@ public abstract class IdentityIntegrationTest extends PostgisIntegrationTest {
     }
 
     protected SignedIn signedIn(String role) throws Exception {
+        return signedIn(role, "DEMOIT");
+    }
+
+    /** A staff member with {@code role} at {@code officeCode}, two keys enrolled, and a FULL session. */
+    protected SignedIn signedIn(String role, String officeCode) throws Exception {
         String email = email();
-        UUID id = insertStaff(email, role);
+        UUID id = insertStaff(email, role, officeCode);
         Browser browser = new Browser();
         browser.login(email, PASSWORD);
         register(browser, new Authenticator(), "Office key");

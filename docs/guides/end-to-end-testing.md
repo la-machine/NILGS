@@ -60,10 +60,28 @@ virtual security keys. Decisions: [ADR-026](../adr/026-approval-workflow-enforce
    - the auditor verifies the chain, finds the `PERMISSION_GRANT_USED` event and signs a
      checkpoint (decision D5);
    - the supervisor verifies the chain and cannot search events;
-   - recovery (ADR-024): the officer loses both keys, signs in with a recovery code (a
-     reused code is refused), adds a new key and proves it; then loses everything, an
-     administrator resets after the supervisor's confirmation (resetting oneself is refused),
-     the old codes are dead, the officer enrols again, and the auditor finds `MFA_RESET`.
+   - recovery (ADR-024, ADR-028): the officer loses both keys, signs in with a recovery code
+     (a reused code is refused), adds a new key, removes the two lost ones and proves the new
+     one; then loses everything: an administrator requests the reset (for oneself it is
+     refused), an administrator's confirmation is refused, the supervisor confirms in Identity
+     confirmations saying how the identity was checked, the old codes are dead, the officer
+     enrols again, and the auditor finds `MFA_RESET` with both people;
+   - parcels and map views (`tests/parcels.ts`, registered by `flows.spec.ts` because a
+     virtual key lives in its browser context): the officer, a cadastral officer since the
+     approval above, sees a bow-tie geometry refused with its reason, then records a parcel;
+     the technical view shows boundary, grid, scale, readout and a measured length; each
+     background offered by `GET /map/backgrounds` is either rendered from our archive
+     (`data-loaded`, attribution, synthetic warning, 206 range responses) or disabled with
+     its reason; switching never calls the parcel API; tiles are refused without a session;
+     a correction makes version 2 and the history keeps version 1; the supervisor reads but
+     cannot correct; an administrator and an applicant get 403; the auditor finds the
+     creation, the refusal and the correction; the browser contacted no other origin and
+     logged no CSP violation.
+6. **Map data.** Before phase 2, `e2e.sh` runs `maps-synthetic-imagery.sh --if-absent`, so
+   the satellite view has data (real imagery is never replaced). The geographic view is
+   tested as installed or as unavailable, whichever the stack has
+   ([map data guide](map-data.md)). Chromium runs with `--enable-unsafe-swiftshader`: the
+   container has no GPU, and MapLibre needs WebGL.
 
 ## How to do it again
 
@@ -73,15 +91,24 @@ virtual security keys. Decisions: [ADR-026](../adr/026-approval-workflow-enforce
    `e2e/out/results/` (open with `npx playwright show-trace <file>`).
 
 To add a journey, add a `test(...)` to `flows.spec.ts` using `Person`: `signIn()`, `home()`,
-`panel(title)`, `api(method, path, body)`, `answerNextDialog(answer)`. Select elements by role
+`open(place, title?)` (a sidebar place; returns the page's content), `api(method, path, body)`,
+`respond(answer)` (after the click that opens a dialog: a reason, `true` to confirm, `false`
+to cancel). Select elements by role
 and English label, as a person reads them; never by CSS class unless there is no label.
 
 ## How to verify
 
 ```sh
 docker compose up -d --wait
-bash infra/scripts/e2e.sh     # expected: "1 passed" (branding), "1 passed" (accounts), "9 passed" (flows)
+bash infra/scripts/e2e.sh     # expected: "1 passed" (branding), "1 passed" (accounts), "18 passed" (flows, the last one skipped unless E2E_TOUR=1)
 ```
+
+## Design tour
+
+`E2E_TOUR=1 bash infra/scripts/e2e.sh` also captures the main screens at desktop (1440 × 900),
+tablet (834 × 1112) and phone (390 × 844) widths into `e2e/out/tour/` (`tests/tour.ts`), with
+the run's real people and parcel: dashboard, parcel list, recording, detail in each map view,
+correction mode, accounts, roles, audit. Use it to review a visual change before merging.
 
 ## Pitfalls we hit
 
@@ -91,6 +118,13 @@ bash infra/scripts/e2e.sh     # expected: "1 passed" (branding), "1 passed" (acc
 | A second registration with the same virtual key fails (`InvalidStateError`) | The server lists the first credential in `excludeCredentials` | Remove the first virtual key and add a new one before the second registration |
 | The result of a special grant's last use disappeared at once | The session refresh after the use closed the panel the result was shown in | The audit panel stays open for the visit once shown; only its buttons follow the access |
 | `strict mode violation ... resolved to 2 elements` on "Reason" or "Search" | Two controls with the same label in one panel (role request and second-factor reset; event search and the checkpoint list button) | Scope to the form that holds the button; the checkpoint button became "Show checkpoints" |
+| A label matched two fields (`Locality` and `Reference or locality`) | `getByLabel` matches substrings | `{ exact: true }` |
+| A label never matched exactly (`Office`) | A label that wraps an input includes the input's value in the accessible name (`Office DEMO1`) | `getByRole('textbox', { name: /^Office/ })` |
+| A search found two audit rows | Earlier runs left the same reason in the trail | filter by this run's people (their ids) |
+| `getByLabel` matched a whole card | A region named by its heading (`aria-labelledby`) is also "labelled" | Sign-in cards are no longer named regions |
+| A radio of the map views was "not visible" | Hidden with the clip technique | The radio covers its segment, transparent: clickable, and found by tests |
+| `Pattern attribute value ... is not a valid regular expression` in the console | Browsers compile `pattern` with the `v` flag; the field was silently unchecked | Escape `(`, `)` and `-` in classes; `shared/patterns.test.ts` compiles every pattern |
+| A new role did not appear for its holder | The session was read only at sign-in | The shell reads it again on navigation and window focus |
 | A second run within the hour fails at registration (429) | `SNIGF_RATE_REGISTER_PER_HOUR=10` per address, six accounts per run | Wait, or in development only restart the application (`docker compose restart app`), whose limiter is in memory |
 
 ## Production differences

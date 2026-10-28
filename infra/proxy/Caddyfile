@@ -4,6 +4,9 @@
 #   browser → proxy   TLS 1.3 with the certificate in /run/secrets/web_tls_*
 #   proxy → app       mutual TLS 1.3: the proxy presents web_client_*, verifies the app
 #                     against the SNIGF CA chain and its name "app"
+#   provider → proxy  a second listener for payment provider callbacks (ADR-037), on the
+#                     internal network provider-in only: mutual TLS 1.3, the provider's client
+#                     certificate required and verified, callbacks only
 # No plain-HTTP listener exists: automatic HTTPS redirects are disabled.
 {
 	admin off
@@ -32,12 +35,23 @@
 		-Server
 	}
 
+	# Provider callbacks never come through the browser listener (ADR-037).
+	handle /api/v1/payments/callbacks/* {
+		respond 404
+	}
+
 	# The API only. Management endpoints are bound to the app's loopback interface.
 	handle /api/* {
+		# No body larger than a document and its envelope reaches the application (ADR-033).
+		request_body {
+			max_size {$SNIGF_PROXY_MAX_BODY_BYTES}
+		}
 		reverse_proxy https://app:{$SNIGF_APP_PORT} {
 			# The browser's address for audit records. `header_up` replaces any value the
 			# browser sent; the app believes it only on this proxy's client certificate.
 			header_up {$SNIGF_PROXY_CLIENT_ADDRESS_HEADER} {remote_host}
+			# Only the provider listener speaks for a provider: a browser's value never passes.
+			header_up -{$SNIGF_PROXY_PROVIDER_CLIENT_HEADER}
 			transport http {
 				tls_server_name app
 				tls_trust_pool file /run/secrets/pki_ca_chain_crt
@@ -50,5 +64,42 @@
 		root * /srv
 		try_files {path} /index.html
 		file_server
+	}
+}
+
+# Payment provider callbacks (ADR-037). Not published on the host: the DEMO simulator reaches it
+# on provider-in. A client certificate chained to the SNIGF CA is required and verified; its
+# subject goes to the app in SNIGF_PROXY_PROVIDER_CLIENT_HEADER, overwriting any sent value, and
+# the app checks the name and the callback's HMAC. Nothing but the callback path is served.
+:{$SNIGF_PROVIDER_CALLBACK_PORT} {
+	tls /run/secrets/web_provider_tls_crt /run/secrets/web_provider_tls_key {
+		protocols tls1.3
+		client_auth {
+			mode require_and_verify
+			trust_pool file /run/secrets/pki_ca_chain_crt
+		}
+	}
+
+	header {
+		-Server
+	}
+
+	handle /api/v1/payments/callbacks/* {
+		request_body {
+			max_size 16KB
+		}
+		reverse_proxy https://app:{$SNIGF_APP_PORT} {
+			header_up {$SNIGF_PROXY_CLIENT_ADDRESS_HEADER} {remote_host}
+			header_up {$SNIGF_PROXY_PROVIDER_CLIENT_HEADER} {http.request.tls.client.subject}
+			transport http {
+				tls_server_name app
+				tls_trust_pool file /run/secrets/pki_ca_chain_crt
+				tls_client_auth /run/secrets/web_client_crt /run/secrets/web_client_key
+			}
+		}
+	}
+
+	handle {
+		respond 404
 	}
 }

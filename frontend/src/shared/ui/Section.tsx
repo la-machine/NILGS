@@ -1,13 +1,13 @@
 // SNIGF/NILGS - Copyright (c) 2026 FLYT.
 // Author: Pythagore.
-// A titled card: the frame of every sign-in screen.
+// The card of every sign-in screen (sign-in, registration, security keys, recovery).
 import type { ReactNode } from 'react'
 
 export function Section({ title, intro, children }: { title: string; intro?: string; children: ReactNode }) {
   return (
-    <section className="panel">
+    <section className="auth-card">
       <h2>{title}</h2>
-      {intro && <p>{intro}</p>}
+      {intro && <p className="auth-intro">{intro}</p>}
       {children}
     </section>
   )

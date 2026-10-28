@@ -5,7 +5,8 @@
 // which promotes the staff accounts between the last two:
 //   branding  the logo loads through the proxy (creates no account);
 //   accounts  registers this run's accounts through the interface;
-//   flows     sign-in with virtual security keys, four-eyes approvals, special grants, audit.
+//   flows     sign-in with virtual security keys, four-eyes approvals, special grants, audit,
+//             then parcels and their map views (tests/parcels.ts).
 // The browser trusts the development CA (imported by run.sh); certificate errors are never
 // ignored.
 import { defineConfig } from '@playwright/test'
@@ -29,6 +30,9 @@ export default defineConfig({
     locale: 'en-GB',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    // The container has no GPU: the geographic and satellite views (WebGL) render with
+    // Chromium's software renderer, which it enables only when asked. Test browser only.
+    launchOptions: { args: ['--enable-unsafe-swiftshader'] },
   },
   projects: [
     { name: 'branding', testMatch: /branding\.spec\.ts/ },

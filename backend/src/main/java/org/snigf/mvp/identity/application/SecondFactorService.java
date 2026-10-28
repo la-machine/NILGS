@@ -20,6 +20,7 @@ import org.snigf.mvp.identity.AuthenticatedUser;
 import org.snigf.mvp.identity.domain.LockoutPolicy;
 import org.snigf.mvp.identity.domain.RecoveryCode;
 import org.snigf.mvp.identity.domain.RecoveryCodeHasher;
+import org.snigf.mvp.identity.domain.RegisteredKey;
 import org.snigf.mvp.identity.domain.SecondFactorRepository;
 import org.snigf.mvp.identity.domain.UserAccount;
 import org.snigf.mvp.identity.domain.UserRepository;
@@ -49,6 +50,20 @@ public class SecondFactorService {
     public static class NotAllowed extends RuntimeException {
         public NotAllowed(String reason) {
             super(reason);
+        }
+    }
+
+    /** The key is not one of the caller's keys. */
+    public static class KeyNotFound extends RuntimeException {
+        public KeyNotFound() {
+            super("not one of your keys");
+        }
+    }
+
+    /** Removing it would leave no key: the account would be enrolled without a second factor. */
+    public static class LastKey extends RuntimeException {
+        public LastKey() {
+            super("the last key cannot be removed");
         }
     }
 
@@ -90,6 +105,55 @@ public class SecondFactorService {
         this.clock = clock;
         this.minAuthenticators = properties.webauthn().minAuthenticators();
         this.recoveryCodeCount = properties.webauthn().recoveryCodes();
+    }
+
+    // --- The owner's keys (ADR-028) -----------------------------------------------------------
+
+    /** The caller's keys, once every factor is proven. */
+    @Transactional(readOnly = true)
+    public List<RegisteredKey> keys(AuthenticatedUser user) {
+        fullStaff(user);
+        return factors.keys(user.userId());
+    }
+
+    /**
+     * Removes one of the caller's keys, typically a lost one after a recovery-code sign-in.
+     * The last key stays (the database refuses it too, V10). Returns how many keys remain;
+     * below the required number, the interface asks for a new one. Audited.
+     */
+    @Transactional
+    public int removeKey(AuthenticatedUser user, String credentialId) {
+        fullStaff(user);
+        List<RegisteredKey> keys = factors.keys(user.userId());
+        RegisteredKey key = keys.stream().filter(k -> k.id().equals(credentialId)).findFirst()
+                .orElseThrow(KeyNotFound::new);
+        if (keys.size() <= 1) {
+            throw new LastKey();
+        }
+        try {
+            if (!factors.removeKey(user.userId(), credentialId)) {
+                throw new KeyNotFound();
+            }
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            throw new LastKey();
+        }
+        int remaining = keys.size() - 1;
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("label", key.label());
+        details.put("remaining", remaining);
+        audit.record(AuditEvent.of(AuditAction.MFA_KEY_REMOVED, AuditOutcome.SUCCESS)
+                .withEntity(RegistrationService.ENTITY_USER, user.userId()).withDetails(details));
+        return remaining;
+    }
+
+    public int requiredKeys() {
+        return minAuthenticators;
+    }
+
+    private static void fullStaff(AuthenticatedUser user) {
+        if (user.accountType() != AccountType.STAFF || !user.fullyAuthenticated()) {
+            throw new NotAllowed("key management needs a staff session with every factor proven");
+        }
     }
 
     // --- Registration ---------------------------------------------------------------------

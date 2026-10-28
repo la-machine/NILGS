@@ -27,9 +27,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Administration endpoints (Slice 1 design §5): the account directory, role grants and
- * revocations, and the reset of a lost second factor. Each names its permission; the
- * service enforces separation of duties and audits every change.
+ * Administration endpoints (Slice 1 design §5): the account directory, role requests and
+ * revocations. The reset of a lost second factor is {@link RecoveryController}. Each names
+ * its permission; the service enforces separation of duties and audits every change.
  */
 @RestController
 @RequestMapping(SecurityConfiguration.API + "/admin/users")
@@ -46,9 +46,6 @@ class AdminController {
     }
 
     record RevokeRequest(@NotNull @Size(max = 500) String reason) {
-    }
-
-    record ResetRequest(@NotNull @Size(max = 500) String reason, @NotNull @Size(max = 120) String confirmedBy) {
     }
 
     @GetMapping
@@ -74,14 +71,6 @@ class AdminController {
     ResponseEntity<Void> revoke(@AuthenticationPrincipal AuthenticatedUser admin, @PathVariable UUID userId,
                                 @PathVariable UUID assignmentId, @Valid @RequestBody RevokeRequest body) {
         administration.revokeRole(admin, userId, assignmentId, body.reason());
-        return ResponseEntity.noContent().build();
-    }
-
-    @PostMapping("/{userId}/mfa-reset")
-    @PreAuthorize("@access.can(authentication, 'admin.mfa.reset')")
-    ResponseEntity<Void> resetSecondFactor(@AuthenticationPrincipal AuthenticatedUser admin, @PathVariable UUID userId,
-                                           @Valid @RequestBody ResetRequest body) {
-        administration.resetSecondFactor(admin, userId, body.reason(), body.confirmedBy());
         return ResponseEntity.noContent().build();
     }
 }

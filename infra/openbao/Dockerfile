@@ -22,6 +22,6 @@ LABEL org.opencontainers.image.title="SNIGF/NILGS key custody provisioning"
 USER root
 RUN apk add --no-cache curl jq \
  && install -d -m 700 -o openbao -g openbao /bao-keys
-COPY --chmod=444 bao-init.sh app-policy.hcl.template /etc/snigf/
+COPY --chmod=444 bao-init.sh app-policy.hcl.template payment-sim-policy.hcl.template /etc/snigf/
 USER openbao
 ENTRYPOINT ["sh", "/etc/snigf/bao-init.sh"]

@@ -21,6 +21,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -30,7 +33,8 @@ import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Second-factor endpoints (ADR-016, ADR-023), for a password session of a staff member:
- * register WebAuthn authenticators, prove one at login, or use a recovery code. Options and
+ * register WebAuthn authenticators, prove one at login, or use a recovery code; and, once
+ * signed in, list and remove one's own keys (ADR-028). Options and
  * responses are WebAuthn JSON, as {@code PublicKeyCredential.parseCreationOptionsFromJSON}
  * and {@code credential.toJSON()} produce in the browser.
  *
@@ -129,6 +133,21 @@ class MfaController {
         // A recovery code means an authenticator is lost: the interface asks for a replacement.
         result.put("replaceAuthenticator", true);
         return answer(verification, request, response, result);
+    }
+
+    /** The caller's keys (ADR-028): label and dates, never key material. */
+    @GetMapping("/keys")
+    @PreAuthorize("isAuthenticated()")
+    Map<String, Object> keys(@AuthenticationPrincipal AuthenticatedUser user) {
+        return Map.of("keys", secondFactor.keys(user), "required", secondFactor.requiredKeys());
+    }
+
+    /** Removes one of the caller's keys, for example a lost one; never the last. */
+    @DeleteMapping("/keys/{credentialId}")
+    @PreAuthorize("isAuthenticated()")
+    Map<String, Object> removeKey(@AuthenticationPrincipal AuthenticatedUser user,
+                                  @PathVariable String credentialId) {
+        return Map.of("remaining", secondFactor.removeKey(user, credentialId), "required", secondFactor.requiredKeys());
     }
 
     private ResponseEntity<Map<String, Object>> answer(SecondFactorService.Verification verification,

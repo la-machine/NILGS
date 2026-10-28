@@ -23,7 +23,8 @@ LABEL org.opencontainers.image.title="SNIGF/NILGS backend" \
       org.opencontainers.image.authors="Pythagore" \
       org.opencontainers.image.description="Demonstration software, synthetic data only"
 RUN groupadd --system --gid 10001 snigf && useradd --system --uid 10001 --gid snigf --no-create-home snigf \
- && install -d -o snigf -g snigf -m 700 /var/lib/snigf/audit-checkpoints
+ && install -d -o snigf -g snigf -m 700 /var/lib/snigf/audit-checkpoints \
+ && install -d -o snigf -g snigf -m 700 /var/lib/snigf/documents
 WORKDIR /app
 COPY --from=build /extracted/dependencies/ ./
 COPY --from=build /extracted/spring-boot-loader/ ./

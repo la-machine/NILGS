@@ -35,7 +35,7 @@ roles; `PermissionMatrixIT` checks every staff role against every protected endp
 | `admin.assignment.read` | administration | no | any | Read role assignment requests |
 | `admin.assignment.approve` | administration | no | any | Approve or reject role assignment requests |
 | `admin.role.revoke` | administration | no | any | Revoke a role from a staff account |
-| `admin.mfa.reset` | administration | no | any | Reset a lost second factor |
+| `admin.mfa.reset` | administration | no | any | Request the reset of a lost second factor |
 | `admin.role.read` | administration | no | any | Read roles, the permission catalogue and role change requests |
 | `admin.role.define` | administration | no | any | Request the creation, change or retirement of a role |
 | `admin.role.approve` | administration | no | any | Approve or reject role change requests |
@@ -65,6 +65,7 @@ roles; `PermissionMatrixIT` checks every staff role against every protected endp
 | `report.workload` | business | yes | any, office | Read workload reports |
 | `payment.pay` | business | yes | own | Pay a fee (simulated) |
 | `payment.reconcile` | business | yes | any | Reconcile payment exceptions |
+| `identity.reset.confirm` | business | no | office | Confirm the identity of a person whose second factor is reset |
 
 ## Baseline roles
 
@@ -105,6 +106,7 @@ roles; `PermissionMatrixIT` checks every staff role against every protected endp
 | `report.workload` | — | — | — | — | — | office | — | — | — |
 | `payment.pay` | own | — | — | — | — | — | — | — | — |
 | `payment.reconcile` | — | — | — | — | — | — | — | any | — |
+| `identity.reset.confirm` | — | — | — | — | — | office | — | — | — |
 
 APPLICANT is not assignable: it is what a self-registered account is, not a role an
 administrator grants.
@@ -114,11 +116,17 @@ administrator grants.
 | Scope | Meaning | Checked by |
 | --- | --- | --- |
 | any | everywhere, whatever office the role was granted at | authority `<permission>`, `@access.can(authentication, '<permission>')` |
-| office | records of the office the role was granted at | authority `<permission>@<OFFICE>`, `@access.canAt(authentication, '<permission>', officeCode)` |
-| assigned | records assigned to the user | the service, per record (with the case module) |
-| own | the user's own records | the service, per record |
-| linked | records linked to the user's own records | the service, per record |
+| office | records of the office the role was granted at | authority `<permission>@<OFFICE>`, `@access.canAt(authentication, '<permission>', officeCode)`; a record of two offices (an alert): `@access.canAtAny(authentication, '<permission>', offices)` |
+| assigned | records assigned to the user | authority `<permission>#assigned`, `@access.canAssigned(authentication, '<permission>')`; the service, per record (assigned to the caller, or waiting to be claimed at their stage; 404 for any other), and row-level security (`case_visible_to_assignee`, ADR-035) |
+| own | the user's own records | authority `<permission>#own`, `@access.canOwn(authentication, '<permission>')`; the service, per record (404 for any other), and row-level security on the actor named per transaction (applications, ADR-032) |
+| linked | records linked to the user's own records | authority `<permission>#linked`; the service, per record |
 | — | not granted | |
+
+A relative scope (assigned, own, linked) never counts as *any* or as an office: `can`,
+`canAt` and `canSomewhere` ignore `#` authorities, so an applicant's `parcel.read` (linked)
+opens no parcel or map endpoint (`PermissionMatrixTest.relativeScopesNeverCountAsEverywhere`).
+`canSomewhere` (held at some office or everywhere) guards what is not tied to one office,
+such as the map backgrounds.
 
 An endpoint checked with `can` (no office) is reached only with scope **any**: a supervisor's
 `audit.event.search` at office scope will open once audit events carry an office.
@@ -134,6 +142,10 @@ An endpoint checked with `can` (no office) is reached only with scope **any**: a
 - **Administration and audit never meet:** no role (baseline or custom) and no person may hold
   permissions of both families. Checked when a role is defined or changed, when a role is
   assigned, and when a special grant is approved.
+- **A second-factor reset needs the person's supervisor:** an administrator requests it, a
+  holder of `identity.reset.confirm` at an office of the person confirms it in the
+  application ([ADR-028](adr/028-key-removal-and-supervised-reset.md)). The permission is a
+  business one, so supervisors keep their audit permissions without mixing duties.
 - **Administration is never delegable:** a special grant can carry business or audit
   permissions only (`ck_administration_not_delegable`, `permission_grant_delegable`).
 - **Back-office roles go to staff only:** an applicant account never receives one.

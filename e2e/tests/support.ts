@@ -18,7 +18,7 @@ export const OFFICE = required('E2E_OFFICE')
 export const STATE_FILE = `/out/state-${RUN}.json`
 
 /** The accounts of a run; e2e.sh promotes the staff ones between the two phases. */
-export const PEOPLE = ['applicant', 'admin1', 'admin2', 'officer', 'auditor', 'supervisor'] as const
+export const PEOPLE = ['applicant', 'admin1', 'admin2', 'officer', 'auditor', 'supervisor', 'surveyor', 'intake', 'reviewer', 'decider'] as const
 export type Who = (typeof PEOPLE)[number]
 
 export const email = (who: Who) => `e2e-${RUN}-${who}@demo.invalid`
@@ -28,12 +28,17 @@ export function password(): string {
   return JSON.parse(readFileSync(STATE_FILE, 'utf8')).password
 }
 
-/** The interface starts in French; the tests read the English texts. */
+/** The interface starts in French and remembers the choice; the tests read the English texts. */
 export async function english(page: Page) {
-  const toggle = page.getByRole('button', { name: 'English', exact: true })
-  await expect(toggle).toBeVisible()
-  await toggle.click()
+  const toEnglish = page.getByRole('button', { name: 'English', exact: true })
+  const toFrench = page.getByRole('button', { name: 'Français', exact: true })
+  await expect(toEnglish.or(toFrench).first()).toBeVisible()
+  if (await toEnglish.isVisible()) await toEnglish.click()
+  await expect(toFrench.first()).toBeVisible()
 }
+
+/** The signed-in shell's mark: the dashboard greets the person. */
+export const SIGNED_IN = /^Welcome, /
 
 export class Person {
   private authenticator = ''
@@ -85,8 +90,13 @@ export class Person {
     return this.page.getByRole('heading', { name, exact: typeof name === 'string' })
   }
 
-  panel(title: string): Locator {
-    return this.page.locator('section.panel', { has: this.heading(title) })
+  /** Opens a place from the sidebar and waits for its page; returns the page's content. */
+  async open(place: string, title: string = place): Promise<Locator> {
+    const link = this.page.getByRole('complementary', { name: 'Main navigation' }).getByRole('link', { name: place, exact: true })
+    if (!(await link.isVisible())) await this.home()
+    await link.click()
+    await expect(this.page.getByRole('heading', { level: 1, name: title, exact: true })).toBeVisible()
+    return this.page.locator('main')
   }
 
   /** The first factor only; returns the screen the server sends next. */
@@ -98,7 +108,7 @@ export class Person {
     await page.getByRole('button', { name: 'Sign in' }).click()
     const enrol = this.heading('Register your security keys')
     const verify = this.heading('Second factor')
-    const session = this.heading(/^Session — /)
+    const session = this.heading(SIGNED_IN)
     await expect(enrol.or(verify).or(session)).toBeVisible()
     if (await enrol.isVisible()) return 'enrol'
     return (await verify.isVisible()) ? 'verify' : 'session'
@@ -118,7 +128,7 @@ export class Person {
     this.recoveryCodes = (await page.locator('ol.codes li').allInnerTexts()).map((code) => code.trim())
     await page.getByLabel('I have stored these codes safely').check()
     await page.getByRole('button', { name: 'Continue' }).click()
-    await expect(this.heading(/^Session — /)).toBeVisible()
+    await expect(this.heading(SIGNED_IN)).toBeVisible()
   }
 
   /** Signs in through the screens: password, then enrolment of two keys or proof of one. */
@@ -129,10 +139,12 @@ export class Person {
     } else if (next === 'verify') {
       await this.page.getByRole('button', { name: 'Use my security key' }).click()
     }
-    await expect(this.heading(/^Session — /)).toBeVisible()
+    await expect(this.heading(SIGNED_IN)).toBeVisible()
   }
 
   async signOut() {
+    const menu = this.page.locator('.user-menu-button')
+    if (await menu.isVisible()) await menu.click()
     await this.page.getByRole('button', { name: 'Sign out' }).first().click()
     await expect(this.page.getByRole('button', { name: 'Sign in' })).toBeVisible()
   }
@@ -159,9 +171,16 @@ export class Person {
     return result.body
   }
 
-  /** Answers the next window.prompt (a decision reason) or window.confirm. */
-  answerNextDialog(answer: string | boolean) {
-    this.page.once('dialog', (dialog) => answer === false ? dialog.dismiss() : dialog.accept(
-      typeof answer === 'string' ? answer : undefined))
+  /**
+   * Answers the dialog an action opened: a reason (typed, then confirmed), true to confirm,
+   * false to cancel. Call it after the click that opens the dialog.
+   */
+  async respond(answer: string | boolean) {
+    const dialog = this.page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    if (typeof answer === 'string') await dialog.getByRole('textbox').fill(answer)
+    if (answer === false) await dialog.getByRole('button', { name: 'Cancel' }).click()
+    else await dialog.locator('button[type="submit"]').click()
+    await expect(dialog).toHaveCount(0)
   }
 }

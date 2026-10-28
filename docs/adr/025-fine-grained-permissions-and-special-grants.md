@@ -89,4 +89,8 @@ retirement or an exhausted grant takes effect on the next request, not at the ne
   people with SYSTEM_ADMIN, and a third if one of them would be the beneficiary.
 - Endpoints checked with `can` (no office) are reached only with scope *any*: the
   supervisor's office-scoped `audit.event.search` opens once audit events carry an office.
+- Relative scopes become authorities of their own (`<permission>#assigned`, `#own`,
+  `#linked`). Until 2026-10-22 they were issued as the bare code, which `can` read as
+  scope *any*: a security defect, found while building the parcel endpoints, fixed before
+  any endpoint relied on a relative scope.
 - Uses are counted per successful HTTP request, so an endpoint should perform one action.

@@ -42,6 +42,8 @@
         <!-- Not managed by Spring Boot: pinned here, upgraded deliberately. -->
         <bouncycastle.version>1.86</bouncycastle.version>
         <bucket4j.version>8.21.0</bucket4j.version>
+        <!-- Document type detection by file signature (E-13, ADR-033). -->
+        <tika.version>4.1.0</tika.version>
         <!-- Must equal the webauthn4j-core that spring-security-webauthn brings. -->
         <webauthn4j.version>0.31.9.RELEASE</webauthn4j.version>
     </properties>
@@ -100,6 +102,19 @@
             <groupId>com.bucket4j</groupId>
             <artifactId>bucket4j_jdk17-core</artifactId>
             <version>${bucket4j.version}</version>
+        </dependency>
+        <!-- Documents: the type of an upload is read from its bytes, never from its name (ADR-033). -->
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>${tika.version}</version>
+            <!-- Markdown rendering is not needed to recognise a file: kept out of the image. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>org.commonmark</groupId>
+                    <artifactId>*</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>

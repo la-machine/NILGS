@@ -22,7 +22,9 @@ import org.snigf.mvp.shared.security.Permission.Scope;
  * <ul>
  *   <li>scope ANY: {@code audit.event.search}, held everywhere;</li>
  *   <li>scope OFFICE: {@code parcel.create@DEMO1}, held at the office of the role grant;</li>
- *   <li>ASSIGNED, OWN, LINKED: the bare code; the service checks the record itself.</li>
+ *   <li>ASSIGNED, OWN, LINKED: the code with the scope, {@code application.read#assigned}; an
+ *       endpoint needing the permission everywhere ({@code @access.can}) never accepts it, and
+ *       an endpoint serving these scopes checks the record itself.</li>
  * </ul>
  * Special grants stay separate ({@link ActiveGrant}), because each use is counted and
  * audited when an action relies on one.
@@ -44,8 +46,10 @@ public final class EffectivePermissions {
                     if (grant.officeCode() != null) {
                         authorities.add(entry.getKey().at(grant.officeCode()));
                     }
-                } else {
+                } else if (entry.getValue() == Scope.ANY) {
                     authorities.add(entry.getKey().code());
+                } else {
+                    authorities.add(entry.getKey().within(entry.getValue()));
                 }
             }
         }

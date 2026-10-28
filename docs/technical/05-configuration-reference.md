@@ -32,6 +32,8 @@ an environment variable of the same name.
 | `SNIGF_DB_PORT` | `47432` | PostgreSQL port | compose, `application.yaml`, probe |
 | `SNIGF_VITE_PORT` | `47173` | Vite dev server (HTTPS) | `vite.config.ts` |
 | `SNIGF_VITE_PREVIEW_PORT` | `47174` | Vite preview (HTTPS) | `vite.config.ts` |
+| `SNIGF_PROVIDER_CALLBACK_PORT` | `47090` | The proxy's listener for payment provider callbacks (mutual TLS, ADR-037), on the internal network `provider-in` only; never published | compose, Caddyfile |
+| `SNIGF_PAYMENT_SIM_PORT` | `47091` | The DEMO payment simulator's charge endpoint (mutual TLS), on `provider-out` only | compose, `application.yaml`, `simulator.mjs` |
 
 ### Transport security
 
@@ -39,6 +41,7 @@ an environment variable of the same name.
 | --- | --- | --- | --- |
 | `SNIGF_PROXY_CLIENT_CN` | `snigf-web` | Certificate CN the app admits (the proxy's identity) | compose, `application-transport-security.yaml`, `dev-pki.sh` |
 | `SNIGF_PROXY_CLIENT_ADDRESS_HEADER` | `X-Snigf-Client-Address` | Header in which the proxy passes the browser's address | compose, `application-transport-security.yaml`, Caddyfile |
+| `SNIGF_PROXY_PROVIDER_CLIENT_HEADER` | `X-Snigf-Provider-Client` | Header in which the proxy's provider listener passes the provider's verified certificate subject; removed on the browser listener, believed only from the proxy (ADR-037) | compose, `application.yaml`, Caddyfile |
 | `SNIGF_PKI_ORGANIZATION` | `FLYT` | `O=` of development certificates | `dev-pki.sh` |
 | `SNIGF_PKI_ROOT_DAYS` | `3650` | Development root CA lifetime | `dev-pki.sh` |
 | `SNIGF_PKI_INTERMEDIATE_DAYS` | `730` | Services CA lifetime | `dev-pki.sh` |
@@ -122,6 +125,67 @@ an environment variable of the same name.
 | --- | --- | --- | --- |
 | `SNIGF_ADMIN_REQUEST_TTL` | `7d` | How long a role change or special grant request waits for a second administrator; after that it can only be rejected or requested again. Between `1h` and `30d` | compose, `application.yaml` |
 
+### Parcels and map views (ADR-029)
+
+| Setting | Development value | Meaning | Read by |
+| --- | --- | --- | --- |
+| `SNIGF_PARCEL_REFERENCE_ZONE` | `Africa/Douala` | Time zone whose calendar year goes into a new parcel reference (`DEMO-PCL-<office>-<year>-<seq>-<check>`) | compose, `application.yaml` |
+| `SNIGF_PARCEL_PAGE_SIZE` | `50` | Parcels per search page (5 to 200) | compose, `application.yaml` |
+| `SNIGF_CONFLICT_MIN_OVERLAP_M2` | `1.00` | Smallest intersection counted as an overlap, m² on the spheroid (0.01 to 1000; MVP-04) | compose, `application.yaml` |
+| `SNIGF_CONFLICT_DUPLICATE_SHARE` | `0.95` | Share of each parcel an overlap must cover to be a possible duplicate (0.5 to 1) | compose, `application.yaml` |
+| `SNIGF_APPLICATION_TYPES` | `classpath:application-types.json` | The application type catalogue (a Spring resource; `file:/...` for a mounted file); a changed definition becomes a new version at startup ([guide](../guides/applications.md)) | compose, `application.yaml` |
+| `SNIGF_APPLICATION_REFERENCE_ZONE` | `Africa/Douala` | Time zone whose calendar year goes into application references | compose, `application.yaml` |
+| `SNIGF_APPLICATION_PAGE_SIZE` | `20` | Applications per page (5 to 200) | compose, `application.yaml` |
+| `SNIGF_APPLICATION_MAX_DRAFTS` | `20` | Drafts one applicant may hold at once (1 to 100) | compose, `application.yaml` |
+| `SNIGF_REPORTING_TARGET_COMPLETENESS_REVIEW` | `P5D` | DEMO target of the completeness review (ISO-8601 duration, above zero, at most a year; Baseline: 5 days); past it, a case is overdue in the workload report ([guide](../guides/tracking-and-workload.md)) | compose, `application.yaml` |
+| `SNIGF_REPORTING_TARGET_INFO_REQUESTED` | `P30D` | DEMO target of the wait for the applicant's response | compose, `application.yaml` |
+| `SNIGF_REPORTING_TARGET_UNDER_REVIEW` | `P10D` | DEMO target of the substantive review | compose, `application.yaml` |
+| `SNIGF_REPORTING_TARGET_PENDING_DECISION` | `P5D` | DEMO target of the wait for the decision | compose, `application.yaml` |
+| `SNIGF_REPORTING_DURATION_WINDOW` | `P90D` | The period the stage durations cover, back from now (above zero, at most ten years) | compose, `application.yaml` |
+| `SNIGF_REPORTING_PAGE_SIZE` | `50` | Cases per page of the workload queue (5 to 200); the interface pages by the same number | compose, `application.yaml` |
+| `SNIGF_PAYMENT_FEES` | `classpath:payment-fees.json` | The DEMO fee catalogue, one fee per application type in XAF, applied at start-up and versioned ([guide](../guides/payments.md)) | compose, `application.yaml` |
+| `SNIGF_PAYMENT_REQUIRED_BEFORE_ACCEPTANCE` | `true` | The payment gate: completeness is not accepted until the DEMO fee is paid (service and database) | compose, `application.yaml` |
+| `SNIGF_PAYMENT_PENDING_TTL` | `PT24H` | How long a payment may stay pending before it expires (`PT1M` to `P7D`) | compose, `application.yaml` |
+| `SNIGF_PAYMENT_PROVIDER` | `DEMO_SIMULATOR` | The payment provider; the only approved value. Anything else stops the start (and the database refuses it) | compose, `application.yaml` |
+| `SNIGF_PAYMENT_CALLBACK_MAX_SKEW` | `PT5M` | How far a callback's timestamp may be from now (`PT10S` to `PT15M`); older is a replay | compose, `application.yaml` |
+| `SNIGF_PAYMENT_PROVIDER_CLIENT_CNS` | `snigf-payment-sim` | Provider certificate names the proxy may vouch for at the callback (comma separated) | compose, `application.yaml` |
+| `SNIGF_PAYMENT_EXPIRY_CRON` | `0 */5 * * * *` | When pending payments past their expiry are marked expired and audited (expiry itself is decided from `expires_at`) | compose, `application.yaml` |
+| `SNIGF_PAYMENT_PAGE_SIZE` | `50` | Rows per page of the finance lists (5 to 200) | compose, `application.yaml` |
+| `SNIGF_PAYMENT_SIMULATOR_CONNECT_TIMEOUT` / `SNIGF_PAYMENT_SIMULATOR_REQUEST_TIMEOUT` | `PT3S` / `PT5S` | Timeouts of the app's charge call to the simulator | compose, `application.yaml` |
+| `SNIGF_PAYMENT_APP_CLIENT_CN` | `snigf-app-payments` | The app's certificate name towards the simulator; the simulator admits only it | compose, `dev-pki.sh`, `simulator.mjs` |
+| `SNIGF_PAYMENT_SIM_CLIENT_CN` | `snigf-payment-sim` | The simulator's certificate name, towards the proxy's provider listener and OpenBao | compose, `dev-pki.sh`, `bao-init.sh` |
+| `SNIGF_BAO_PAYMENT_SIM_ROLE` | `snigf-payment-sim` | The simulator's OpenBao login role and policy: HMAC with the payment callback key, nothing else | compose, `bao-init.sh`, `simulator.mjs` |
+| `SNIGF_PAYMENT_SIM_CALLBACK_DELAY_MS` | `1500` | How long the simulator waits before sending its callbacks | compose, `simulator.mjs` |
+| `SNIGF_DOCUMENT_DIRECTORY` | `../var/documents` | Where document files are kept when running from the IDE; compose mounts the volume `document-data` at `/var/lib/snigf/documents` | `application.yaml` |
+| `SNIGF_DOCUMENT_MAX_BYTES` | `10485760` | Largest document accepted, in bytes (Baseline: 10 MB DEMO limit; at most 100 MB) | compose, `application.yaml` (also the servlet's `max-file-size`) |
+| `SNIGF_DOCUMENT_MAX_VERSIONS` | `10` | Versions one document may have (1 to 100) | compose, `application.yaml` |
+| `SNIGF_DOCUMENT_MAX_PIXELS` | `50000000` | Largest image accepted, width × height (against decompression bombs) | compose, `application.yaml` |
+| `SNIGF_DOCUMENT_ORPHAN_GRACE` | `PT1H` | How old an unreferenced file must be before the cleanup removes it | compose, `application.yaml` |
+| `SNIGF_DOCUMENT_CLEANUP_CRON` | `0 17 * * * *` | When the orphan cleanup runs (six-field cron; `-` disables it) | compose, `application.yaml` |
+| `SNIGF_PROXY_MAX_BODY_BYTES` | `10600000` | Largest request body the proxy forwards to the API (a document and its multipart envelope); also the servlet's `max-request-size` | compose (web and app), Caddyfile, `application.yaml` |
+| `SNIGF_MAP_DATA_DIRECTORY` | `../var/maps` | Map data for a backend run from the IDE (relative to `backend/`); the container always reads the read-only volume `map-data` at `/maps` | `application.yaml` |
+| `SNIGF_MAP_EXTERNAL_PROVIDERS` | `none` | External map providers; `none` is the only accepted value, the application refuses to start otherwise | compose, `application.yaml` |
+| `SNIGF_MAPS_OSM_AREA` | `cameroon` | Geofabrik area built into the geographic view | `maps-build-geographic.sh` |
+| `SNIGF_MAPS_GEOGRAPHIC_MAXZOOM` | `14` | Highest zoom of the vector tiles (12 to 15) | `maps-build-geographic.sh` |
+| `SNIGF_MAPS_FONTS_URL` | openmaptiles/fonts v2.0 `noto-sans.zip` | Label glyph archive (Noto Sans, SIL OFL 1.1), https only | compose (`maps-fetch`) |
+| `SNIGF_MAPS_FONTS_SHA256` | `d1173165…` | Pinned SHA-256 of that archive: checked after download and again before extraction | compose, `maps-build-geographic.sh` |
+| `SNIGF_MAPS_IMPORT_DIRECTORY` | `./var/maps-import` | Folder where licensed imagery is placed for import; mounted read-only into `maps-tools` | compose |
+| `SNIGF_MAPS_SYNTHETIC_BOUNDS` | `11.42,3.80,11.60,3.95` | Area of the synthetic test imagery (west, south, east, north, degrees) | `maps-synthetic-imagery.sh` |
+| `SNIGF_MAPS_SYNTHETIC_RESOLUTION` | `4` | Metres per pixel of the synthetic imagery | `maps-synthetic-imagery.sh` |
+| `SNIGF_MAPS_SATELLITE_COUNTRY` | `CMR` | Country of the national satellite base (ISO 3166 alpha-3; outline from Natural Earth) | compose (`maps-fetch`) |
+| `SNIGF_MAPS_SATELLITE_BUFFER_KM` | `2` | Margin around the border, so parcels at the border are covered | compose (`maps-fetch`) |
+| `SNIGF_MAPS_SATELLITE_FIRST_PLACES` | twelve towns (`name:lon,lat;...`) | Tiles holding these towns are fetched first | compose (`maps-fetch`) |
+| `SNIGF_MAPS_SENTINEL_STAC_URL` | Planetary Computer STAC | Catalogue of the Sentinel-2 archive (https) | compose (`maps-fetch`) |
+| `SNIGF_MAPS_SENTINEL_TOKEN_URL` | Planetary Computer SAS token API | Anonymous read-only tokens for that archive; empty for an open archive | compose (`maps-fetch`) |
+| `SNIGF_MAPS_SENTINEL_FROM` / `SNIGF_MAPS_SENTINEL_TO` | `2024-11-01` / empty (today) | Period searched | compose (`maps-fetch`) |
+| `SNIGF_MAPS_SENTINEL_MAX_CLOUD` | `40` | Highest cloud cover of a scene considered (%) | compose (`maps-fetch`) |
+| `SNIGF_MAPS_SENTINEL_MAX_SCENES` | `4` | Scenes combined at most per tile to fill cloud gaps | compose (`maps-fetch`) |
+| `SNIGF_MAPS_SENTINEL_TILES` | empty | Only these Sentinel-2 tiles (a trial, e.g. `32NQK` for Yaoundé) | compose (`maps-fetch`) |
+| `SNIGF_MAPS_AERIAL_CATALOGUE_URL` | `https://api.openaerialmap.org` | Catalogue of the aerial images | compose (`maps-fetch`) |
+| `SNIGF_MAPS_AERIAL_IMAGES` | three OpenAerialMap ids (Douala, Ngaoundéré) | Aerial images drawn as detail | compose (`maps-fetch`) |
+| `SNIGF_MAPS_AERIAL_LICENCES` | `CC-BY 4.0` | Licences accepted (`;`-separated); any other is refused | compose (`maps-fetch`) |
+| `SNIGF_MAPS_AERIAL_MAX_ZOOM` | `20` | Highest zoom of an aerial detail (15 to 22) | `maps-build-satellite.sh` |
+
 ### Audit trail
 
 | Setting | Development value | Meaning | Read by |
@@ -144,7 +208,10 @@ an environment variable of the same name.
 | `SNIGF_WEB_MEMORY` / `SNIGF_WEB_CPUS` / `SNIGF_WEB_PIDS` | `256m` / `1` / `128` | web container limits | compose |
 | `SNIGF_MIGRATE_MEMORY` | `512m` | migrate container memory | compose |
 | `SNIGF_BAO_MEMORY` / `SNIGF_BAO_CPUS` / `SNIGF_BAO_PIDS` | `512m` / `1` / `256` | openbao container limits | compose |
+| `SNIGF_PAYMENT_SIM_MEMORY` / `SNIGF_PAYMENT_SIM_CPUS` / `SNIGF_PAYMENT_SIM_PIDS` | `128m` / `0.5` / `64` | payment-sim container limits | compose |
 | `SNIGF_E2E_MEMORY` / `SNIGF_E2E_CPUS` / `SNIGF_E2E_PIDS` / `SNIGF_E2E_SHM` | `2g` / `2` / `1024` / `512m` | e2e container limits and shared memory for Chromium ([guide](../guides/end-to-end-testing.md)) | compose |
+| `SNIGF_MAPS_MEMORY` / `SNIGF_MAPS_CPUS` / `SNIGF_MAPS_PIDS` | `6g` / `4` / `1024` | limits of every map tool job (profile `maps`, [guide](../guides/map-data.md)) | compose |
+| `SNIGF_MAPS_JAVA_HEAP` | `3g` | Planetiler's Java heap | compose |
 
 ## Variables set by the stack, not by `.env`
 
@@ -152,9 +219,12 @@ an environment variable of the same name.
 | --- | --- | --- |
 | `SPRING_PROFILES_ACTIVE` | compose (from `SNIGF_PROFILE`) | Active profile |
 | `SNIGF_DB_URL` | compose | JDBC URL inside the stack (`db` host) |
-| `SNIGF_BAO_URL` | compose | OpenBao URL inside the stack (`openbao` host) |
+| `SNIGF_BAO_URL` | compose | OpenBao URL inside the stack (`openbao` host), for the app and the payment simulator |
+| `SNIGF_PAYMENT_SIMULATOR_URL` | compose | The simulator's URL inside the stack (`https://payment-sim:<SNIGF_PAYMENT_SIM_PORT>`); from the IDE, `https://localhost:<port>` |
+| `SNIGF_PAYMENT_SIM_CALLBACK_URL` | compose | Where the simulator sends callbacks: the proxy's provider listener (`https://web:<SNIGF_PROVIDER_CALLBACK_PORT>/api/v1/payments/callbacks/demo-simulator`) |
 | `SNIGF_DB_CLIENT_KEY` | `backend/Dockerfile` | Private copy of the database client key (`/run/snigf-keys`, 0600) |
 | `SNIGF_AUDIT_CHECKPOINT_DIR` | `backend/Dockerfile` | Container checkpoint directory (overrides `.env`) |
+| `SNIGF_MAP_DATA_DIRECTORY` | compose | `/maps`, the read-only volume `map-data` (overrides `.env`) |
 | `SNIGF_SECRETS_DIR` | you, for an IDE run | Absolute path of `infra/secrets` (default `/run/secrets`); never a path with `..` |
 | `SNIGF_ENV_FILE` | you, optionally | `.env` location for an IDE run (default `../.env`) |
 
@@ -173,6 +243,12 @@ Bound and validated in `SnigfProperties` (shared) and `AuditProperties` (audit).
 | `snigf.keys.openbao.*` | `application-key-custody.yaml` | https URL, TLS 1.3 bundle |
 | `snigf.keys.names.*` | `SNIGF_KEY_*` | six distinct names |
 | `snigf.audit.*` | `SNIGF_AUDIT_*` | schedules enabled outside tests; absolute directory outside dev |
+| `snigf.parcel.*` | `SNIGF_PARCEL_*` | `ParcelProperties`: a valid time zone; page size 5 to 200 |
+| `snigf.document.*` | `SNIGF_DOCUMENT_*` | `DocumentProperties`: directory, limits, grace period and cleanup schedule; the directory must be writable at startup |
+| `snigf.payment.*` | `SNIGF_PAYMENT_*`, `SNIGF_PROXY_PROVIDER_CLIENT_HEADER` | `PaymentProperties`: provider `DEMO_SIMULATOR` only; pending time to live and callback skew within bounds; the simulator channel `HTTPS` (URL, SSL bundle `snigf-payment-provider`, timeouts), `IN_PROCESS` refused outside the test profile; the fee file checked strictly at start-up |
+| `snigf.application.*` | `SNIGF_APPLICATION_*` | `ApplicationProperties`; the catalogue file is checked strictly at startup (unknown properties refused) |
+| `snigf.conflict.*` | `SNIGF_CONFLICT_*` | `ConflictProperties` and `ConflictPolicy`: within the database's bounds, applied at startup |
+| `snigf.maps.*` | `SNIGF_MAP_*` | `MapProperties`: a data directory; external providers exactly `none` |
 | `snigf.identity.*` | `SNIGF_PASSWORD_*`, `SNIGF_LOGIN_*`, `SNIGF_RATE_*`, `SNIGF_SESSION_ABSOLUTE_TIMEOUT`, `SNIGF_CSRF_*`, `SNIGF_WEBAUTHN_*`, `SNIGF_ADMIN_REQUEST_TTL` | checked by `IdentityConfiguration` (see chapter 8) |
 | `server.servlet.session.*`, `spring.session.*` | `SNIGF_SESSION_*` | cookie Secure, HttpOnly, `__Host-`, SameSite Strict or Lax outside tests |
 
@@ -198,6 +274,11 @@ mounted only into the services listed.
 | `app_bao_client_crt`, `app_bao_client_key` | App identity and login towards OpenBao | app, security-probe |
 | `bao_admin_client_crt`, `bao_admin_client_key` | Provisioning job's transport identity | bao-init |
 | `bao_health_client_crt`, `bao_health_client_key` | Health check's transport identity | openbao |
+| `web_provider_tls_crt`, `web_provider_tls_key` | The proxy's server certificate on its provider listener (name `web`) | web |
+| `payment_sim_tls_crt`, `payment_sim_tls_key` | The DEMO payment simulator's server certificate (name `payment-sim`) | payment-sim |
+| `payment_sim_client_crt`, `payment_sim_client_key` | The simulator's identity towards the proxy's provider listener and its OpenBao login | payment-sim, security-probe |
+| `app_provider_client_crt`, `app_provider_client_key` | The app's identity towards the simulator | app |
+| `demo_accounts` | **Development only**: the demonstration accounts and their passwords, written by `dev-seed-demo.sh` ([guide](../guides/demo-accounts.md)); one line per account, `email|password|role|office` | nothing: read by people |
 
 Not mounted anywhere:
 

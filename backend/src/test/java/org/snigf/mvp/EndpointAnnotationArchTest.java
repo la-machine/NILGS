@@ -61,7 +61,7 @@ class EndpointAnnotationArchTest {
                 .check(CLASSES);
     }
 
-    private static final Pattern ACCESS = Pattern.compile("^@access\\.(can|canAt)\\(authentication, '([a-z.-]+)'(, [^)]+)?\\)$");
+    private static final Pattern ACCESS = Pattern.compile("^@access\\.(can|canAt|canAtAny|canOwn|canAssigned|canSomewhere)\\(authentication, '([a-z.-]+)'(, .+)?\\)$");
 
     @Test
     void everyPermissionCheckUsesTheCatalogue() {
@@ -77,7 +77,7 @@ class EndpointAnnotationArchTest {
                 }
                 Matcher matcher = ACCESS.matcher(rule);
                 if (!matcher.matches()) {
-                    problems.add(method.getFullName() + ": use @access.can or @access.canAt, not " + rule);
+                    problems.add(method.getFullName() + ": use @access.can, canAt, canAtAny, canOwn or canSomewhere, not " + rule);
                 } else if (Permission.ofCode(matcher.group(2)).isEmpty()) {
                     problems.add(method.getFullName() + ": unknown permission " + matcher.group(2));
                 }

@@ -20,7 +20,6 @@ import org.snigf.mvp.identity.domain.AuthorizationRepository;
 import org.snigf.mvp.identity.domain.RoleDefinition;
 import org.snigf.mvp.identity.domain.RoleAssignmentRepository;
 import org.snigf.mvp.identity.domain.RoleAssignmentRequest;
-import org.snigf.mvp.identity.domain.SecondFactorRepository;
 import org.snigf.mvp.identity.domain.UserAccount;
 import org.snigf.mvp.identity.domain.UserRepository;
 import org.snigf.mvp.shared.id.UuidV7;
@@ -32,8 +31,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Use cases of the system administrator (Slice 1 design §5 and §6, C6c; ADR-026): list
- * accounts, request, approve or reject office-scoped roles (four eyes), revoke them, reset a
- * lost second factor.
+ * accounts, request, approve or reject office-scoped roles (four eyes), revoke them. The
+ * reset of a lost second factor is {@link SecondFactorResetService} (ADR-028).
  *
  * <p>Separation of duties: nobody grants or revokes their own roles or resets their own
  * second factor. The service refuses first (and audits the attempt as DENIED); the
@@ -74,8 +73,6 @@ public class AccountAdministrationService {
 
     private final UserRepository users;
     private final RoleAssignmentRepository assignments;
-    private final SecondFactorRepository factors;
-    private final SessionRevoker sessions;
     private final AuditRecorder audit;
     private final Clock clock;
     private final AuthorizationRepository authorization;
@@ -83,13 +80,11 @@ public class AccountAdministrationService {
     private final Duration requestTimeToLive;
 
     public AccountAdministrationService(UserRepository users, RoleAssignmentRepository assignments,
-                                        SecondFactorRepository factors, SessionRevoker sessions, AuditRecorder audit,
+                                        AuditRecorder audit,
                                         Clock clock, AuthorizationRepository authorization,
                                         AuthorizationService effective, IdentityProperties properties) {
         this.users = users;
         this.assignments = assignments;
-        this.factors = factors;
-        this.sessions = sessions;
         this.audit = audit;
         this.clock = clock;
         this.authorization = authorization;
@@ -257,35 +252,6 @@ public class AccountAdministrationService {
         details.put("office", assignment.officeCode() == null ? "" : assignment.officeCode());
         audit.record(AuditEvent.of(AuditAction.ROLE_REVOKED, AuditOutcome.SUCCESS)
                 .withEntity(ENTITY_ASSIGNMENT, assignmentId).withReason(reason.strip()).withDetails(details));
-    }
-
-    /**
-     * The procedure for a staff member who lost every authenticator and recovery code:
-     * their supervisor confirms their identity out of band, then an administrator who is
-     * not them resets. Every key and unused code is removed, every session ends, and the
-     * next login enrols again.
-     */
-    @Transactional
-    public void resetSecondFactor(AuthenticatedUser admin, UUID targetId, String reason, String confirmedBy) {
-        requireReason(reason, 10);
-        if (confirmedBy == null || confirmedBy.strip().length() < 3 || confirmedBy.length() > 120
-                || confirmedBy.codePoints().anyMatch(Character::isISOControl)) {
-            throw new Refused(Refused.Kind.INVALID, "CONFIRMATION_REQUIRED");
-        }
-        if (admin.userId().equals(targetId)) {
-            denied(AuditAction.MFA_RESET, targetId, "self-reset refused (C6c)");
-            throw new Refused(Refused.Kind.FORBIDDEN, "SOD_SELF_ACTION");
-        }
-        staff(targetId);
-        Instant now = clock.instant();
-        int removed = factors.resetSecondFactor(targetId, now);
-        int revoked = sessions.revokeAll(targetId);
-        Map<String, Object> details = new LinkedHashMap<>();
-        details.put("confirmedBy", confirmedBy.strip());
-        details.put("authenticatorsRemoved", removed);
-        details.put("sessionsRevoked", revoked);
-        audit.record(AuditEvent.of(AuditAction.MFA_RESET, AuditOutcome.SUCCESS)
-                .withEntity(RegistrationService.ENTITY_USER, targetId).withReason(reason.strip()).withDetails(details));
     }
 
     private UserAccount staff(UUID targetId) {

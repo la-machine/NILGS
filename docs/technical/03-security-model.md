@@ -41,6 +41,13 @@
 | CSRF | Token in a `__Host-` cookie, echoed in a header on every state-changing call, including login | `SecurityConfiguration` (SPA mode) | `AuthFlowIT`, security probe | ADR-004 |
 | Second factor | Staff stop at level `PASSWORD` until WebAuthn is proven: user verification required, exact origins on the relying-party id, only the account's own keys, single-use server-side ceremonies; two authenticators per officer; once enrolled, keys can be added only from a FULL session | `SecondFactorService`, `SpringWebAuthnCeremonies`, `CeremonyStore`, V6 trigger | `MfaFlowIT` (emulated authenticators), `CeremonyStoreTest`, pgTAP `08_webauthn` | ADR-016, [ADR-023](../adr/023-webauthn-second-factor-implementation.md) |
 | Recovery | Ten single-use 80-bit codes, shown once, stored as domain-separated HMACs with the OpenBao pepper; wrong codes count toward the lockout | `RecoveryCode`, `KeyedRecoveryCodeHasher` | `RecoveryCodeTest`, `MfaFlowIT` | ADR-023 |
+| Lost keys and supervised reset | The owner removes a lost key (never the last); a reset is requested by an administrator and confirmed in the application by the person's supervisor (`identity.reset.confirm` at the person's office), who records how the identity was checked; the database performs it and refuses any other way | `SecondFactorService`, `SecondFactorResetService`, V10 | `SecurityKeysIT`, `SecondFactorResetIT`, pgTAP `12`, e2e recovery journeys | [ADR-028](../adr/028-key-removal-and-supervised-reset.md) |
+| Applications | Owner-only drafts: `@access.canOwn`, 404 for any other id, row-level security on the actor named per transaction; lifecycle and history guarded by the database | `ApplicationService`, `DatabaseActor`, V13 | `ApplicationIT`, pgTAP `15` | [ADR-032](../adr/032-applications-drafts-and-submission.md) |
+| Completeness review | One check in the database; a record before every move; an intake officer of the office (role or special grant), never the applicant; acceptance only with nothing missing; files during a request only in the categories asked for | `CaseService`, V15 | `CompletenessIT`, pgTAP `17` | [ADR-034](../adr/034-completeness-review.md) |
+| Review and simulated decision | Permissions at scope ASSIGNED (`@access.canAssigned`): an assignee sees only the cases assigned to them or claimable at their stage (row-level security), 404 otherwise; claim by self, one per stage; whoever recommended never decides, nobody handles their own application; no decision while a parcel alert is open; grounds and cited stored versions required; `simulated` forced by a `CHECK`; the review hidden from the applicant | `ReviewService`, V16 | `ReviewIT`, `PermissionMatrixIT`, pgTAP `18` | [ADR-035](../adr/035-review-and-simulated-decision.md) |
+| Tracking and workload | The applicant reads a projection: parties (`APPLICANT`, `OFFICE`, `SYSTEM`), never staff names nor the reasons recorded with moves, pinned by a schema test of allowed fields; the workload report needs `report.workload` at the office, checked by the endpoint and again by `SECURITY DEFINER` database functions that return nothing to anyone else and carry no form, document, applicant name or review; times from the append-only transition table only | `Tracking`, `WorkloadService`, V17 | `TrackingIT` (`ApplicantPayloadSchema`), `WorkloadIT`, `PermissionMatrixIT`, pgTAP `19` | [ADR-036](../adr/036-tracking-and-workload-report.md) |
+| Simulated payment | **No real money moves**, and no real payment API is called: the only provider is the DEMO simulator, by setting and by database constraint. Callbacks reach the app only through the proxy's provider listener (client certificate required and verified, its subject passed in a header the browser listener removes); the adapter checks the provider name, a fresh timestamp and an HMAC-SHA-256 recomputed in OpenBao before reading the body; rejected callbacks store nothing. The simulator signs inside OpenBao with its own login and an HMAC-only policy, and holds no key. One locked database function reconciles by reference and amount; transaction ids once; mismatches and unknown references stay exceptions; expiry decided by `expires_at`. The applicant pays only their own application, with an `Idempotency-Key`; the finance views and resolutions need `payment.reconcile`, never on one's own application; acceptance waits for payment (service and trigger) | `DemoSimulatorProvider`, `CallbackService`, `PaymentService`, `ReconciliationService`, V18, Caddyfile, `payment-sim-policy.hcl.template` | `DemoSimulatorProviderTest`, `PaymentIT`, `CompletenessIT`, `PermissionMatrixIT`, pgTAP `20` | [ADR-037](../adr/037-simulated-payment-and-reconciliation.md) |
+| Uploads | Bytes untrusted: size counted (proxy, servlet, service, database), type read from the bytes (PDF, JPEG, PNG), extension agreeing, PDF active content, encryption and oversized images refused; random storage keys, read-only files, app-only volume; hash checked before every download; attachment only, `nosniff`, sandbox CSP | `DocumentService`, `TikaContentInspector`, `FileDocumentStorage`, Caddyfile, V14 | `DocumentIT`, `TikaContentInspectorTest`, `FileDocumentStorageTest`, pgTAP `16` | [ADR-033](../adr/033-documents-upload-and-storage.md) |
 | Containers | Read-only root filesystem, `cap_drop: ALL`, `no-new-privileges`, non-root users, resource limits, images pinned by digest | `compose.yml` `x-hardened` | `docker inspect` | [ADR-020](../adr/020-container-and-network-hardening.md) |
 | Networks | `edge` → `app-net` → `data-net` / `key-net`; internal networks have no internet | `compose.yml` | segmentation probe | ADR-020 |
 | Secrets | Files only (Docker secrets), never environment variables or Git; scripts read `.env` as data | `.gitignore`, gitleaks in CI, `load_env` | CI secret scan | ADR-014 |
@@ -49,13 +56,20 @@
 
 ```text
 Internet ──TLS 1.3──► web ──mTLS 1.3 (CN allow-list)──► app ──┬─TLS 1.3 + cert + SCRAM──► db
-                                                               └─mTLS 1.3 + cert login────► openbao
+                                                               ├─mTLS 1.3 + cert login────► openbao
+                                                               └─mTLS 1.3 (charges)───────► payment-sim
+payment-sim ──mTLS 1.3 (provider listener)──► web ──mTLS 1.3──► app   (signed callbacks, ADR-037)
+payment-sim ──mTLS 1.3 + cert login (HMAC only)──► openbao
 ```
 
 - **The browser** is untrusted. It never chooses an actor, a correlation id, an address
   or an audit field.
-- **The proxy** is trusted only for the browser's address, and only once its
-  certificate has been admitted.
+- **The proxy** is trusted only for the browser's address and, on its provider listener,
+  for the provider's verified certificate subject, and only once its certificate has been
+  admitted.
+- **A payment provider** is trusted for nothing until its callback is authenticated (provider
+  name, fresh timestamp, HMAC); even then its report is a claim the database reconciles, never
+  a payment by itself. The only provider is the DEMO simulator; no real money moves.
 - **The app** is trusted to use keys for their purposes, never to read them.
 - **The database** is trusted to store data, not to vouch for history: the app
   recomputes the audit chain, and checkpoints are signed outside it.
@@ -75,15 +89,15 @@ These are recorded in the ADRs and in `docs/audit.md`.
 - **WebAuthn ceremonies** are kept in memory, for one application instance.
 - **No TOTP fallback** by decision ([ADR-024](../adr/024-no-totp-fallback.md)); recovery is
   the second key, a recovery code or the supervised administrator reset.
-- **Lost keys after a recovery code:** they stay registered until a reset; a key list with
-  removal is proposed before go-live ([recovery procedure](08-operations-and-troubleshooting.md#account-recovery-procedure)).
-- **Identity confirmation for a reset** is a procedure; the system records the confirmer as
-  text. An in-application confirmation by the supervisor is proposed before go-live.
+- **The identity check of a reset** is human: the supervisor meets or calls the person; the
+  system proves who confirmed and records how (ADR-028).
 - **Forged approver:** a compromised application can name another real administrator as
   approver; the database checks only that this person may approve and is not the requester
   or beneficiary. Signed approvals (separate ADR, planned) close this.
 - **Office-scoped reading of the audit trail** is not possible yet: audit events carry no
   office, so `audit.event.search` at office scope (supervisors) does not open the endpoint.
 - **Throttling** is in memory, for one application instance.
+- **No malware scan of uploads** yet: the PDF screen does not read compressed object streams;
+  ClamAV and object storage come with the pilot (P-02, ADR-033).
 - **Session ids** are stored in clear in `spring_session`. Only the application role can
   read it (ADR-022).

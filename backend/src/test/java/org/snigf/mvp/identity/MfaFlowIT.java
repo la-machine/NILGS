@@ -72,7 +72,8 @@ class MfaFlowIT extends IdentityIntegrationTest {
         assertThat(two.path("recoveryCodes").get(0).asString("")).matches("[0-9A-Z]{4}(-[0-9A-Z]{4}){3}");
         assertThat(browser.cookies.get(SESSION_COOKIE)).as("new session id when elevated").isNotEqualTo(sessionBefore);
         assertThat(browser.session().getContentAsString()).contains("\"authLevel\":\"FULL\"");
-        assertThat(browser.send(get("/api/v1/parcels")).getStatus()).as("full session passes security").isEqualTo(404);
+        assertThat(browser.send(get("/api/v1/no-such-route")).getStatus())
+                .as("full session passes security: an unmapped path answers 404, not 401 or 403").isEqualTo(404);
         assertThat(jdbc.queryForObject("SELECT mfa_enrolled_at IS NOT NULL FROM app_user WHERE id = ?", Boolean.class, staff))
                 .isTrue();
 

@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-/** Second-factor state of an account: enrolment and one-time recovery codes. */
+/** Second-factor state of an account: enrolment, registered keys and one-time recovery codes. */
 public interface SecondFactorRepository {
 
     /** A stored, unused recovery code. */
@@ -24,10 +24,13 @@ public interface SecondFactorRepository {
     /** Consumes a code atomically; false if it was used or invalidated meanwhile. */
     boolean consumeRecoveryCode(UUID codeId, Instant at);
 
+    /** The account's registered security keys, oldest first. */
+    List<RegisteredKey> keys(UUID userId);
+
     /**
-     * Administrator reset (ADR-016): removes every authenticator of the account, invalidates
-     * its unused recovery codes and clears the enrolment, so the next login enrols again.
-     * Returns the number of authenticators removed.
+     * Removes one of the account's keys; false if it is not one of them. The database refuses
+     * to remove the last key of an enrolled account (V10). A full reset is not done here: only
+     * a confirmed reset request performs it (MfaResetRepository, ADR-028).
      */
-    int resetSecondFactor(UUID userId, Instant at);
+    boolean removeKey(UUID userId, String credentialId);
 }

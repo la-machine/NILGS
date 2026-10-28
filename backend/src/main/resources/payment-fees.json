@@ -1,0 +1,11 @@
+{
+  "fees": [
+    {
+      "typeCode": "DEMO_REGISTRATION",
+      "amount": 25000,
+      "currency": "XAF",
+      "labelFr": "Frais de service de la plateforme DÉMO — pas un droit administratif officiel",
+      "labelEn": "DEMO platform service charge — not an official administrative fee"
+    }
+  ]
+}
