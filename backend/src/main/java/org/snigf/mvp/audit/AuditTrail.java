@@ -31,10 +31,18 @@ public interface AuditTrail {
     Checkpoint createCheckpoint();
 
     /**
-     * Searches the events, newest first. The search itself is audited
+     * Searches the events {@code reader} may read (ADR-038: everywhere, or at the office of one
+     * of their subjects, as the database decides), newest first. The search itself is audited
      * ({@code AUDIT_EVENTS_READ}, with the criteria): reading audit data is audited.
      */
-    AuditEventView.Page events(AuditEventFilter filter);
+    AuditEventView.Page events(java.util.UUID reader, AuditEventFilter filter);
+
+    /**
+     * The timeline of an application or a parcel, named by its id or by the reference the trail
+     * records it under, from the events {@code reader} may read, oldest first. Empty when nothing
+     * of it is readable (unknown, or not theirs to read: alike). Audited ({@code AUDIT_TIMELINE_READ}).
+     */
+    Optional<AuditTimeline> timeline(java.util.UUID reader, String subjectType, java.util.UUID subjectId, String reference);
 
     /** Every checkpoint in the database, oldest first. */
     List<Checkpoint> checkpoints();

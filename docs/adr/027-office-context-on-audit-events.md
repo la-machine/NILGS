@@ -4,7 +4,7 @@
 
 | Status | Date | Deciders |
 | --- | --- | --- |
-| Accepted (decision D6); implementation with the case module | 2026-10-22 | Project owner, Pythagore (FLYT) |
+| Accepted (decision D6); implemented by [ADR-038](038-audit-subjects-and-case-timeline.md) (the office per subject of the event) | 2026-10-22, implemented 2026-10-28 | Project owner, Pythagore (FLYT) |
 
 ## Context
 

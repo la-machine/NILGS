@@ -25,6 +25,7 @@ const WorkloadPage = lazy(() => import('../features/reports').then((m) => ({ def
 const FinancePage = lazy(() => import('../features/payments').then((m) => ({ default: m.FinancePage })))
 const ConfirmationsPage = lazy(() => import('../features/recovery').then((m) => ({ default: m.ConfirmationsPage })))
 const AuditPage = lazy(() => import('../features/audit').then((m) => ({ default: m.AuditPage })))
+const AuditTimelinePage = lazy(() => import('../features/audit').then((m) => ({ default: m.AuditTimelinePage })))
 
 export function Pages({ route, place, allowed, ctx, onAddKey }: {
   route: Route; place: PlaceId | null; allowed: boolean; ctx: PageContext; onAddKey: (label: string) => Promise<void>
@@ -64,7 +65,8 @@ export function Pages({ route, place, allowed, ctx, onAddKey }: {
       {place === 'workload' && <WorkloadPage ctx={ctx} params={route.params} />}
       {place === 'payments' && <FinancePage ctx={ctx} params={route.params} />}
       {place === 'confirmations' && <ConfirmationsPage ctx={ctx} />}
-      {place === 'audit' && <AuditPage ctx={ctx} />}
+      {place === 'audit' && route.segments[1] !== 'timeline' && <AuditPage ctx={ctx} />}
+      {place === 'audit' && route.segments[1] === 'timeline' && <AuditTimelinePage ctx={ctx} params={route.params} />}
       {place === 'account' && <AccountPage ctx={ctx} onAddKey={onAddKey} />}
     </Suspense>
   )

@@ -24,7 +24,7 @@ explain **how**. [`CHANGELOG.md`](../../CHANGELOG.md) lists **what** changed and
 | [Map data for the geographic and satellite views](map-data.md) | Building OpenStreetMap vector tiles, importing licensed imagery, synthetic test imagery, manifests, installing into `map-data`, licences | ADR-029 |
 | [Satellite imagery: download, build and install](satellite-imagery.md) | Operator steps for the national Sentinel-2 mosaic and aerial details: trial, national download (resumable), build, install, checks, updates, troubleshooting, cleanup | ADR-029 |
 | [Demonstration accounts](demo-accounts.md) | One account per role with passwords, two demo offices, security keys in the browser, what to try with whom (development only) | ADR-025, ADR-026 |
-| [Audit trail with signed checkpoints](audit-trail.md) | Recording events, Java chain verification, OpenBao-signed checkpoints, offline verification, DDD packaging of a module | ADR-007, ADR-021 |
+| [Audit trail with signed checkpoints](audit-trail.md) | Recording events, Java chain verification, OpenBao-signed checkpoints, offline verification, the subjects of each event and the case or parcel timeline read by office (E-18), DDD packaging of a module | ADR-007, ADR-021, ADR-027, ADR-038 |
 
 ## How every guide is written
 

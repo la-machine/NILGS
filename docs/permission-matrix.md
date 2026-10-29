@@ -18,8 +18,9 @@ The comparison with the Baseline's matrix, difference by difference, is in
 [permission-matrix-review.md](permission-matrix-review.md). The project owner decided on
 22 Oct 2026: auditors may sign checkpoints on demand, never replacing one (D5); supervisors
 read audit events of their office only once events carry an office recorded at the time
-([ADR-027](adr/027-office-context-on-audit-events.md), D6); finance and administration roles
-do not read parcels (D14).
+([ADR-027](adr/027-office-context-on-audit-events.md), D6), which they do since E-18
+([ADR-038](adr/038-audit-subjects-and-case-timeline.md)): a supervisor now searches the events and
+reads the timelines of their offices; finance and administration roles do not read parcels (D14).
 
 This file is the reviewed copy of the code. `PermissionMatrixTest` fails when the tables
 differ from `Permission.java` and `BaselineRole.java`; `PermissionCatalogueCheck` stops the

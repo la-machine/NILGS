@@ -80,6 +80,31 @@ final class InMemoryChain implements AuditEventRepository {
     }
 
     @Override
+    public Optional<UUID> subjectByReference(String subjectType, String reference) {
+        return Optional.empty();
+    }
+
+    @Override
+    public Optional<String> referenceOf(String subjectType, UUID subjectId) {
+        return Optional.empty();
+    }
+
+    @Override
+    public List<ChainedEvent> timeline(String subjectType, UUID subjectId, int limit) {
+        return List.of();
+    }
+
+    @Override
+    public java.util.Map<UUID, String> accountNames(java.util.Collection<UUID> ids) {
+        return java.util.Map.of();
+    }
+
+    @Override
+    public java.util.Map<UUID, String> officeCodes() {
+        return java.util.Map.of();
+    }
+
+    @Override
     public Optional<byte[]> hashAt(long chainPos) {
         return Optional.ofNullable(rows.get(chainPos)).map(ChainedEvent::hash);
     }
@@ -92,13 +117,13 @@ final class InMemoryChain implements AuditEventRepository {
     private static ChainedEvent sealed(long pos, byte[] prev, String details) {
         ChainedEvent draft = new ChainedEvent(pos, UUID.randomUUID(), Instant.parse("2026-10-21T08:00:00.123456Z"),
                 "SERVICE", null, "test", List.of(), "TEST_EVENT", null, null, null, "SUCCESS", null,
-                UUID.randomUUID(), null, details, prev, new byte[32]);
+                UUID.randomUUID(), null, details, null, prev, new byte[32]);
         return copy(draft, details, prev, draft.computeHash());
     }
 
     private static ChainedEvent copy(ChainedEvent e, String details, byte[] prev, byte[] hash) {
         return new ChainedEvent(e.chainPos(), e.id(), e.occurredAt(), e.actorType(), e.actorId(), e.actorLabel(),
                 e.actorRoles(), e.action(), e.entityType(), e.entityId(), e.entityRef(), e.outcome(), e.reason(),
-                e.correlationId(), e.sourceIp(), details, prev, hash);
+                e.correlationId(), e.sourceIp(), details, e.subjects(), prev, hash);
     }
 }

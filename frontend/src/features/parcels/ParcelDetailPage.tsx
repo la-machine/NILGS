@@ -12,7 +12,7 @@ import { MapView } from '../maps'
 import type { BackgroundKind } from '../maps'
 import { fill } from '../../shared/i18n'
 import { href, navigate } from '../../shared/router/router'
-import { canAt } from '../../shared/session/access'
+import { canAt, canSomewhere } from '../../shared/session/access'
 import type { PageContext } from '../../shared/session/types'
 import { Button } from '../../shared/ui/Button'
 import { Card, PageHeader } from '../../shared/ui/Card'
@@ -125,9 +125,15 @@ export function ParcelDetailPage({ ctx, reference, params }: { ctx: PageContext;
             <span className="meta-item">{fill(texts.versionOf, { n: shown.versionNo, total: parcel.currentVersion })}</span>
           </>
         }
-        actions={canCorrect && !historical && !correcting && (
-          <Button variant="primary" icon="edit" onClick={() => at({ mode: 'correct' })}>{texts.correctParcel}</Button>
-        )} />
+        actions={<>
+          {canSomewhere(session, 'audit.event.search') && (
+            <a className="btn btn-secondary" href={href(['audit', 'timeline'], { type: 'PARCEL', reference: parcel.reference })}>
+              {texts.timeline.open}</a>
+          )}
+          {canCorrect && !historical && !correcting && (
+            <Button variant="primary" icon="edit" onClick={() => at({ mode: 'correct' })}>{texts.correctParcel}</Button>
+          )}
+        </>} />
 
       {created && <Alert tone="success" title={fill(texts.parcelCreated, { reference: parcel.reference, area: created })}>{p.createdText}</Alert>}
       {created && raised > 0 && <Alert tone="warning" title={fill(texts.conflicts.raisedTitle, { n: raised })}>{texts.conflicts.raisedText}</Alert>}

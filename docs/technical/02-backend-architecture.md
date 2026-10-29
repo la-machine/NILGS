@@ -14,7 +14,7 @@ is an **application module** (a bounded context). Spring Modulith verifies on ev
 | --- | --- | --- | --- |
 | Shared | `org.snigf.mvp.shared` | open module: configuration guard, web filters, security baseline, ids | implemented |
 | Keys | `org.snigf.mvp.keys` | technical: key custody through OpenBao | implemented |
-| Audit | `org.snigf.mvp.audit` | business: audit trail, verification, checkpoints | implemented |
+| Audit | `org.snigf.mvp.audit` | business: audit trail, verification, checkpoints; each event's subjects (the case or parcels it is about, with their office at the time, ADR-038), office-scoped event search and the case or parcel timeline (`AuditTrail.timeline`) | implemented; E-18 ([ADR-038](../adr/038-audit-subjects-and-case-timeline.md), [guide](../guides/audit-trail.md#case-and-parcel-timeline-e-18)) |
 | Identity | `org.snigf.mvp.identity` | business: accounts, password login, sessions, CSRF, throttling, WebAuthn second factor, recovery codes, roles and permissions, administration | security step 4 implemented ([authentication guide](../guides/authentication-and-sessions.md), [roles guide](../guides/roles-and-administration.md)) |
 | Parcel | `org.snigf.mvp.parcel` | business: parcel references, geometry validation (PostGIS), versions, corrections, idempotent creation | slice 1 implemented |
 | Maps | `org.snigf.mvp.maps` | business: map backgrounds (technical, geographic, satellite), manifests, authenticated tile delivery; no external provider | slice 1 implemented ([ADR-029](../adr/029-map-views-and-sovereign-map-data.md), [map data guide](../guides/map-data.md)) |

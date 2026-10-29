@@ -49,6 +49,22 @@ details (PostgreSQL `jsonb` text output).
 `audit_canonical` on values chosen to break a naive implementation (multi-byte UTF-8,
 emoji, separators inside values, control characters, IPv6, nested JSON).
 
+## Canonical encoding v2 (`snigf-audit-v2`, events with subjects, V19)
+
+An event recorded from V19 on carries `subjects`: what it is about, as the database found it
+from the record in the same transaction, with each record's office at that moment
+([ADR-038](adr/038-audit-subjects-and-case-timeline.md)). Such an event is encoded
+
+```text
+snigf-audit-v2|<every v1 field, in the same order>|f(subjects as PostgreSQL jsonb text output)
+```
+
+An event without subjects (every event before V19, and later events about no case or parcel:
+accounts, roles, the chain itself) keeps `snigf-audit-v1` byte for byte, so every earlier hash
+and checkpoint still verifies. Adding, removing or changing the subjects breaks the content
+hash either way. An offline verifier picks the version from whether `subjects` is NULL.
+`ChainedEvent` implements both; `TimelineIT` compares Java and SQL on real case events.
+
 ## Checkpoints (version `snigf-audit-checkpoint-v1`)
 
 A checkpoint states that the event at `chainPos` has chain hash `headHash`. The signed

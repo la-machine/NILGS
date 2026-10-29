@@ -1,14 +1,17 @@
 // SNIGF/NILGS - Copyright (c) 2026 FLYT.
 // Author: Pythagore.
 // The audit trail (ADR-007, ADR-026): chain verification, signed checkpoints and their public
-// keys, and the event search, each offered only to a session that holds its permission. A
+// keys, the event search and the way to a case's or a parcel's timeline (ADR-038), each offered
+// only to a session that holds its permission; a supervisor's search shows the events of their
+// offices only, as the server filters them. A
 // permission held only through a special grant loads nothing by itself: every protected call
 // is a button that first says it will spend a use, and how many are left. Search results are
 // read-only; the details of an event open on demand.
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { fill } from '../../shared/i18n'
-import { accessTo } from '../../shared/session/access'
+import { href, navigate } from '../../shared/router/router'
+import { accessTo, canSomewhere } from '../../shared/session/access'
 import type { PageContext } from '../../shared/session/types'
 import { Button } from '../../shared/ui/Button'
 import { Card, PageHeader } from '../../shared/ui/Card'
@@ -27,7 +30,12 @@ export function AuditPage({ ctx }: { ctx: PageContext }) {
   const { texts, session, run, refreshSession, lang } = ctx
   const t = texts.auditPage
   const dialog = useDialog()
+  // Event search at an office (ADR-038) is a role permission: no special grant use to confirm.
   const access = (permission: string) => accessTo(session, permission)
+    ?? (permission === 'audit.event.search' && canSomewhere(session, permission) ? { kind: 'role' as const } : null)
+  const officeOnly = accessTo(session, 'audit.event.search') === null
+  const [timelineType, setTimelineType] = useState<'APPLICATION' | 'PARCEL'>('APPLICATION')
+  const [timelineRef, setTimelineRef] = useState('')
   const [action, setAction] = useState('')
   const [actorId, setActorId] = useState('')
   const [page, setPage] = useState(0)
@@ -173,7 +181,28 @@ export function AuditPage({ ctx }: { ctx: PageContext }) {
       )}
 
       {canSearch && (
-        <Card title={t.events} icon="audit" padded={false}>
+        <Card title={texts.timeline.title} icon="history" description={texts.timeline.intro}>
+          <form className="filter-bar" role="search" aria-label={texts.timeline.find}
+            onSubmit={(e: FormEvent) => {
+              e.preventDefault()
+              if (timelineRef.trim()) navigate(href(['audit', 'timeline'], { type: timelineType, reference: timelineRef.trim() }))
+            }}>
+            <Field label={texts.timeline.type}>
+              <select value={timelineType} onChange={(e) => setTimelineType(e.target.value as 'APPLICATION' | 'PARCEL')}>
+                <option value="APPLICATION">{texts.timeline.types.APPLICATION}</option>
+                <option value="PARCEL">{texts.timeline.types.PARCEL}</option>
+              </select>
+            </Field>
+            <Field label={texts.timeline.reference} className="grow">
+              <input value={timelineRef} maxLength={64} className="mono uppercase" onChange={(e) => setTimelineRef(e.target.value.toUpperCase())} />
+            </Field>
+            <Button type="submit" icon="history">{texts.timeline.show}</Button>
+          </form>
+        </Card>
+      )}
+
+      {canSearch && (
+        <Card title={t.events} icon="audit" padded={false} description={officeOnly ? texts.timeline.officeOnly : undefined}>
           <form className="filter-bar card-pad" role="search" onSubmit={(e: FormEvent) => { e.preventDefault(); void search(0) }}>
             <Field label={texts.action} hint={t.actionHint}>
               <input value={action} maxLength={64} list="audit-actions" className="mono uppercase" onChange={(e) => setAction(e.target.value)} />
@@ -203,7 +232,13 @@ export function AuditPage({ ctx }: { ctx: PageContext }) {
                     <td data-label={texts.action}><code>{e.action}</code></td>
                     <td data-label={t.outcome}><Badge tone={OUTCOME_TONE[e.outcome] ?? 'neutral'}>{e.outcome}</Badge></td>
                     <td data-label={t.actor}>
-                      {e.actorType === 'USER' ? <code title={e.actorId ?? ''}>{e.actorId}</code> : e.actorLabel ?? e.actorType}
+                      {e.actorType === 'USER'
+                        ? <>{e.actorName && <span>{e.actorName} </span>}<code title={e.actorId ?? ''} className="small">{e.actorId}</code></>
+                        : e.actorLabel ?? e.actorType}
+                      {(e.subjects ?? []).some((s) => s.officeCode) && (
+                        <span className="small muted"> · {Array.from(new Set((e.subjects ?? []).map((s) => s.officeCode).filter(Boolean))).join(', ')}</span>
+                      )}
+                      {e.intact === false && <> <Badge tone="danger" icon="alert">{texts.timeline.altered}</Badge></>}
                     </td>
                     <td data-label={t.details}>
                       {e.reason && <p className="small">{e.reason}</p>}

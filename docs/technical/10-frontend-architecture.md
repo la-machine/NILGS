@@ -40,7 +40,8 @@ becomes a drawer.
 | `#/workload` | an office's workload: stages against their DEMO targets, counts per state, load per officer, stage durations, the queue of cases under way (`?office=`, `?state=`, `?overdue=1`) (ADR-036) | `report.workload` somewhere |
 | `#/payments` | DEMO payments, simulated (no real money moves): counts, the exceptions to reconcile and their resolution, resolved exceptions, the payment requests (`?view=open\|resolved\|requests`, `?status=`) (ADR-037) | `payment.reconcile` |
 | `#/confirmations` | identity confirmations | `identity.reset.confirm` somewhere |
-| `#/audit` | verification, checkpoints, keys, events | an audit permission, by role or special grant |
+| `#/audit` | verification, checkpoints, keys, events (a supervisor's limited to their offices), the way to a timeline | an audit permission, by role or special grant |
+| `#/audit/timeline` | a case's or a parcel's timeline from the audit trail alone, oldest first, each event in words with who acted, the office and whether it is intact (`?type=APPLICATION\|PARCEL&reference=`) (ADR-038); linked from the case and parcel pages | `audit.event.search` somewhere |
 | `#/account` | profile, roles by office, security keys, special grants in force | everyone |
 
 Addresses use the fragment (`shared/router/router.ts`, no library), so they survive a reload

@@ -22,6 +22,8 @@
 //     only as "you", "the office" or "the system"; the API sends no staff name nor internal
 //     reason; the supervisor of the office reads the workload: the decided case counted, the
 //     stages it went through timed from the history of states (E-16);
+//   - the supervisor of the office reconstructs the case from the audit trail alone, from the
+//     submission to the decision, every event intact; the draft's events are the auditor's (E-18);
 //   - the auditor finds the creation, the refused and the accepted submission, the uploads, the
 //     payment and its callback, the claims, the recommendation and the decision.
 import { expect, test } from '@playwright/test'
@@ -247,6 +249,29 @@ export function applicationJourneys(people: () => ApplicationPeople, parcel: () 
     expect(summary.counts.find((c: { state: string }) => c.state === 'APPROVED').cases).toBeGreaterThan(0)
     expect(summary.durations.find((d: { state: string }) => d.state === 'PENDING_DECISION').stays).toBeGreaterThan(0)
     expect((await applicant.api('GET', `/reports/workload?office=${office}`)).status).toBe(403)
+  })
+
+  test('the supervisor reconstructs the case from the audit trail alone; the draft is the auditor\'s', async () => {
+    const reference = (await applicant.api('GET', `/applications/${applicationId}`)).body.reference as string
+    await ready(supervisor)
+    const page = supervisor.page
+    await page.goto(`/#/cases/${applicationId}`)
+    await page.getByRole('link', { name: 'Audit timeline' }).click()
+    await expect(page.getByText(`Timeline of ${reference}`)).toBeVisible()
+    await expect(page.getByText('Every event intact')).toBeVisible()
+    for (const action of ['APPLICATION_SUBMITTED', 'PAYMENT_REQUESTED', 'PAYMENT_CALLBACK_ACCEPTED', 'COMPLETENESS_INFO_REQUESTED',
+      'COMPLETENESS_RESPONSE_SENT', 'COMPLETENESS_ACCEPTED', 'CASE_CLAIMED', 'REVIEW_RECOMMENDED', 'DECISION_RECORDED']) {
+      await expect(page.locator(`li[data-action="${action}"]`).first(), action).toBeVisible()
+    }
+    await expect(page.locator('li[data-action="APPLICATION_DRAFT_CREATED"]')).toHaveCount(0)
+    const order = await page.locator('li[data-action]').evaluateAll((items) => items.map((i) => Number(i.getAttribute('data-pos'))))
+    expect(order).toEqual([...order].sort((a, b) => a - b))
+
+    const theirs = (await supervisor.api('GET', `/audit/timeline?type=APPLICATION&reference=${reference}`)).body
+    const all = (await auditor.api('GET', `/audit/timeline?type=APPLICATION&reference=${reference}`)).body
+    expect(all.events.map((e: { action: string }) => e.action)).toContain('APPLICATION_DRAFT_CREATED')
+    expect(all.events.length).toBeGreaterThan(theirs.events.length)
+    expect((await applicant.api('GET', `/audit/timeline?type=APPLICATION&reference=${reference}`)).status).toBe(403)
   })
 
   test('the auditor finds the draft, the refused and the accepted submission, the documents', async () => {

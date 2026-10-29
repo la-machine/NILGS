@@ -20,22 +20,27 @@ import org.snigf.mvp.audit.AuditEventView;
 import org.snigf.mvp.audit.AuditIntegrityException;
 import org.snigf.mvp.audit.AuditOutcome;
 import org.snigf.mvp.audit.AuditRecorder;
+import org.snigf.mvp.audit.AuditTimeline;
 import org.snigf.mvp.audit.AuditTrail;
 import org.snigf.mvp.audit.ChainVerification;
 import org.snigf.mvp.audit.Checkpoint;
 import org.snigf.mvp.audit.domain.AuditEventRepository;
 import org.snigf.mvp.audit.domain.ChainHead;
+import org.snigf.mvp.audit.domain.ChainedEvent;
 import org.snigf.mvp.audit.domain.CheckpointRepository;
 import org.snigf.mvp.keys.KeyService;
 import org.snigf.mvp.keys.KeyServiceException;
 import org.snigf.mvp.keys.Signature;
 import org.snigf.mvp.keys.SigningKey;
 import org.snigf.mvp.keys.SigningPublicKey;
+import org.snigf.mvp.shared.db.DatabaseActor;
 import org.snigf.mvp.shared.id.UuidV7;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Use cases "verify the chain" and "sign a checkpoint" (Slice 1 design §7). Every run is
@@ -57,10 +62,13 @@ public class AuditTrailService implements AuditTrail {
     private final AuditRecorder recorder;
     private final AuditChainMonitor monitor;
     private final TransactionTemplate writing;
+    private final TransactionTemplate reading;
+    private final DatabaseActor actor;
+    private final JsonMapper json = JsonMapper.builder().build();
 
     public AuditTrailService(AuditEventRepository events, CheckpointRepository checkpoints, CheckpointArchive archive,
                              ChainVerificationService verification, KeyService keys, AuditRecorder recorder,
-                             AuditChainMonitor monitor, PlatformTransactionManager transactions) {
+                             AuditChainMonitor monitor, PlatformTransactionManager transactions, DatabaseActor actor) {
         this.events = events;
         this.checkpoints = checkpoints;
         this.archive = archive;
@@ -70,6 +78,9 @@ public class AuditTrailService implements AuditTrail {
         this.monitor = monitor;
         this.writing = new TransactionTemplate(transactions);
         writing.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
+        this.reading = new TransactionTemplate(transactions);
+        reading.setReadOnly(true);
+        this.actor = actor;
     }
 
     @Override
@@ -156,9 +167,11 @@ public class AuditTrailService implements AuditTrail {
     }
 
     @Override
-    public AuditEventView.Page events(AuditEventFilter filter) {
-        List<AuditEventView> found = events.search(filter, filter.size() + 1, filter.page() * filter.size()).stream()
-                .map(AuditTrailService::view).toList();
+    public AuditEventView.Page events(UUID reader, AuditEventFilter filter) {
+        List<AuditEventView> found = reading.execute(tx -> {
+            actor.bind(reader);
+            return views(events.search(filter, filter.size() + 1, filter.page() * filter.size()));
+        });
         boolean more = found.size() > filter.size();
         Map<String, Object> details = new LinkedHashMap<>();
         if (filter.entityType() != null) {
@@ -166,6 +179,10 @@ public class AuditTrailService implements AuditTrail {
         }
         if (filter.entityId() != null) {
             details.put("entityId", filter.entityId());
+        }
+        if (filter.subjectType() != null) {
+            details.put("subjectType", filter.subjectType());
+            details.put("subjectId", filter.subjectId());
         }
         if (filter.actorId() != null) {
             details.put("actorId", filter.actorId());
@@ -192,10 +209,63 @@ public class AuditTrailService implements AuditTrail {
                 .withEntity(ENTITY_CHECKPOINT, null).withDetails(Map.of("checkpointFile", chainPos))));
     }
 
-    private static AuditEventView view(org.snigf.mvp.audit.domain.ChainedEvent e) {
-        return new AuditEventView(e.chainPos(), e.id(), e.occurredAt(), e.actorType(), e.actorId(), e.actorLabel(),
-                e.actorRoles(), e.action(), e.entityType(), e.entityId(), e.entityRef(), e.outcome(), e.reason(),
-                e.correlationId(), e.sourceIp(), e.details(), AuditEventView.hex(e.prevHash()), AuditEventView.hex(e.hash()));
+    @Override
+    public Optional<AuditTimeline> timeline(UUID reader, String subjectType, UUID subjectId, String reference) {
+        if (subjectType == null || !AuditTimeline.SUBJECT_TYPES.contains(subjectType)
+                || (subjectId == null) == (reference == null || reference.isBlank())) {
+            throw new IllegalArgumentException("a subject type and either an id or a reference");
+        }
+        Optional<AuditTimeline> found = reading.execute(tx -> {
+            actor.bind(reader);
+            Optional<UUID> id = subjectId != null ? Optional.of(subjectId)
+                    : events.subjectByReference(subjectType, reference.strip());
+            if (id.isEmpty()) {
+                return Optional.<AuditTimeline>empty();
+            }
+            List<ChainedEvent> rows = events.timeline(subjectType, id.get(), AuditTimeline.MAX_EVENTS + 1);
+            if (rows.isEmpty()) {
+                return Optional.<AuditTimeline>empty();
+            }
+            boolean truncated = rows.size() > AuditTimeline.MAX_EVENTS;
+            List<AuditEventView> shown = views(truncated ? rows.subList(0, AuditTimeline.MAX_EVENTS) : rows);
+            String ref = reference != null ? reference.strip() : events.referenceOf(subjectType, id.get()).orElse(null);
+            return Optional.of(new AuditTimeline(subjectType, id.get(), ref, shown, truncated));
+        });
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("subjectType", subjectType);
+        found.ifPresent(t -> details.put("subjectId", t.subjectId()));
+        if (reference != null) {
+            details.put("reference", reference.strip());
+        }
+        details.put("returned", found.map(t -> t.events().size()).orElse(0));
+        writing.executeWithoutResult(tx -> recorder.record(AuditEvent.of(AuditAction.AUDIT_TIMELINE_READ, AuditOutcome.SUCCESS)
+                .withEntity(ENTITY_CHAIN, null).withDetails(details)));
+        return found;
+    }
+
+    /** Events as read: subjects with their office codes, the actor's current name, and whether each is intact. */
+    private List<AuditEventView> views(List<ChainedEvent> rows) {
+        Map<UUID, String> offices = events.officeCodes();
+        Map<UUID, String> names = events.accountNames(rows.stream().map(ChainedEvent::actorId)
+                .filter(java.util.Objects::nonNull).collect(java.util.stream.Collectors.toSet()));
+        return rows.stream().map(e -> new AuditEventView(e.chainPos(), e.id(), e.occurredAt(), e.actorType(), e.actorId(),
+                e.actorLabel(), e.actorRoles(), e.action(), e.entityType(), e.entityId(), e.entityRef(), e.outcome(),
+                e.reason(), e.correlationId(), e.sourceIp(), e.details(), AuditEventView.hex(e.prevHash()),
+                AuditEventView.hex(e.hash()), e.actorId() == null ? null : names.get(e.actorId()),
+                subjects(e.subjects(), offices), java.security.MessageDigest.isEqual(e.hash(), e.computeHash()))).toList();
+    }
+
+    private List<AuditEventView.Subject> subjects(String json, Map<UUID, String> offices) {
+        if (json == null) {
+            return List.of();
+        }
+        List<AuditEventView.Subject> out = new java.util.ArrayList<>();
+        for (JsonNode s : this.json.readTree(json)) {
+            String office = s.path("office").asString(null);
+            out.add(new AuditEventView.Subject(s.path("type").asString(""), UUID.fromString(s.path("id").asString("")),
+                    office == null ? null : offices.get(UUID.fromString(office))));
+        }
+        return List.copyOf(out);
     }
 
     @Override

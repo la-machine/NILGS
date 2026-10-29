@@ -14,12 +14,16 @@ import static org.snigf.mvp.audit.AuditEncoding.field;
 
 /**
  * An event as stored in the chain, and the Java implementation of {@code audit_canonical}
- * (V3__audit.sql, encoding {@value #VERSION}).
+ * (V3__audit.sql, V19__audit_subjects.sql): encoding {@value #VERSION} for an event without
+ * subjects, {@value #VERSION_SUBJECTS} (the same fields, then the subjects) for one with them.
  *
  * <p>Verification recomputes hashes here rather than with the database's functions, which
- * an administrator could replace. Two values are kept in the database's text form, because
- * that form is what the database hashed: {@code host(source_ip)} and {@code details::text}.
- * {@code CanonicalHashParityIT} proves both sides produce identical bytes.
+ * an administrator could replace. Three values are kept in the database's text form, because
+ * that form is what the database hashed: {@code host(source_ip)}, {@code details::text} and
+ * {@code subjects::text}. {@code CanonicalHashParityIT} and {@code TimelineIT} prove both sides
+ * produce identical bytes.
+ *
+ * @param subjects what the event is about, as the database found it (ADR-038); null for none
  */
 public record ChainedEvent(
         long chainPos,
@@ -38,18 +42,20 @@ public record ChainedEvent(
         UUID correlationId,
         String sourceIp,
         String details,
+        String subjects,
         byte[] prevHash,
         byte[] hash) {
 
     public static final String VERSION = "snigf-audit-v1";
+    public static final String VERSION_SUBJECTS = "snigf-audit-v2";
 
     /** {@code prev_hash} of the first event. */
     public static final byte[] GENESIS = new byte[32];
 
     /** The bytes {@code audit_canonical(e)} returns for this event. */
     public byte[] canonical() {
-        return String.join("|",
-                VERSION,
+        String v1 = String.join("|",
+                subjects == null ? VERSION : VERSION_SUBJECTS,
                 field(Long.toString(chainPos)),
                 field(id.toString()),
                 field(TIMESTAMP.format(occurredAt)),
@@ -65,7 +71,8 @@ public record ChainedEvent(
                 field(reason),
                 field(correlationId.toString()),
                 field(sourceIp),
-                field(details)).getBytes(StandardCharsets.UTF_8);
+                field(details));
+        return (subjects == null ? v1 : v1 + "|" + field(subjects)).getBytes(StandardCharsets.UTF_8);
     }
 
     /** {@code sha256(prev_hash || audit_canonical(e))}. */

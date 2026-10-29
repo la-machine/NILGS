@@ -9,6 +9,58 @@ Each entry names the decision record (ADR) and the guide (`docs/guides/`) that e
 
 ## [Unreleased]
 
+### Audit timeline: case and parcel reconstruction from audit alone (E-18, MVP-07)
+
+Decision: [ADR-038](docs/adr/038-audit-subjects-and-case-timeline.md), implementing
+[ADR-027](docs/adr/027-office-context-on-audit-events.md) (decision D6).
+Guide: [audit trail, case and parcel timeline](docs/guides/audit-trail.md#case-and-parcel-timeline-e-18).
+
+- **Audit subjects (migration V19).** Every new audit event records what it is about:
+  - the application, which also covers its document versions, payment requests and matched
+    provider reports;
+  - a parcel, or both parcels of an alert;
+  - each with the record's office at that moment.
+
+  The database finds them from the record in the same transaction (`audit_subjects()`) and
+  overwrites anything the caller sends. A draft has no office until it is submitted.
+- **In the hash, nothing rewritten.**
+  - Events with subjects are encoded `snigf-audit-v2`, the subjects hashed last.
+  - Events without subjects, including every event recorded before V19, keep `snigf-audit-v1`
+    byte for byte, so every existing hash and checkpoint still verifies.
+  - No backfill.
+  - The Java verifier implements both versions (`ChainedEvent`); `docs/audit.md` documents v2 for
+    offline verifiers.
+- **Supervisors read their office's events** (ADR-027, D6). `GET /api/v1/audit/events` moves to
+  `audit.event.search` somewhere:
+  - each row is filtered in the database by `audit_readable()`: everywhere for the auditor, at
+    the office of one of the event's subjects for a supervisor;
+  - new filters `subjectType` and `subjectId`;
+  - each event now shows its subjects with office codes, the account's current name, and
+    `intact`.
+- **The timeline.** `GET /api/v1/audit/timeline?type=APPLICATION|PARCEL&reference=` (or `&id=`):
+  - every readable event of the case or parcel, oldest first, at most 500;
+  - the record is found from the audit trail itself;
+  - each event is checked intact;
+  - reading is audited, with the new action `AUDIT_TIMELINE_READ`;
+  - `404 TIMELINE_NOT_FOUND` alike for an unknown record and another office's.
+- **Interface:**
+  - `#/audit/timeline`: the events in words (French and English), with who acted, the office,
+    the outcome, what was recorded, and an intact or altered badge;
+  - links from the case and parcel pages;
+  - the audit page's event search is open to supervisors, limited to their offices, with the
+    account name, the office and the altered badge.
+- **Tests:**
+  - `TimelineIT`: a whole case read by the auditor and by the office's supervisor; another
+    office's supervisor gets 404, a reviewer 403; the office-scoped search; Java and SQL v2
+    agree; an altered row shows;
+  - pgTAP `21`: 16 tests;
+  - `AuditDomainRulesTest` (v2);
+  - `AuditReadingScopeTest`: exactly event search and the timeline are office-scoped;
+  - `PermissionMatrixIT`;
+  - Vitest: the timeline page;
+  - e2e: the supervisor's step is now "reads the events of their office only"; a new step
+    reconstructs the case from the audit trail, from the submission to the decision.
+
 ### Simulated payment and reconciliation (E-17, MVP-08)
 
 Decision: [ADR-037](docs/adr/037-simulated-payment-and-reconciliation.md).

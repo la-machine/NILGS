@@ -10,6 +10,7 @@ import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -38,7 +39,7 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
     private static final String COLUMNS = """
             chain_pos, id, occurred_at, actor_type, actor_id, actor_label, actor_roles, action,
             entity_type, entity_id, entity_ref, outcome, reason, correlation_id,
-            host(source_ip) AS source_ip, details::text AS details, prev_hash, hash""";
+            host(source_ip) AS source_ip, details::text AS details, subjects::text AS subjects, prev_hash, hash""";
 
     private final JdbcClient jdbc;
     private final JdbcTemplate streaming;
@@ -94,11 +95,18 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
                 .optional();
     }
 
-    /** Fixed conditions; only their presence varies, values are always parameters. */
+    /**
+     * Fixed conditions; only their presence varies, values are always parameters. Every row is
+     * also filtered by {@code audit_readable} for the actor of the transaction (ADR-038).
+     */
     @Override
     public List<ChainedEvent> search(AuditEventFilter filter, int limit, int offset) {
-        StringBuilder where = new StringBuilder("TRUE");
+        StringBuilder where = new StringBuilder("audit_readable(subjects)");
         Map<String, Object> params = new HashMap<>();
+        if (filter.subjectType() != null) {
+            where.append(" AND subjects @> CAST(:probe AS jsonb)");
+            params.put("probe", probe(filter.subjectType(), filter.subjectId()));
+        }
         if (filter.entityType() != null) {
             where.append(" AND entity_type = :entityType");
             params.put("entityType", filter.entityType());
@@ -132,6 +140,63 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
                 .list();
     }
 
+    @Override
+    public Optional<UUID> subjectByReference(String subjectType, String reference) {
+        return jdbc.sql("""
+                        SELECT entity_id FROM audit_event
+                         WHERE entity_type = :type AND entity_ref = :ref AND entity_id IS NOT NULL AND subjects IS NOT NULL
+                         ORDER BY chain_pos LIMIT 1""")
+                .param("type", subjectType).param("ref", reference)
+                .query(UUID.class).optional();
+    }
+
+    @Override
+    public Optional<String> referenceOf(String subjectType, UUID subjectId) {
+        return jdbc.sql("""
+                        SELECT entity_ref FROM audit_event
+                         WHERE entity_type = :type AND entity_id = :id AND entity_ref IS NOT NULL
+                         ORDER BY chain_pos LIMIT 1""")
+                .param("type", subjectType).param("id", subjectId)
+                .query(String.class).optional();
+    }
+
+    @Override
+    public List<ChainedEvent> timeline(String subjectType, UUID subjectId, int limit) {
+        return jdbc.sql("SELECT " + COLUMNS + " FROM audit_event"
+                        + " WHERE subjects @> CAST(:probe AS jsonb) AND audit_readable(subjects)"
+                        + " ORDER BY chain_pos LIMIT :limit")
+                .param("probe", probe(subjectType, subjectId)).param("limit", limit)
+                .query((rs, n) -> event(rs))
+                .list();
+    }
+
+    @Override
+    public Map<UUID, String> accountNames(Collection<UUID> ids) {
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, String> names = new HashMap<>();
+        jdbc.sql("SELECT id, display_name FROM app_user WHERE id IN (:ids)").param("ids", List.copyOf(ids))
+                .query(rs -> {
+                    names.put(rs.getObject(1, UUID.class), rs.getString(2));
+                });
+        return names;
+    }
+
+    @Override
+    public Map<UUID, String> officeCodes() {
+        Map<UUID, String> codes = new HashMap<>();
+        jdbc.sql("SELECT id, code FROM office").query(rs -> {
+            codes.put(rs.getObject(1, UUID.class), rs.getString(2));
+        });
+        return codes;
+    }
+
+    /** {@code [{"type": ..., "id": ...}]}, for a containment test on {@code subjects}. */
+    private static String probe(String subjectType, UUID subjectId) {
+        return "[{\"type\":\"" + subjectType + "\",\"id\":\"" + subjectId + "\"}]";
+    }
+
     /**
      * Streams through a server-side cursor. Must run inside a transaction: PostgreSQL uses
      * the fetch size only when auto-commit is off.
@@ -162,6 +227,7 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
                 rs.getObject("correlation_id", UUID.class),
                 rs.getString("source_ip"),
                 rs.getString("details"),
+                rs.getString("subjects"),
                 rs.getBytes("prev_hash"),
                 rs.getBytes("hash"));
     }

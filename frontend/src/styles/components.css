@@ -2056,6 +2056,13 @@ textarea.mono {
 .exception-item p { margin: 0; }
 .exception-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 
+/* Audit timeline (E-18): one entry per event, oldest first; an altered row stands out */
+.audit-timeline { margin: 0; padding: 0; list-style: none; }
+.audit-timeline-entry { display: grid; gap: var(--space-1); padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border); border-left: 3px solid transparent; }
+.audit-timeline-entry p { margin: 0; }
+.audit-timeline-entry.altered { border-left-color: var(--color-danger); }
+.audit-timeline-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
 @media print {
   .sidebar, .topbar, .drawer-scrim, .no-print, .form-actions, .page-actions, button { display: none !important; }
   .shell, .shell-body, .shell-main, .content { display: block !important; margin: 0 !important; padding: 0 !important; }

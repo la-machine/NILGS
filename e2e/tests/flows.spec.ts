@@ -8,7 +8,7 @@
 //   - special grants: approved by another administrator, shown to the beneficiary, never
 //     spent by viewing or by a cancelled confirmation, spent once by the action, audited;
 //   - audit: the auditor verifies the chain, finds the grant use and signs a checkpoint;
-//     the supervisor verifies the chain without reading events;
+//     the supervisor verifies the chain and reads the events of their office only (ADR-038);
 //   - recovery (ADR-024, ADR-028): both keys lost -> a single-use recovery code, a new key,
 //     and the lost keys removed; every key and code lost -> an administrator asks, the
 //     supervisor confirms in the application how the identity was checked, old codes dead,
@@ -182,12 +182,16 @@ test('the auditor verifies the chain and finds the use of the special grant', as
   expect(created.some((e: any) => e.actorId === auditorId && e.outcome === 'SUCCESS')).toBe(true)
 })
 
-test('a supervisor verifies the chain without reading audit events', async () => {
+test('a supervisor verifies the chain and reads the events of their office only (ADR-038)', async () => {
   const audit = await supervisor.open('Audit trail')
-  await expect(audit.getByLabel('Action')).toHaveCount(0)
   await audit.getByRole('button', { name: 'Verify the whole chain' }).click()
   await expect(audit.getByText(/^Chain intact/)).toBeVisible()
-  expect((await supervisor.api('GET', '/audit/events')).status).toBe(403)
+  await expect(audit.getByText(/You read the events of your offices only/)).toBeVisible()
+  const read = await supervisor.api('GET', '/audit/events?size=100')
+  expect(read.status).toBe(200)
+  for (const e of read.body.events as { subjects: { officeCode: string | null }[] }[]) {
+    expect(e.subjects.map((s) => s.officeCode)).toContain(OFFICE)
+  }
 })
 
 test('a staff member who lost both keys signs in with a recovery code, once, then registers a new key', async () => {

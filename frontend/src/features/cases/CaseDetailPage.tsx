@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react'
 import { fill } from '../../shared/i18n'
 import { href } from '../../shared/router/router'
-import { canAt } from '../../shared/session/access'
+import { canAt, canSomewhere } from '../../shared/session/access'
 import type { PageContext } from '../../shared/session/types'
 import { Button } from '../../shared/ui/Button'
 import { Card, PageHeader } from '../../shared/ui/Card'
@@ -70,7 +70,11 @@ export function CaseDetailPage({ ctx, id }: { ctx: PageContext; id: string }) {
   return (
     <div className="page">
       <PageHeader title={found.reference} description={typeName(lang, found.type)} breadcrumbLabel={texts.shell.breadcrumb}
-        crumbs={crumbs} meta={<Badge tone={STATE_TONE[found.state]}>{a.states[found.state]}</Badge>} />
+        crumbs={crumbs} meta={<Badge tone={STATE_TONE[found.state]}>{a.states[found.state]}</Badge>}
+        actions={canSomewhere(session, 'audit.event.search')
+          ? <a className="btn btn-secondary" href={href(['audit', 'timeline'], { type: 'APPLICATION', reference: found.reference })}>
+            {texts.timeline.open}</a>
+          : undefined} />
       {decided && <Alert tone="success">{decided}</Alert>}
       <div className="detail-layout">
         <div className="detail-main">

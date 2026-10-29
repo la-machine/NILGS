@@ -106,6 +106,58 @@ Inside one READ COMMITTED transaction:
 6. insert the row and write the file (both before commit);
 7. record `AUDIT_CHECKPOINT_CREATED`.
 
+## Case and parcel timeline (E-18)
+
+Decision: [ADR-038](../adr/038-audit-subjects-and-case-timeline.md), implementing
+[ADR-027](../adr/027-office-context-on-audit-events.md). The Baseline's test: "a supervisor
+can reconstruct a case's timeline from audit alone".
+
+**What an event is about.** The insert trigger fills `audit_event.subjects` with
+`audit_subjects(entity_type, entity_id)` before computing the hash. The caller never chooses it.
+
+| Event about | Subjects |
+| --- | --- |
+| an application | the application, with its office now (none while a draft) |
+| a document version, a payment request, a matched provider report | the application it belongs to |
+| a parcel | the parcel, with its office |
+| an alert | both parcels, each with its office |
+| anything else | none |
+
+**In the hash.** An event with subjects is encoded `snigf-audit-v2`, its subjects last; one
+without keeps `snigf-audit-v1` ([audit.md](../audit.md)). Events from before V19 have no subjects
+and are never given any (ADR-027: no retrospective office).
+
+**Who reads.** `audit_readable(subjects)` decides each row for the actor of the transaction:
+
+- **everywhere** (the auditor): every event;
+- **at an office** (the supervisor): the events one of whose subjects is at that office;
+- **nobody else.**
+
+`GET /api/v1/audit/events` (new filters `subjectType`, `subjectId`) and
+`GET /api/v1/audit/timeline?type=APPLICATION|PARCEL&reference=` both go through it.
+
+**The timeline:**
+
+1. The record is found from the trail itself: the first event of that type naming that
+   reference.
+2. Its readable events, oldest first, at most 500. Each comes with the subjects and their office
+   codes, the account's current name, and `intact`: its hash recomputed from its own row and
+   stored link.
+3. Reading is audited (`AUDIT_TIMELINE_READ`). An unknown record, and a record of another office,
+   answer the same `404 TIMELINE_NOT_FOUND`.
+
+**On screen:** `#/audit/timeline`, opened from the audit page, the case page or the parcel page.
+A draft's events have no office: the supervisor's timeline starts at the submission, the
+auditor's at the draft.
+
+**Add a record type to the timeline:**
+
+1. Give `audit_subjects()` its case, in a new migration (`CREATE OR REPLACE`).
+2. Add the type to `AuditTimeline.SUBJECT_TYPES`, if it is a new kind of subject.
+3. Add the words for its actions in `texts.timeline.actions`.
+
+Events recorded before that migration keep no subjects.
+
 ## How to do it again
 
 ### Record an event from a module

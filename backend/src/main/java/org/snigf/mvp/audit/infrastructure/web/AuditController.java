@@ -15,9 +15,11 @@ import org.snigf.mvp.audit.AuditEventFilter;
 import org.snigf.mvp.audit.AuditEventView;
 import org.snigf.mvp.audit.AuditIntegrityException;
 import org.snigf.mvp.audit.AuditTrail;
+import org.snigf.mvp.audit.AuditedPrincipal;
 import org.snigf.mvp.audit.ChainVerification;
 import org.snigf.mvp.audit.Checkpoint;
 import org.snigf.mvp.audit.application.AuditTrailService;
+
 import org.snigf.mvp.keys.SigningPublicKey;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -25,6 +27,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -37,10 +40,14 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
- * The auditor's API (Slice 1 design §5, S1-AC5): search events, verify the chain, sign a
- * checkpoint, list and download checkpoints and the public keys that verify them.
- * Permissions {@code audit.read} and {@code audit.verify} are held everywhere by the
- * AUDITOR role (docs/permission-matrix.md). Every read and verification is itself audited.
+ * The auditor's API (Slice 1 design §5, S1-AC5): search events, read a case's or a parcel's
+ * timeline, verify the chain, sign a checkpoint, list and download checkpoints and the public
+ * keys that verify them. Every read and verification is itself audited.
+ *
+ * <p>Event search and the timeline need {@code audit.event.search} somewhere: held everywhere
+ * (the auditor), every event; held at an office (the supervisor), the events whose subjects
+ * belong to that office, as the database decides for each row (ADR-027, ADR-038). Every other
+ * endpoint needs its permission everywhere.
  */
 @RestController
 @RequestMapping("/api/v1/audit")
@@ -58,11 +65,22 @@ class AuditController {
     record VerifyRequest(Long fromPos, Long toPos) {
     }
 
-    /** An event with its details as JSON, not as a string. */
+    /**
+     * An event with its details as JSON, not as a string.
+     *
+     * @param actorName the account's current name, for reading only (the event records its id)
+     * @param subjects  what it is about, with each record's office at the time (ADR-038)
+     * @param intact    its hash recomputes from its own row and stored link
+     */
     record EventResponse(long chainPos, UUID id, Instant occurredAt, String actorType, UUID actorId, String actorLabel,
                          List<String> actorRoles, String action, String entityType, UUID entityId, String entityRef,
                          String outcome, String reason, UUID correlationId, String sourceIp, JsonNode details,
-                         String prevHash, String hash) {
+                         String prevHash, String hash, String actorName, List<AuditEventView.Subject> subjects,
+                         boolean intact) {
+    }
+
+    record TimelineResponse(String subjectType, UUID subjectId, String reference, List<EventResponse> events,
+                            boolean truncated) {
     }
 
     record CheckpointResponse(UUID id, long chainPos, String headHash, String createdAt, int keyVersion,
@@ -70,23 +88,37 @@ class AuditController {
     }
 
     @GetMapping("/events")
-    @PreAuthorize("@access.can(authentication, 'audit.event.search')")
-    Map<String, Object> events(@RequestParam(required = false) String entityType,
+    @PreAuthorize("@access.canSomewhere(authentication, 'audit.event.search')")
+    Map<String, Object> events(@AuthenticationPrincipal AuditedPrincipal reader,
+                               @RequestParam(required = false) String entityType,
                                @RequestParam(required = false) UUID entityId,
+                               @RequestParam(required = false) String subjectType,
+                               @RequestParam(required = false) UUID subjectId,
                                @RequestParam(required = false) UUID actorId,
                                @RequestParam(required = false) String action,
                                @RequestParam(required = false) Instant from,
                                @RequestParam(required = false) Instant to,
                                @RequestParam(defaultValue = "0") int page,
                                @RequestParam(defaultValue = "50") int size) {
-        AuditEventView.Page result = trail.events(new AuditEventFilter(blankToNull(entityType), entityId, actorId,
-                blankToNull(action), from, to, page, size));
+        AuditEventView.Page result = trail.events(reader.userId(), new AuditEventFilter(blankToNull(entityType), entityId,
+                blankToNull(subjectType), subjectId, actorId, blankToNull(action), from, to, page, size));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("events", result.events().stream().map(this::response).toList());
         body.put("page", result.page());
         body.put("size", result.size());
         body.put("more", result.more());
         return body;
+    }
+
+    /** {@code ?type=APPLICATION&reference=DEMO-APP-...}, or {@code &id=}; 404 when nothing is readable. */
+    @GetMapping("/timeline")
+    @PreAuthorize("@access.canSomewhere(authentication, 'audit.event.search')")
+    ResponseEntity<?> timeline(@AuthenticationPrincipal AuditedPrincipal reader, @RequestParam String type,
+                               @RequestParam(required = false) UUID id, @RequestParam(required = false) String reference) {
+        return trail.timeline(reader.userId(), type, id, blankToNull(reference))
+                .<ResponseEntity<?>>map(t -> ResponseEntity.ok(new TimelineResponse(t.subjectType(), t.subjectId(),
+                        t.reference(), t.events().stream().map(this::response).toList(), t.truncated())))
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(problem(HttpStatus.NOT_FOUND, "TIMELINE_NOT_FOUND")));
     }
 
     @PostMapping("/verify")
@@ -156,7 +188,8 @@ class AuditController {
     private EventResponse response(AuditEventView e) {
         return new EventResponse(e.chainPos(), e.id(), e.occurredAt(), e.actorType(), e.actorId(), e.actorLabel(),
                 e.actorRoles(), e.action(), e.entityType(), e.entityId(), e.entityRef(), e.outcome(), e.reason(),
-                e.correlationId(), e.sourceIp(), json.readTree(e.detailsJson()), e.prevHash(), e.hash());
+                e.correlationId(), e.sourceIp(), json.readTree(e.detailsJson()), e.prevHash(), e.hash(), e.actorName(),
+                e.subjects(), e.intact());
     }
 
     private static CheckpointResponse response(Checkpoint c) {

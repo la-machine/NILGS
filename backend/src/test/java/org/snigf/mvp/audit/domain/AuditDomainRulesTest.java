@@ -42,11 +42,28 @@ class AuditDomainRulesTest {
         UUID corr = UUID.fromString("00000000-0000-4000-8000-000000000002");
         ChainedEvent e = new ChainedEvent(7, id, Instant.parse("2026-10-21T08:00:00.000001Z"), "SERVICE", null,
                 "job", List.of(), "TEST_EVENT", null, null, null, "SUCCESS", null, corr, null, "{}",
-                new byte[32], new byte[32]);
+                null, new byte[32], new byte[32]);
 
         assertThat(new String(e.canonical(), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo(
                 "snigf-audit-v1|1:7|36:" + id + "|27:2026-10-21T08:00:00.000001Z|7:SERVICE|~|3:job|2:[]"
                         + "|10:TEST_EVENT|~|~|~|7:SUCCESS|~|36:" + corr + "|~|2:{}");
+    }
+
+    @Test
+    void anEventWithSubjectsIsEncodedV2AndItsSubjectsAreHashed() {
+        UUID id = UUID.fromString("00000000-0000-7000-8000-000000000001");
+        UUID corr = UUID.fromString("00000000-0000-4000-8000-000000000002");
+        String subjects = "[{\"id\": \"00000000-0000-7000-8000-0000000000a1\", \"type\": \"PARCEL\"}]";
+        ChainedEvent e = new ChainedEvent(7, id, Instant.parse("2026-10-21T08:00:00.000001Z"), "SERVICE", null,
+                "job", List.of(), "TEST_EVENT", null, null, null, "SUCCESS", null, corr, null, "{}",
+                subjects, new byte[32], new byte[32]);
+
+        assertThat(new String(e.canonical(), java.nio.charset.StandardCharsets.UTF_8)).isEqualTo(
+                "snigf-audit-v2|1:7|36:" + id + "|27:2026-10-21T08:00:00.000001Z|7:SERVICE|~|3:job|2:[]"
+                        + "|10:TEST_EVENT|~|~|~|7:SUCCESS|~|36:" + corr + "|~|2:{}|" + subjects.length() + ":" + subjects);
+        ChainedEvent without = new ChainedEvent(7, id, e.occurredAt(), "SERVICE", null, "job", List.of(), "TEST_EVENT",
+                null, null, null, "SUCCESS", null, corr, null, "{}", null, new byte[32], new byte[32]);
+        assertThat(e.computeHash()).as("removing the subjects changes the hash").isNotEqualTo(without.computeHash());
     }
 
     @Test

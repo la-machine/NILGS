@@ -176,7 +176,10 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
                     .content("{\"resolution\":\"NO_ACTION\",\"note\":\"Matrix check only\"}")),
             new Endpoint("GET /map/backgrounds", Permission.PARCEL_READ, () -> get("/api/v1/map/backgrounds"), true),
             new Endpoint("GET /map/geographic/tiles.pmtiles", Permission.PARCEL_READ, () -> get("/api/v1/map/geographic/tiles.pmtiles"), true),
-            new Endpoint("GET /audit/events", Permission.AUDIT_EVENT_SEARCH, () -> get("/api/v1/audit/events")),
+            // Office-scoped since ADR-038: the database then filters each event by its subjects' offices.
+            new Endpoint("GET /audit/events", Permission.AUDIT_EVENT_SEARCH, () -> get("/api/v1/audit/events"), Reach.SOMEWHERE),
+            new Endpoint("GET /audit/timeline", Permission.AUDIT_EVENT_SEARCH, () -> get("/api/v1/audit/timeline")
+                    .param("type", "APPLICATION").param("id", SOMEONE.toString()), Reach.SOMEWHERE),
             new Endpoint("POST /audit/verify", Permission.AUDIT_CHAIN_VERIFY, () -> post("/api/v1/audit/verify")
                     .contentType(JSON).content("{\"fromPos\":1,\"toPos\":1}")),
             new Endpoint("GET /audit/checkpoints", Permission.AUDIT_CHECKPOINT_LIST, () -> get("/api/v1/audit/checkpoints")),
