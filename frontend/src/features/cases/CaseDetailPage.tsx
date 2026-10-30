@@ -16,6 +16,7 @@ import { Alert, Badge, EmptyState, Skeleton } from '../../shared/ui/Feedback'
 import { errorMessage } from '../../shared/ui/errorMessage'
 import { AnswersCard, CompletenessCard, HistoryCard, messages, STATE_TONE, typeName } from '../applications'
 import { DocumentsPanel } from '../documents'
+import { AcknowledgmentCard } from '../issuance'
 import { formatAmount, STANDING_TONE } from '../payments'
 import { ReviewRecord, reviewsApi } from '../reviews'
 import type { Review } from '../reviews'
@@ -80,6 +81,7 @@ export function CaseDetailPage({ ctx, id }: { ctx: PageContext; id: string }) {
         <div className="detail-main">
           <AnswersCard texts={texts} lang={lang} type={found.type} data={found.data} />
           <DocumentsPanel texts={texts} lang={lang} applicationId={found.id} editable={false} source="case" />
+          <AcknowledgmentCard texts={texts} lang={lang} applicationId={found.id} source="case" />
           {review && <ReviewRecord texts={texts} lang={lang} review={review} />}
           <CompletenessCard texts={texts} lang={lang} type={found.type} steps={found.completeness} />
           <HistoryCard texts={texts} lang={lang} history={found.history} />

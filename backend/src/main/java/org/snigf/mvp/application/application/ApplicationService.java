@@ -13,6 +13,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import org.snigf.mvp.application.ApplicationSubmitted;
 import org.snigf.mvp.application.DecisionLookup;
 import org.snigf.mvp.application.domain.Application;
 import org.snigf.mvp.application.domain.ApplicationReference;
@@ -31,6 +32,7 @@ import org.snigf.mvp.shared.db.DatabaseActor;
 import org.snigf.mvp.shared.id.CheckCharacter;
 import org.snigf.mvp.shared.idempotency.IdempotencyStore;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,11 +71,12 @@ public class ApplicationService {
     private final ApplicationProperties settings;
     private final Clock clock;
     private final ObjectProvider<DecisionLookup> decisions;
+    private final ApplicationEventPublisher events;
     private final JsonMapper json = JsonMapper.builder().build();
 
     public ApplicationService(ApplicationRepository applications, ParcelDirectory parcels, DatabaseActor actor,
                               IdempotencyStore idempotency, AuditRecorder audit, ApplicationProperties settings,
-                              Clock clock, ObjectProvider<DecisionLookup> decisions) {
+                              Clock clock, ObjectProvider<DecisionLookup> decisions, ApplicationEventPublisher events) {
         this.applications = applications;
         this.parcels = parcels;
         this.actor = actor;
@@ -82,6 +85,7 @@ public class ApplicationService {
         this.settings = settings;
         this.clock = clock;
         this.decisions = decisions;
+        this.events = events;
     }
 
     /** The form as the applicant sends it: every value is text. */
@@ -257,6 +261,8 @@ public class ApplicationService {
                 .withEntity(ENTITY, id).withEntityRef(reference.value()).withDetails(facts));
         Written written = new Written(id, reference.value(), ApplicationState.COMPLETENESS_REVIEW.name(), expectedVersion + 2);
         save(applicant, idempotencyKey, SUBMIT_ENDPOINT, requestHash, 200, written);
+        // The acknowledgment (ADR-039) is issued after the commit, by whoever listens.
+        events.publishEvent(new ApplicationSubmitted(id, applicant.userId()));
         return new Outcome(written, false);
     }
 

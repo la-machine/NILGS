@@ -90,7 +90,8 @@ public record SnigfProperties(
             @NotBlank String dataEncryption,
             @NotBlank String paymentCallback,
             @NotBlank String passwordPepper,
-            @NotBlank String blindIndex) {
+            @NotBlank String blindIndex,
+            @NotBlank String documentIssuance) {
     }
 
     /** Where keys live. */

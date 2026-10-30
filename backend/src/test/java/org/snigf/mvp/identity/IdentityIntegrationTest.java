@@ -60,7 +60,7 @@ public abstract class IdentityIntegrationTest extends PostgisIntegrationTest {
     protected static final String SESSION_COOKIE = "__Host-snigf-session";
     protected static final String CSRF_COOKIE = "__Host-snigf-xsrf";
     protected static final String CSRF_HEADER = "X-XSRF-TOKEN";
-    protected static final String PASSWORD = "Correct-Horse-Battery-42";
+    protected static final String PASSWORD = "Correct-Horse-Battery-42"; // gitleaks:allow (synthetic test-account password, see .gitleaksignore)
 
 
     /** Offices are reference data the application can only read; seed one demo office. */

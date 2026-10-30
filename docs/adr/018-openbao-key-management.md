@@ -31,6 +31,7 @@ compromises that host.
   | --- | --- | --- |
   | Audit checkpoint signing | Ed25519 | `SNIGF_KEY_ROTATE_SIGNING` |
   | Server-side record signing | Ed25519 | `SNIGF_KEY_ROTATE_SIGNING` |
+  | Manifest of each document SNIGF issues (added by [ADR-039](039-issued-documents-and-verification.md)) | Ed25519 | `SNIGF_KEY_ROTATE_SIGNING`; every version kept, so earlier documents still verify |
   | Data-key wrapping (envelope encryption) | AES-256-GCM, derived per context | `SNIGF_KEY_ROTATE_DATA_ENCRYPTION` |
   | Payment-callback HMAC | HMAC-SHA-256 | `SNIGF_KEY_ROTATE_PAYMENT_CALLBACK` |
   | Password pepper | HMAC-SHA-256 | never automatic |

@@ -295,6 +295,7 @@ test('when every key and code is lost, an administrator asks and the supervisor 
 // The officer is a cadastral officer since the four-eyes approval above.
 const parcelReference = parcelJourneys(() => ({ cadastral: officer, colleague: surveyor, supervisor, admin: admin1, applicant, auditor }))
 // The applicant applies for the parcel recorded above (MVP-02).
-applicationJourneys(() => ({ applicant, intake, reviewer, decider, surveyor, admin: admin1, auditor, supervisor }), parcelReference)
+applicationJourneys(() => ({ applicant, intake, reviewer, decider, surveyor, admin: admin1, auditor, supervisor,
+  documents: supervisor }), parcelReference)
 
 designTour(() => ({ cadastral: officer, admin: admin1, auditor, reference: parcelReference }))

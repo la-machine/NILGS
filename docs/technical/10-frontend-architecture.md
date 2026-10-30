@@ -39,6 +39,8 @@ becomes a drawer.
 | `#/grants` | special grants | `admin.grant.read` |
 | `#/workload` | an office's workload: stages against their DEMO targets, counts per state, load per officer, stage durations, the queue of cases under way (`?office=`, `?state=`, `?overdue=1`) (ADR-036) | `report.workload` somewhere |
 | `#/payments` | DEMO payments, simulated (no real money moves): counts, the exceptions to reconcile and their resolution, resolved exceptions, the payment requests (`?view=open\|resolved\|requests`, `?status=`) (ADR-037) | `payment.reconcile` |
+| `#/issued-documents` | documents issued by SNIGF: look one up by number, revoke, cancel or re-issue it with a reason; the verification incidents to review, each resolved with a note (ADR-039) | `document.issued.manage` or `document.incident.review` |
+| `#/verify`, `#/verify/<number>` | **public, no sign-in**: verify an SNIGF document by number (the record and its status) or by its PDF (the exact file); the address the QR code names (ADR-039) | everyone, signed in or not |
 | `#/confirmations` | identity confirmations | `identity.reset.confirm` somewhere |
 | `#/audit` | verification, checkpoints, keys, events (a supervisor's limited to their offices), the way to a timeline | an audit permission, by role or special grant |
 | `#/audit/timeline` | a case's or a parcel's timeline from the audit trail alone, oldest first, each event in words with who acted, the office and whether it is intact (`?type=APPLICATION\|PARCEL&reference=`) (ADR-038); linked from the case and parcel pages | `audit.event.search` somewhere |
@@ -108,6 +110,18 @@ a pending payment is read again every two seconds, fifteen times at most. The ca
 the fee's standing, and the intake officer's Accept button says why it waits while it is
 unpaid. `FinancePage` (`#/payments`) shows the counts and the exceptions to reconcile, each
 explained, resolved with a note after confirmation. The dashboard counts open exceptions.
+
+Documents issued by SNIGF live in `features/issuance` ([ADR-039](../adr/039-issued-documents-and-verification.md),
+[issued documents guide](../guides/issued-documents.md)). Every view says first that the document is a
+DEMO with no legal value. `AcknowledgmentCard`, on a submitted application and on its case, shows
+the number, status and date, the exact PDF to download and the verification page; if the
+acknowledgment could not be issued at submission, the applicant asks for it again there (issued
+once). `VerifyPage` is the one page outside the session: `App` renders it in `PublicLayout` for
+anyone signed out, and inside the shell for anyone signed in. It looks a number up as soon as the
+address names one, says a number confirms the record and never the paper, compares an uploaded
+PDF byte for byte, never calls an unverified document a forgery, and shows a replacement as a
+link. `IssuedDocumentsPage` (`#/issued-documents`) shows the officer's lookup and actions (each
+confirmed with a reason) and the incident queue, each part only for its permission.
 
 Reviewers and decision authorities work in `features/reviews` ([ADR-035](../adr/035-review-and-simulated-decision.md)).
 The queue shows their cases and those of their office waiting to be claimed at their stage.

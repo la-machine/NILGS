@@ -93,6 +93,7 @@ class OpenBaoKeyService extends CustodyKeyService {
     void verifyCustody() {
         expect(names.auditCheckpoint(), "ed25519", false);
         expect(names.recordSigning(), "ed25519", false);
+        expect(names.documentIssuance(), "ed25519", false);
         expect(names.dataEncryption(), "aes256-gcm96", true);
         expect(names.paymentCallback(), "hmac", false);
         expect(names.passwordPepper(), "hmac", false);

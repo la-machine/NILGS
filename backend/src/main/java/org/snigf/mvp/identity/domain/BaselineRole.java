@@ -43,6 +43,8 @@ import static org.snigf.mvp.shared.security.Permission.PARCEL_CREATE;
 import static org.snigf.mvp.shared.security.Permission.PARCEL_READ;
 import static org.snigf.mvp.shared.security.Permission.PAYMENT_PAY;
 import static org.snigf.mvp.shared.security.Permission.PAYMENT_RECONCILE;
+import static org.snigf.mvp.shared.security.Permission.DOCUMENT_INCIDENT_REVIEW;
+import static org.snigf.mvp.shared.security.Permission.DOCUMENT_ISSUED_MANAGE;
 import static org.snigf.mvp.shared.security.Permission.REPORT_WORKLOAD;
 import static org.snigf.mvp.shared.security.Permission.REVIEW_RECOMMEND;
 
@@ -78,6 +80,9 @@ public enum BaselineRole {
             AUDIT_CHECKPOINT_LIST, Scope.ANY, AUDIT_CHECKPOINT_DOWNLOAD, Scope.ANY, AUDIT_KEY_READ, Scope.ANY)),
     FINANCE_OFFICER("Agent financier", "Finance officer", entries(
             PAYMENT_RECONCILE, Scope.ANY)),
+    /** The national document verification service (ADR-039): issued documents' status and verification incidents. */
+    DOCUMENT_OFFICER("Agent de vérification documentaire", "Document verification officer", entries(
+            DOCUMENT_ISSUED_MANAGE, Scope.ANY, DOCUMENT_INCIDENT_REVIEW, Scope.ANY)),
     SYSTEM_ADMIN("Administrateur du système", "System administrator", entries(
             ADMIN_ACCOUNT_LIST, Scope.ANY, ADMIN_ROLE_ASSIGN, Scope.ANY, ADMIN_ASSIGNMENT_READ, Scope.ANY,
             ADMIN_ASSIGNMENT_APPROVE, Scope.ANY, ADMIN_ROLE_REVOKE, Scope.ANY,

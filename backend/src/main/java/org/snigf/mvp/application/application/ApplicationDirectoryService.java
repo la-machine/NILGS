@@ -48,6 +48,18 @@ public class ApplicationDirectoryService implements ApplicationDirectory, Applic
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
+    public Optional<SubmittedApplication> submitted(UUID user, UUID applicationId) {
+        actor.bind(user);
+        return applications.findCase(applicationId).filter(c -> c.application().submittedAt() != null).map(c -> {
+            Application a = c.application();
+            var type = applications.type(a.typeVersionId()).orElseThrow();
+            return new SubmittedApplication(a.id(), a.reference(), a.applicantId(), c.applicantName(), a.typeCode(),
+                    type.nameFr(), type.nameEn(), a.parcelReference(), a.officeCode(), a.submittedAt());
+        });
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
     public Optional<CaseState> visible(UUID user, UUID applicationId) {
         actor.bind(user);
         return applications.findCase(applicationId).map(c -> new CaseState(c.application().id(), c.application().reference(),

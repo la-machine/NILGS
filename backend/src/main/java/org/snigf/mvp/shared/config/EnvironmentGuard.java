@@ -175,7 +175,7 @@ public class EnvironmentGuard {
         if (keys.names() != null) {
             SnigfProperties.KeyNames n = keys.names();
             List<String> names = List.of(n.auditCheckpoint(), n.recordSigning(), n.dataEncryption(),
-                    n.paymentCallback(), n.passwordPepper(), n.blindIndex());
+                    n.paymentCallback(), n.passwordPepper(), n.blindIndex(), n.documentIssuance());
             if (Set.copyOf(names).size() != names.size()) {
                 violations.add("each key purpose needs its own key, found " + names);
             }

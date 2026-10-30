@@ -59,6 +59,9 @@ promote intake INTAKE_OFFICER
 # The reviewer and the decision authority of the office: recommend, then decide (E-15).
 promote reviewer REVIEWER
 promote decider DECISION_AUTHORITY
+# The supervisor is also the document officer (ADR-039): a second role, because one address may
+# register only SNIGF_RATE_REGISTER_PER_HOUR accounts an hour, and this run registers ten.
+promote supervisor DOCUMENT_OFFICER
 
 bash infra/scripts/maps-synthetic-imagery.sh --if-absent
 

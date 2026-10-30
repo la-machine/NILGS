@@ -174,6 +174,29 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
             new Endpoint("POST /payments/exceptions/{unknown}/resolution", Permission.PAYMENT_RECONCILE, () -> post(
                     "/api/v1/payments/exceptions/" + SOMEONE + "/resolution").contentType(JSON)
                     .content("{\"resolution\":\"NO_ACTION\",\"note\":\"Matrix check only\"}")),
+            // Issued documents (ADR-039); public verification is @PublicEndpoint, outside the matrix.
+            new Endpoint("GET /applications/{unknown}/acknowledgment", Permission.APPLICATION_READ, () -> get("/api/v1/applications/"
+                    + SOMEONE + "/acknowledgment"), Reach.OWN),
+            new Endpoint("POST /applications/{unknown}/acknowledgment", Permission.APPLICATION_READ, () -> post("/api/v1/applications/"
+                    + SOMEONE + "/acknowledgment"), Reach.OWN),
+            new Endpoint("GET /applications/{unknown}/acknowledgment/file", Permission.APPLICATION_READ, () -> get("/api/v1/applications/"
+                    + SOMEONE + "/acknowledgment/file"), Reach.OWN),
+            new Endpoint("GET /cases/{unknown}/acknowledgment", Permission.APPLICATION_READ, () -> get("/api/v1/cases/" + SOMEONE
+                    + "/acknowledgment")),
+            new Endpoint("GET /cases/{unknown}/acknowledgment/file", Permission.APPLICATION_READ, () -> get("/api/v1/cases/" + SOMEONE
+                    + "/acknowledgment/file")),
+            new Endpoint("GET /issued-documents/{unknown}", Permission.DOCUMENT_ISSUED_MANAGE, () -> get(
+                    "/api/v1/issued-documents/SNIGF-ZZZZZZZZZZZZZZZZZZZZZZZZZZ")),
+            new Endpoint("POST /issued-documents/{unknown}/revocation", Permission.DOCUMENT_ISSUED_MANAGE, () -> post(
+                    "/api/v1/issued-documents/SNIGF-ZZZZZZZZZZZZZZZZZZZZZZZZZZ/revocation").contentType(JSON).content(DECISION)),
+            new Endpoint("POST /issued-documents/{unknown}/cancellation", Permission.DOCUMENT_ISSUED_MANAGE, () -> post(
+                    "/api/v1/issued-documents/SNIGF-ZZZZZZZZZZZZZZZZZZZZZZZZZZ/cancellation").contentType(JSON).content(DECISION)),
+            new Endpoint("POST /issued-documents/{unknown}/reissue", Permission.DOCUMENT_ISSUED_MANAGE, () -> post(
+                    "/api/v1/issued-documents/SNIGF-ZZZZZZZZZZZZZZZZZZZZZZZZZZ/reissue").contentType(JSON).content(DECISION)),
+            new Endpoint("GET /verification-incidents", Permission.DOCUMENT_INCIDENT_REVIEW, () -> get("/api/v1/verification-incidents")),
+            new Endpoint("POST /verification-incidents/{unknown}/resolution", Permission.DOCUMENT_INCIDENT_REVIEW, () -> post(
+                    "/api/v1/verification-incidents/" + SOMEONE + "/resolution").contentType(JSON)
+                    .content("{\"expectedVersion\":0,\"resolution\":\"REFERRED\",\"note\":\"Matrix check only\"}")),
             new Endpoint("GET /map/backgrounds", Permission.PARCEL_READ, () -> get("/api/v1/map/backgrounds"), true),
             new Endpoint("GET /map/geographic/tiles.pmtiles", Permission.PARCEL_READ, () -> get("/api/v1/map/geographic/tiles.pmtiles"), true),
             // Office-scoped since ADR-038: the database then filters each event by its subjects' offices.

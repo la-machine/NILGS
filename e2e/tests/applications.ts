@@ -8,6 +8,9 @@
 //   - completed with the parcel, it is submitted once: the reference is issued, the answers
 //     are frozen, the history shows the submission;
 //   - nobody else finds it: another account gets 404 and does not list it;
+//   - its DEMO acknowledgment is issued once, downloaded, and verified by anyone signed out:
+//     the exact file is authentic, an altered copy is flagged and opens an incident, which the
+//     document officer (the supervisor's second role) resolves with a note (ADR-039);
 //   - after submission the files are listed, downloadable as attachments, and no longer added to;
 //   - the intake officer asks for a clearer identity document; the applicant adds a version in
 //     that category only and responds (E-14);
@@ -26,8 +29,9 @@
 //     submission to the decision, every event intact; the draft's events are the auditor's (E-18);
 //   - the auditor finds the creation, the refused and the accepted submission, the uploads, the
 //     payment and its callback, the claims, the recommendation and the decision.
+import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
-import { RUN, SIGNED_IN } from './support'
+import { english, RUN, SIGNED_IN } from './support'
 import type { Person } from './support'
 
 /** A minimal PDF and a 1 x 1 PNG: synthetic files, recognised from their bytes. */
@@ -39,7 +43,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 
 export interface ApplicationPeople {
   applicant: Person; intake: Person; reviewer: Person; decider: Person; surveyor: Person; admin: Person; auditor: Person
-  supervisor: Person
+  supervisor: Person; documents: Person
 }
 
 async function ready(person: Person) {
@@ -58,10 +62,11 @@ export function applicationJourneys(people: () => ApplicationPeople, parcel: () 
   let admin: Person
   let auditor: Person
   let supervisor: Person
+  let documents: Person
   let applicationId = ''
 
   test('an applicant drafts an application: no reference before submission, every missing item listed', async () => {
-    ({ applicant, intake, reviewer, decider, surveyor, admin, auditor, supervisor } = people())
+    ({ applicant, intake, reviewer, decider, surveyor, admin, auditor, supervisor, documents } = people())
     await ready(applicant)
     const list = await applicant.open('My applications')
     await list.getByRole('link', { name: 'New application' }).first().click()
@@ -123,6 +128,53 @@ export function applicationJourneys(people: () => ApplicationPeople, parcel: () 
     expect((await admin.api('GET', `/applications/${applicationId}`)).status).toBe(404)
     const theirs = (await admin.api('GET', '/applications')).body as { id: string }[]
     expect(theirs.map((x) => x.id)).not.toContain(applicationId)
+  })
+
+  test('its DEMO acknowledgment is issued once, verifies as authentic, and an altered copy is flagged (ADR-039)', async () => {
+    const page = applicant.page
+    const card = page.locator('[data-acknowledgment^="SNIGF-"]')
+    await expect(card).toBeVisible()
+    await expect(page.getByText('Demonstration: no legal value')).toBeVisible()
+    const number = (await card.getAttribute('data-acknowledgment')) ?? ''
+    expect(number).toMatch(/^SNIGF-[0-9A-HJKMNP-TV-Z]{26}$/)
+    const [download] = await Promise.all([page.waitForEvent('download'), card.getByRole('link', { name: 'Download the PDF' }).click()])
+    expect(download.suggestedFilename()).toBe(`snigf-demo-acknowledgment-${number}.pdf`)
+    const pdf = readFileSync(await download.path())
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    // Asking again issues nothing more.
+    expect((await applicant.api('POST', `/applications/${applicationId}/acknowledgment`, {})).body.number).toBe(number)
+
+    // Anyone, signed out, from the address the QR code names.
+    const visitor = await page.context().browser()!.newContext()
+    try {
+      const v = await visitor.newPage()
+      await v.goto(`/#/verify/${number}`)
+      await english(v)
+      await expect(v.getByRole('heading', { level: 1, name: 'Verify an SNIGF document' })).toBeVisible()
+      await expect(v.getByText('Document on record')).toBeVisible()
+      await expect(v.getByText('Only the number was checked: this confirms the record, not the paper in your hands.')).toBeVisible()
+      await expect(v.getByText(`e2e ${RUN}`)).toHaveCount(0)
+      await v.getByLabel(/^PDF file/).setInputFiles({ name: 'ack.pdf', mimeType: 'application/pdf', buffer: pdf })
+      await v.getByRole('button', { name: 'Verify the file' }).click()
+      await expect(v.getByText('Authentic document')).toBeVisible()
+      // The same file edited after issuance: same number, other bytes.
+      const edited = Buffer.concat([pdf, Buffer.from('\n% edited after issuance\n', 'latin1')])
+      await v.getByLabel(/^PDF file/).setInputFiles({ name: 'ack-edited.pdf', mimeType: 'application/pdf', buffer: edited })
+      await v.getByRole('button', { name: 'Verify the file' }).click()
+      await expect(v.getByText('Content altered')).toBeVisible()
+    } finally {
+      await visitor.close()
+    }
+
+    // The document officer finds the incident and resolves it with a note.
+    await ready(documents)
+    const queue = await documents.open('Issued documents')
+    const incident = queue.locator('[data-kind="ALTERED"]').filter({ hasText: number }).first()
+    await expect(incident).toBeVisible()
+    await incident.getByLabel(/^Note/).fill('Edited copy presented by a visitor; holder informed (e2e)')
+    await incident.getByRole('button', { name: 'Resolve' }).click()
+    await documents.page.getByRole('dialog').getByRole('button', { name: 'Resolve' }).click()
+    await expect(queue.locator('[data-kind="ALTERED"]').filter({ hasText: number })).toHaveCount(0)
   })
 
   test('the intake officer asks for a clearer document, the applicant responds, the case is accepted', async () => {

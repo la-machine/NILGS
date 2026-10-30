@@ -77,6 +77,11 @@ virtual security keys. Decisions: [ADR-026](../adr/026-approval-workflow-enforce
      cannot correct; an administrator and an applicant get 403; the auditor finds the
      creation, the refusal and the correction; the browser contacted no other origin and
      logged no CSP violation.
+   - documents issued by SNIGF (`tests/applications.ts`, ADR-039): the submitted application's
+     DEMO acknowledgment is downloaded, asked for again without a second one, and verified by a
+     visitor signed out (a new browser context): the number confirms the record, the exact PDF is
+     authentic, the same PDF with bytes appended is altered; the supervisor, also the document
+     officer, resolves the incident with a note in Issued documents.
 6. **Map data.** Before phase 2, `e2e.sh` runs `maps-synthetic-imagery.sh --if-absent`, so
    the satellite view has data (real imagery is never replaced). The geographic view is
    tested as installed or as unavailable, whichever the stack has
@@ -125,7 +130,8 @@ correction mode, accounts, roles, audit. Use it to review a visual change before
 | A radio of the map views was "not visible" | Hidden with the clip technique | The radio covers its segment, transparent: clickable, and found by tests |
 | `Pattern attribute value ... is not a valid regular expression` in the console | Browsers compile `pattern` with the `v` flag; the field was silently unchecked | Escape `(`, `)` and `-` in classes; `shared/patterns.test.ts` compiles every pattern |
 | A new role did not appear for its holder | The session was read only at sign-in | The shell reads it again on navigation and window focus |
-| A second run within the hour fails at registration (429) | `SNIGF_RATE_REGISTER_PER_HOUR=10` per address, six accounts per run | Wait, or in development only restart the application (`docker compose restart app`), whose limiter is in memory |
+| A second run within the hour fails at registration (429) | `SNIGF_RATE_REGISTER_PER_HOUR=10` per address, ten accounts per run | Wait, or in development only restart the application (`docker compose restart app`), whose limiter is in memory |
+| An eleventh account failed at registration in a fresh run ("Too many attempts") | The same limit: a run may register ten accounts at most | A new duty goes to an existing person as a second role: the supervisor is also the document officer (`promote supervisor DOCUMENT_OFFICER`, ADR-039); the limit stays |
 
 ## Production differences
 

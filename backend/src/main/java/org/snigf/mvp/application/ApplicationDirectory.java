@@ -2,6 +2,7 @@
 // Author: Pythagore.
 package org.snigf.mvp.application;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,5 +40,17 @@ public interface ApplicationDirectory {
     }
 
     record DocumentCategory(String code, boolean required, String labelFr, String labelEn) {
+    }
+
+    /**
+     * A submitted application as its own applicant or the staff of its office read it (row-level
+     * security decides), with what an acknowledgment of its submission states (ADR-039). Empty for
+     * a draft, an unknown application, or one the actor may not read. Call inside a transaction.
+     */
+    Optional<SubmittedApplication> submitted(UUID actor, UUID applicationId);
+
+    record SubmittedApplication(UUID id, String reference, UUID applicantId, String applicantName, String typeCode,
+                                String typeNameFr, String typeNameEn, String parcelReference, String officeCode,
+                                Instant submittedAt) {
     }
 }

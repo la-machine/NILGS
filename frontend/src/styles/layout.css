@@ -278,6 +278,42 @@
   margin: var(--space-12) auto;
 }
 
+/* A page anyone may open without signing in (document verification, ADR-039). */
+.public {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+}
+
+.public-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.public-name { font-weight: var(--weight-semibold); }
+.public-spacer { flex: 1; }
+.public-main { flex: 1; padding: 0 var(--space-6) var(--space-8); }
+
+.verify-page {
+  max-width: 56rem;
+  margin: var(--space-8) auto;
+}
+
+.verify-page .lead { color: var(--color-text-muted); margin: 0; }
+
+.verify-forms {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+}
+
+.verify-answer { display: grid; gap: var(--space-3); }
+
 .page-header {
   display: grid;
   gap: var(--space-2);
@@ -553,6 +589,7 @@
 }
 
 @media (max-width: 48rem) {
+  .verify-forms,
   .grid-2,
   .dashboard-grid,
   .detail-aside { grid-template-columns: minmax(0, 1fr); }
@@ -568,6 +605,8 @@
   .auth-main { padding: var(--space-3) var(--space-4) var(--space-4); }
   .auth-brand { padding: var(--space-4); }
   .auth-tagline { display: none; }
+  .public-bar { padding: var(--space-3) var(--space-4); }
+  .public-main { padding: 0 var(--space-4) var(--space-6); }
   .page-actions,
   .page-actions .btn { width: 100%; }
 }

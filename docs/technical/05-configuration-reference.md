@@ -75,11 +75,12 @@ an environment variable of the same name.
 | --- | --- | --- | --- |
 | `SNIGF_KEY_AUDIT_CHECKPOINT` | `snigf-audit-checkpoint` | Ed25519 key that signs audit checkpoints | compose, `application-key-custody.yaml`, `bao-init.sh`, probe |
 | `SNIGF_KEY_RECORD_SIGNING` | `snigf-record-signing` | Ed25519 key that signs records | compose, `application-key-custody.yaml`, `bao-init.sh` |
+| `SNIGF_KEY_DOCUMENT_ISSUANCE` | `snigf-document-issuance` | Ed25519 key that signs the manifest of every document SNIGF issues (ADR-039); never the record key | compose, `application-key-custody.yaml`, `bao-init.sh` |
 | `SNIGF_KEY_DATA_ENCRYPTION` | `snigf-data-encryption` | AES-256-GCM key that wraps data keys (derived per context) | compose, `application-key-custody.yaml`, `bao-init.sh`, probe |
 | `SNIGF_KEY_PAYMENT_CALLBACK` | `snigf-payment-callback` | HMAC key for payment callbacks | compose, `application-key-custody.yaml`, `bao-init.sh` |
 | `SNIGF_KEY_PASSWORD_PEPPER` | `snigf-password-pepper` | HMAC key that peppers password hashes (never rotated automatically) | compose, `application-key-custody.yaml`, `bao-init.sh`, probe |
 | `SNIGF_KEY_BLIND_INDEX` | `snigf-blind-index` | HMAC key for searchable blind indexes (never rotated automatically) | compose, `application-key-custody.yaml`, `bao-init.sh` |
-| `SNIGF_KEY_ROTATE_SIGNING` | `2160h` | Automatic rotation of both signing keys (`0` = off) | compose, `bao-init.sh` |
+| `SNIGF_KEY_ROTATE_SIGNING` | `2160h` | Automatic rotation of the signing keys: checkpoint, record and document issuance (`0` = off); older versions stay available, so earlier signatures still verify | compose, `bao-init.sh` |
 | `SNIGF_KEY_ROTATE_DATA_ENCRYPTION` | `2160h` | Automatic rotation of the data key-wrapping key | compose, `bao-init.sh` |
 | `SNIGF_KEY_ROTATE_PAYMENT_CALLBACK` | `8760h` | Automatic rotation of the payment callback key | compose, `bao-init.sh` |
 
@@ -156,6 +157,10 @@ an environment variable of the same name.
 | `SNIGF_PAYMENT_SIM_CLIENT_CN` | `snigf-payment-sim` | The simulator's certificate name, towards the proxy's provider listener and OpenBao | compose, `dev-pki.sh`, `bao-init.sh` |
 | `SNIGF_BAO_PAYMENT_SIM_ROLE` | `snigf-payment-sim` | The simulator's OpenBao login role and policy: HMAC with the payment callback key, nothing else | compose, `bao-init.sh`, `simulator.mjs` |
 | `SNIGF_PAYMENT_SIM_CALLBACK_DELAY_MS` | `1500` | How long the simulator waits before sending its callbacks | compose, `simulator.mjs` |
+| `SNIGF_ISSUANCE_VERIFY_BASE_URL` | `https://localhost:47000` | The public address the QR code and the PDF name (`<base>/#/verify/<number>`); https only, or the app refuses to start ([guide](../guides/issued-documents.md)) | compose, `application.yaml` |
+| `SNIGF_ISSUANCE_MAX_UPLOAD_BYTES` | `2097152` | The largest PDF accepted for verification (1 KB to 5 MB) | compose, `application.yaml` |
+| `SNIGF_RATE_VERIFY_PER_MINUTE` | `20` | Public verifications per client address per minute (1 to 600); beyond, 429 with `Retry-After` | compose, `application.yaml` |
+| `SNIGF_ISSUANCE_PAGE_SIZE` | `50` | Incidents per page of the document officer's queue (5 to 200) | compose, `application.yaml` |
 | `SNIGF_DOCUMENT_DIRECTORY` | `../var/documents` | Where document files are kept when running from the IDE; compose mounts the volume `document-data` at `/var/lib/snigf/documents` | `application.yaml` |
 | `SNIGF_DOCUMENT_MAX_BYTES` | `10485760` | Largest document accepted, in bytes (Baseline: 10 MB DEMO limit; at most 100 MB) | compose, `application.yaml` (also the servlet's `max-file-size`) |
 | `SNIGF_DOCUMENT_MAX_VERSIONS` | `10` | Versions one document may have (1 to 100) | compose, `application.yaml` |

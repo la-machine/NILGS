@@ -55,6 +55,9 @@ public enum Permission {
     REPORT_WORKLOAD("report.workload", Family.BUSINESS, true, "Read workload reports", "Consulter la charge de travail", Scope.OFFICE, Scope.ANY),
     PAYMENT_PAY("payment.pay", Family.BUSINESS, true, "Pay a fee (simulated)", "Payer des frais (simulé)", Scope.OWN),
     PAYMENT_RECONCILE("payment.reconcile", Family.BUSINESS, true, "Reconcile payment exceptions", "Rapprocher les paiements", Scope.ANY),
+    /** Documents issued by SNIGF (ADR-039): revoke, cancel or re-issue; never by their holder. */
+    DOCUMENT_ISSUED_MANAGE("document.issued.manage", Family.BUSINESS, true, "Revoke, cancel or re-issue a document issued by SNIGF", "Révoquer, annuler ou rééditer un document émis par SNIGF", Scope.ANY),
+    DOCUMENT_INCIDENT_REVIEW("document.incident.review", Family.BUSINESS, true, "Review document verification incidents", "Examiner les incidents de vérification de documents", Scope.ANY),
     /** The supervisor's in-application confirmation of a second-factor reset (ADR-028); business, so supervisors keep their audit permissions. */
     IDENTITY_RESET_CONFIRM("identity.reset.confirm", Family.BUSINESS, false, "Confirm the identity of a person whose second factor is reset", "Confirmer l’identité d’une personne dont le deuxième facteur est réinitialisé", Scope.OFFICE);
 

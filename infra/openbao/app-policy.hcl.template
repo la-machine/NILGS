@@ -19,6 +19,10 @@ path "@TRANSIT@/keys/@KEY_AUDIT_CHECKPOINT@"   { capabilities = ["read"] }
 path "@TRANSIT@/sign/@KEY_RECORD_SIGNING@"     { capabilities = ["update"] }
 path "@TRANSIT@/keys/@KEY_RECORD_SIGNING@"     { capabilities = ["read"] }
 
+# Issued documents (ADR-039): sign their manifests; read the public keys of every version.
+path "@TRANSIT@/sign/@KEY_DOCUMENT_ISSUANCE@"  { capabilities = ["update"] }
+path "@TRANSIT@/keys/@KEY_DOCUMENT_ISSUANCE@"  { capabilities = ["read"] }
+
 # --- Data-key wrapping (AES-256-GCM, derived per context): envelope encryption --------
 path "@TRANSIT@/datakey/plaintext/@KEY_DATA_ENCRYPTION@" { capabilities = ["update"] }
 path "@TRANSIT@/decrypt/@KEY_DATA_ENCRYPTION@"           { capabilities = ["update"] }

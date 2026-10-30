@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class EphemeralKeyServiceTest {
 
     static final SnigfProperties.KeyNames NAMES = new SnigfProperties.KeyNames(
-            "audit-checkpoint", "record-signing", "data-encryption", "payment-callback", "password-pepper", "blind-index");
+            "audit-checkpoint", "record-signing", "data-encryption", "payment-callback", "password-pepper", "blind-index", "document-issuance");
 
     private final EphemeralKeyService keys = new EphemeralKeyService(NAMES);
     private final byte[] message = "parcel CM-LT-0001 decision".getBytes(StandardCharsets.UTF_8);

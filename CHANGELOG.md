@@ -9,6 +9,79 @@ Each entry names the decision record (ADR) and the guide (`docs/guides/`) that e
 
 ## [Unreleased]
 
+### Secret scan: the reviewed false positives (Slice 0)
+
+- **The failing CI step** was gitleaks (`generic-api-key`) on two synthetic test-account
+  passwords in committed tests: `IdentityIntegrationTest.java` (commit `4f1264b`, line 62) and
+  `AuthFlowIT.java` (commit `6e87075`, line 44). Neither is a credential of any system. The
+  rules are unchanged: the two findings are listed by fingerprint in `.gitleaksignore`, with the
+  reason, and the current line carries `gitleaks:allow`.
+- **`secret-scan`** (Compose, profile `test`): the same gitleaks version as CI, pinned by digest,
+  no network, repository read-only: `docker compose --profile test run --rm secret-scan`.
+
+### Documents issued by SNIGF: DEMO acknowledgment and public verification (Slice 1)
+
+Decision: [ADR-039](docs/adr/039-issued-documents-and-verification.md); it extends
+[ADR-018](docs/adr/018-openbao-key-management.md) with one key purpose and changes no other
+decision. Guide: [documents issued by SNIGF](docs/guides/issued-documents.md).
+
+**DEMO only: no legal value.** The one document type is an acknowledgment that an application
+was submitted. No title, certificate or decision is issued.
+
+- **Issuance (migration V20, module `issuance`).**
+  - After a submission commits, the applicant is issued a PDF:
+    - template `ack-demo-1` (PDFBox 3.0.5);
+    - DEMO marking, facts in French and English;
+    - a random `SNIGF-` number (128 bits);
+    - a QR code (ZXing 3.5.3) naming `#/verify/<number>`.
+  - It is issued once per submission: an operation key, an advisory lock and a unique
+    constraint. Concurrent and repeated requests return the same document.
+  - Nothing is issued unsigned. If key custody is down, the applicant asks again from the
+    application page.
+- **Registry and signature.**
+  - Each row binds the number, type, template, application reference, office, issuance time and
+    the SHA-256 of the exact PDF in a canonical manifest.
+  - OpenBao signs the manifest with a new, dedicated Ed25519 key, `SNIGF_KEY_DOCUMENT_ISSUANCE`:
+    never exported, never the record key.
+  - The exact PDF is kept beside the row.
+  - The database refuses any rewrite of what was issued, and stored bytes that do not match the
+    registered hash.
+- **Public verification** (`#/verify`, no sign-in; `/api/v1/public/verifications`).
+  - By number, the answer confirms the record and its status, never the paper.
+  - By PDF, only an identical file is `AUTHENTIC`. An edited file, or one carrying a copied
+    number, is `ALTERED`.
+  - A file claiming SNIGF with a number nobody issued is `UNVERIFIED` and opens an incident. A
+    file from elsewhere is `UNVERIFIED` without suspicion.
+  - A registry row that no longer agrees with its signature is never trusted.
+  - The answer gives the outcome, type, date, issuing office and status, never the holder, the
+    case or the parcel.
+  - Throttled per address (`SNIGF_RATE_VERIFY_PER_MINUTE`, then 429 with `Retry-After`); 2 MB
+    at most; CSRF on upload.
+- **Statuses and the document officer.**
+  - A new baseline role, DOCUMENT_OFFICER, with `document.issued.manage` and
+    `document.incident.review`.
+  - The officer revokes, cancels or re-issues with a reason. Never their own document: the
+    database refuses it too.
+  - A re-issue supersedes the old document, which names its replacement.
+  - The incident queue (`#/issued-documents`) resolves each incident once, with a note.
+- **Audit.** `DOCUMENT_ISSUED`, `DOCUMENT_VERIFIED`, `DOCUMENT_REVOKED`, `DOCUMENT_CANCELLED`,
+  `DOCUMENT_SUPERSEDED`, `DOCUMENT_STATUS_REFUSED`, `VERIFICATION_INCIDENT_OPENED`,
+  `VERIFICATION_INCIDENT_RESOLVED`, each on the application's timeline.
+- **Key rotation.** Each signature names its key version, and every version stays available, so
+  documents signed before a rotation still verify (`SigningKeyRotationTest`). The security probe
+  checks the new key: Ed25519, not exportable, not deletable; export, backup, rotation and
+  `min_available_version` refused to the app.
+- **Settings.** `SNIGF_ISSUANCE_VERIFY_BASE_URL` (https only), `SNIGF_ISSUANCE_MAX_UPLOAD_BYTES`,
+  `SNIGF_RATE_VERIFY_PER_MINUTE`, `SNIGF_ISSUANCE_PAGE_SIZE`, `SNIGF_KEY_DOCUMENT_ISSUANCE`. An
+  existing stack gets the key at the next `bao-init` run.
+- **Tests.**
+  - `IssuanceIT`: every outcome, concurrency, access, input limits, registry tampering.
+  - `IssuanceDomainTest`, `SigningKeyRotationTest`, `VerificationRateLimiterTest`.
+  - `PermissionMatrixIT`: 12 new endpoints.
+  - pgTAP `22`; `09` now counts 38 permissions and 10 roles.
+  - Vitest: the three views.
+  - e2e: issue on submission, verify signed out, resolve the incident.
+
 ### Audit timeline: case and parcel reconstruction from audit alone (E-18, MVP-07)
 
 Decision: [ADR-038](docs/adr/038-audit-subjects-and-case-timeline.md), implementing

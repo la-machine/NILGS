@@ -41,6 +41,7 @@ x-key-names: &key-names
   SNIGF_KEY_PAYMENT_CALLBACK: ${SNIGF_KEY_PAYMENT_CALLBACK:?set in .env}
   SNIGF_KEY_PASSWORD_PEPPER: ${SNIGF_KEY_PASSWORD_PEPPER:?set in .env}
   SNIGF_KEY_BLIND_INDEX: ${SNIGF_KEY_BLIND_INDEX:?set in .env}
+  SNIGF_KEY_DOCUMENT_ISSUANCE: ${SNIGF_KEY_DOCUMENT_ISSUANCE:?set in .env}
 
 x-hardened: &hardened
   read_only: true
@@ -261,6 +262,11 @@ services:
       SNIGF_REPORTING_DURATION_WINDOW: ${SNIGF_REPORTING_DURATION_WINDOW:?set in .env}
       SNIGF_REPORTING_PAGE_SIZE: ${SNIGF_REPORTING_PAGE_SIZE:?set in .env}
       # Simulated payment (ADR-037): no real money moves.
+      # Documents issued by SNIGF (ADR-039).
+      SNIGF_ISSUANCE_VERIFY_BASE_URL: ${SNIGF_ISSUANCE_VERIFY_BASE_URL:?set in .env}
+      SNIGF_ISSUANCE_MAX_UPLOAD_BYTES: ${SNIGF_ISSUANCE_MAX_UPLOAD_BYTES:?set in .env}
+      SNIGF_RATE_VERIFY_PER_MINUTE: ${SNIGF_RATE_VERIFY_PER_MINUTE:?set in .env}
+      SNIGF_ISSUANCE_PAGE_SIZE: ${SNIGF_ISSUANCE_PAGE_SIZE:?set in .env}
       SNIGF_PAYMENT_FEES: ${SNIGF_PAYMENT_FEES:?set in .env}
       SNIGF_PAYMENT_REQUIRED_BEFORE_ACCEPTANCE: ${SNIGF_PAYMENT_REQUIRED_BEFORE_ACCEPTANCE:?set in .env}
       SNIGF_PAYMENT_PENDING_TTL: ${SNIGF_PAYMENT_PENDING_TTL:?set in .env}
@@ -437,6 +443,7 @@ services:
       SNIGF_KEY_AUDIT_CHECKPOINT: ${SNIGF_KEY_AUDIT_CHECKPOINT:?set in .env}
       SNIGF_KEY_DATA_ENCRYPTION: ${SNIGF_KEY_DATA_ENCRYPTION:?set in .env}
       SNIGF_KEY_PASSWORD_PEPPER: ${SNIGF_KEY_PASSWORD_PEPPER:?set in .env}
+      SNIGF_KEY_DOCUMENT_ISSUANCE: ${SNIGF_KEY_DOCUMENT_ISSUANCE:?set in .env}
       SNIGF_CSRF_COOKIE_NAME: ${SNIGF_CSRF_COOKIE_NAME:?set in .env}
       SNIGF_CSRF_HEADER_NAME: ${SNIGF_CSRF_HEADER_NAME:?set in .env}
       SNIGF_PROVIDER_CALLBACK_PORT: ${SNIGF_PROVIDER_CALLBACK_PORT:?set in .env}
@@ -461,6 +468,25 @@ services:
       - /tmp
     networks: [app-net, data-net, key-net, provider-in]
     command: ["sh", "/probe/security-probe.sh"]
+
+  # The secret scan CI runs (gitleaks), over the whole git history, offline and read-only.
+  secret-scan:
+    profiles: ["test"]
+    image: ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: none
+    environment:
+      # The repository is owned by the host user; let git read it.
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: "*"
+    volumes:
+      - .:/repo:ro
+    tmpfs:
+      - /tmp
+    command: ["git", "/repo", "--redact", "--verbose", "--no-banner"]
 
   # Runs on app-net only, like the proxy, and must not reach the database.
   segmentation-probe:

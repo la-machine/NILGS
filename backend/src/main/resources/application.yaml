@@ -131,6 +131,13 @@ snigf:
     target-pending-decision: ${SNIGF_REPORTING_TARGET_PENDING_DECISION}
     duration-window: ${SNIGF_REPORTING_DURATION_WINDOW}
     page-size: ${SNIGF_REPORTING_PAGE_SIZE}
+  # Documents issued by SNIGF and their verification (ADR-039). DEMO acknowledgment only.
+  issuance:
+    verify-base-url: ${SNIGF_ISSUANCE_VERIFY_BASE_URL}
+    max-upload-bytes: ${SNIGF_ISSUANCE_MAX_UPLOAD_BYTES}
+    verify-per-minute: ${SNIGF_RATE_VERIFY_PER_MINUTE}
+    max-tracked-clients: ${SNIGF_RATE_MAX_TRACKED_CLIENTS}
+    page-size: ${SNIGF_ISSUANCE_PAGE_SIZE}
   # Simulated payment (ADR-037): no real money moves; the only provider is the DEMO simulator.
   payment:
     fees: ${SNIGF_PAYMENT_FEES}

@@ -37,3 +37,4 @@ snigf:
       payment-callback: ${SNIGF_KEY_PAYMENT_CALLBACK}
       password-pepper: ${SNIGF_KEY_PASSWORD_PEPPER}
       blind-index: ${SNIGF_KEY_BLIND_INDEX}
+      document-issuance: ${SNIGF_KEY_DOCUMENT_ISSUANCE}

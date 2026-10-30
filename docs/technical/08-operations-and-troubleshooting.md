@@ -179,6 +179,10 @@ setting to fix.
 | 404 `TIMELINE_NOT_FOUND` | the reference is unknown to the audit trail, or none of its events belongs to the reader's offices (a supervisor elsewhere, or a draft never submitted) | expected; the auditor reads every timeline |
 | A supervisor's timeline starts at the submission | a draft has no office, so its events (creation, edits, uploads) are readable everywhere only (ADR-038) | expected: the auditor's timeline has them |
 | An event marked "altered" in a timeline | its row no longer hashes to its stored hash: someone changed it in the database | treat as an incident ([audit incident procedure](#audit-incident-procedure)); run the full verification |
+| No acknowledgment on a submitted application (404 `DOCUMENT_NOT_FOUND`) | issuing after the submission failed: look for `DOCUMENT_ISSUED` `FAILED` in the audit trail and `Acknowledgment of application ... not issued` in the app log (OpenBao unreachable, or the key `SNIGF_KEY_DOCUMENT_ISSUANCE` missing) | fix custody (`docker compose up bao-init` provisions the key), then the applicant asks again from the application page; issuing is idempotent ([issued documents guide](../guides/issued-documents.md)) |
+| 503 `ISSUANCE_UNAVAILABLE` on an acknowledgment or a re-issue | OpenBao is down or sealed (the audit reason is `KEY_CUSTODY_UNAVAILABLE`) | `docker compose ps openbao`; nothing is issued unsigned |
+| Public verification says `REGISTRY_INTEGRITY` | a registry row no longer agrees with its signed manifest: someone changed it in the database | treat as an incident (one was opened); compare with a backup; never correct the row by hand |
+| 429 `RATE_LIMITED` on `#/verify` | more than `SNIGF_RATE_VERIFY_PER_MINUTE` verifications from one address | expected; wait for `Retry-After` |
 | An exception on `#/payments` | a provider report matched no pending request of the same amount (`AMOUNT_MISMATCH`, `UNMATCHED_REFERENCE`, `AFTER_EXPIRY`, `ALREADY_SETTLED`) | expected for those DEMO scenarios; the finance officer resolves it (simulated refund or nothing to do), which never pays a request |
 
 ### Audit trail

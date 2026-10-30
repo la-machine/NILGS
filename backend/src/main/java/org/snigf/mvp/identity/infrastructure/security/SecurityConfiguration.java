@@ -21,7 +21,8 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
  * <ul>
  *   <li><b>Default deny.</b> Health and info, the CSRF token, login and registration are
  *       public, and so are the payment provider's callbacks, which carry no session and are
- *       authenticated by the proxy's provider listener and their signature (ADR-037); the session view, logout and second-factor endpoints need any authenticated
+ *       authenticated by the proxy's provider listener and their signature (ADR-037), and the
+ *       verification of documents issued by SNIGF, throttled, with a minimal answer (ADR-039); the session view, logout and second-factor endpoints need any authenticated
  *       session (the service checks the level); everything else
  *       under {@code /api/v1} needs a fully authenticated session ({@link AuthLevel#FULL})
  *       and, per method, its permission ({@code @PreAuthorize}); anything else is denied.</li>
@@ -43,6 +44,9 @@ public class SecurityConfiguration {
     public static final String API = "/api/v1";
     /** Provider callbacks (ADR-037): no session, no CSRF token; the proxy and the signature authenticate them. */
     static final String PROVIDER_CALLBACKS = API + "/payments/callbacks/**";
+    /** Public verification of documents issued by SNIGF (ADR-039): no session needed; CSRF still applies to POST. */
+    static final String PUBLIC_VERIFICATION = API + "/public/verifications/**";
+    static final String PUBLIC_VERIFICATION_ROOT = API + "/public/verifications";
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, SessionSecurityContextRepository contexts,
@@ -58,6 +62,8 @@ public class SecurityConfiguration {
                 .requestMatchers(HttpMethod.GET, API + "/auth/csrf").permitAll()
                 .requestMatchers(HttpMethod.POST, API + "/auth/login", API + "/auth/register").permitAll()
                 .requestMatchers(HttpMethod.POST, PROVIDER_CALLBACKS).permitAll()
+                .requestMatchers(HttpMethod.GET, PUBLIC_VERIFICATION).permitAll()
+                .requestMatchers(HttpMethod.POST, PUBLIC_VERIFICATION_ROOT).permitAll()
                 .requestMatchers(API + "/auth/session", API + "/auth/logout", API + "/auth/mfa/**").authenticated()
                 .requestMatchers(API + "/**").hasAuthority(AuthLevel.FULL.authority())
                 .anyRequest().denyAll())

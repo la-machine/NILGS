@@ -23,6 +23,8 @@ const RolesPage = lazy(() => import('../features/roles').then((m) => ({ default:
 const GrantsPage = lazy(() => import('../features/grants').then((m) => ({ default: m.GrantsPage })))
 const WorkloadPage = lazy(() => import('../features/reports').then((m) => ({ default: m.WorkloadPage })))
 const FinancePage = lazy(() => import('../features/payments').then((m) => ({ default: m.FinancePage })))
+const IssuedDocumentsPage = lazy(() => import('../features/issuance').then((m) => ({ default: m.IssuedDocumentsPage })))
+export const VerifyPage = lazy(() => import('../features/issuance').then((m) => ({ default: m.VerifyPage })))
 const ConfirmationsPage = lazy(() => import('../features/recovery').then((m) => ({ default: m.ConfirmationsPage })))
 const AuditPage = lazy(() => import('../features/audit').then((m) => ({ default: m.AuditPage })))
 const AuditTimelinePage = lazy(() => import('../features/audit').then((m) => ({ default: m.AuditTimelinePage })))
@@ -31,6 +33,14 @@ export function Pages({ route, place, allowed, ctx, onAddKey }: {
   route: Route; place: PlaceId | null; allowed: boolean; ctx: PageContext; onAddKey: (label: string) => Promise<void>
 }) {
   const { texts } = ctx
+  // Public verification (ADR-039) is open to everyone, signed in or not.
+  if (route.segments[0] === 'verify') {
+    return (
+      <Suspense fallback={<div className="page" aria-busy="true"><Skeleton lines={6} /></div>}>
+        <VerifyPage key={route.segments[1] ?? ''} texts={texts} lang={ctx.lang} number={route.segments[1]} />
+      </Suspense>
+    )
+  }
   if (!place) {
     return (
       <div className="page page-narrow">
@@ -64,6 +74,7 @@ export function Pages({ route, place, allowed, ctx, onAddKey }: {
       {place === 'grants' && <GrantsPage ctx={ctx} />}
       {place === 'workload' && <WorkloadPage ctx={ctx} params={route.params} />}
       {place === 'payments' && <FinancePage ctx={ctx} params={route.params} />}
+      {place === 'issued-documents' && <IssuedDocumentsPage ctx={ctx} />}
       {place === 'confirmations' && <ConfirmationsPage ctx={ctx} />}
       {place === 'audit' && route.segments[1] !== 'timeline' && <AuditPage ctx={ctx} />}
       {place === 'audit' && route.segments[1] === 'timeline' && <AuditTimelinePage ctx={ctx} params={route.params} />}

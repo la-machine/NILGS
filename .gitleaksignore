@@ -1,0 +1,11 @@
+# SNIGF/NILGS - Copyright (c) 2026 FLYT.
+# Author: Pythagore.
+# Reviewed gitleaks findings that are not secrets, one fingerprint each (commit:file:rule:line).
+# Every rule stays active: only these exact occurrences are accepted. Add an entry only after
+# review, with the reason, and never for a value used by any environment.
+#
+# Synthetic password of throwaway test accounts in the Testcontainers database (integration
+# tests only; no environment uses it: demo accounts get random passwords in
+# infra/secrets/demo_accounts). Reviewed 2026-10-29.
+4f1264bfc61ebd6e60b6f10fddfb2519e0dca415:backend/src/test/java/org/snigf/mvp/identity/IdentityIntegrationTest.java:generic-api-key:62
+6e870759fbb94af948a7b2c76101c8a35e4fc06f:backend/src/test/java/org/snigf/mvp/identity/AuthFlowIT.java:generic-api-key:44

@@ -16,6 +16,7 @@ import { Card, PageHeader } from '../../shared/ui/Card'
 import { Alert, Badge, EmptyState, Skeleton } from '../../shared/ui/Feedback'
 import { errorMessage } from '../../shared/ui/errorMessage'
 import { DocumentsPanel } from '../documents'
+import { AcknowledgmentCard } from '../issuance'
 import { PaymentPanel } from '../payments'
 import { applicationsApi } from './api'
 import type { Application } from './api'
@@ -68,6 +69,7 @@ export function ApplicationDetailPage({ ctx, id, params }: { ctx: PageContext; i
       {responded && <Alert tone="success" title={texts.completeness.respondedTitle}>{texts.completeness.respondedText}</Alert>}
       {params.get('saved') && application.state === 'DRAFT' && <Alert tone="success">{a.saved}</Alert>}
       {application.state !== 'DRAFT' && <TrackingCard texts={texts} lang={lang} application={application} />}
+      {application.state !== 'DRAFT' && <AcknowledgmentCard texts={texts} lang={lang} applicationId={application.id} />}
       {application.state !== 'DRAFT' && <PaymentPanel texts={texts} lang={lang} applicationId={application.id} />}
       {application.state === 'DRAFT' && <DraftForm ctx={ctx} type={application.type} draft={application} />}
       {application.state === 'INFO_REQUESTED' && (

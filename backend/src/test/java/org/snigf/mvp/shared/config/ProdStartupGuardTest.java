@@ -30,7 +30,7 @@ class ProdStartupGuardTest {
     }
 
     private static final SnigfProperties.KeyNames NAMES = new SnigfProperties.KeyNames(
-            "audit-checkpoint", "record-signing", "data-encryption", "payment-callback", "password-pepper", "blind-index");
+            "audit-checkpoint", "record-signing", "data-encryption", "payment-callback", "password-pepper", "blind-index", "document-issuance");
 
     private static SnigfProperties.Keys openBao(String url) {
         return new SnigfProperties.Keys(SnigfProperties.KeyProviderType.OPENBAO,
@@ -196,7 +196,7 @@ class ProdStartupGuardTest {
     void refusesOneKeyForTwoPurposes() {
         SnigfProperties.Keys shared = new SnigfProperties.Keys(SnigfProperties.KeyProviderType.OPENBAO,
                 openBao("https://openbao:47820").openbao(),
-                new SnigfProperties.KeyNames("k1", "k2", "k3", "k4", "same", "same"));
+                new SnigfProperties.KeyNames("k1", "k2", "k3", "k4", "same", "same", "k7"));
         assertThat(EnvironmentGuard.check(with(safe(DEV), properties(DEV, true, true, List.of("snigf-web"), shared))))
                 .singleElement().asString().contains("own key");
     }

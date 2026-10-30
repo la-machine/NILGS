@@ -171,6 +171,7 @@ abstract class CustodyKeyService implements KeyService {
         return switch (key) {
             case AUDIT_CHECKPOINT -> names.auditCheckpoint();
             case RECORD -> names.recordSigning();
+            case DOCUMENT_ISSUANCE -> names.documentIssuance();
         };
     }
 

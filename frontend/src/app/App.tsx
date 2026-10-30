@@ -3,7 +3,7 @@
 // The application: the sign-in steps (the server decides the next one), then the signed-in
 // shell with the page the address names (#/parcels/...). One place runs actions with a busy
 // state and turns errors into messages. Pages live in their features; this file only wires.
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import {
   authApi, createCredential, EnrolScreen, getAssertion, LoginScreen, RecoveryCodesScreen, RecoveryScreen,
   RegisterScreen, VerifyScreen,
@@ -20,7 +20,8 @@ import { AppShell } from './AppShell'
 import { AuthLayout } from './AuthLayout'
 import { placeOf } from './navigation'
 import type { PlaceId } from './navigation'
-import { Pages } from './Pages'
+import { Pages, VerifyPage } from './Pages'
+import { PublicLayout } from './PublicLayout'
 import type { Screen } from './screens'
 
 const LANG_KEY = 'snigf.lang'
@@ -129,6 +130,17 @@ export function App() {
             })} />
         </AppShell>
       </DialogProvider>
+    )
+  }
+
+  // Verifying a document needs no account (ADR-039): the address the QR code names.
+  if (route.segments[0] === 'verify' && screen.name !== 'loading') {
+    return (
+      <PublicLayout texts={texts} lang={lang} onToggleLang={toggleLang}>
+        <Suspense fallback={<Spinner label={texts.shell.loading} />}>
+          <VerifyPage key={route.segments[1] ?? ''} texts={texts} lang={lang} number={route.segments[1]} />
+        </Suspense>
+      </PublicLayout>
     )
   }
 
