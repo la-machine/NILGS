@@ -76,7 +76,8 @@ export function parcelJourneys(people: () => ParcelPeople): () => string {
     watch(cadastral.page, foreignRequests, cspViolations)
     await ready(cadastral)
     const parcels = await cadastral.open('Parcels')
-    await parcels.getByRole('link', { name: 'New parcel' }).click()
+    // On an empty register the empty state offers the same link as the page header.
+    await parcels.getByRole('link', { name: 'New parcel' }).first().click()
     const form = cadastral.page.locator('main')
     await expect(form.getByRole('combobox', { name: /^Office/ })).toHaveValue(OFFICE)
     await form.getByLabel(/^Locality/).fill(`Mvog-Ada, e2e ${RUN}`)

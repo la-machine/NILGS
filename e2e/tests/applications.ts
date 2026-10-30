@@ -43,7 +43,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR
 
 export interface ApplicationPeople {
   applicant: Person; intake: Person; reviewer: Person; decider: Person; surveyor: Person; admin: Person; auditor: Person
-  supervisor: Person; documents: Person
+  supervisor: Person; documents: Person; cadastral: Person
 }
 
 async function ready(person: Person) {
@@ -63,10 +63,11 @@ export function applicationJourneys(people: () => ApplicationPeople, parcel: () 
   let auditor: Person
   let supervisor: Person
   let documents: Person
+  let cadastral: Person
   let applicationId = ''
 
   test('an applicant drafts an application: no reference before submission, every missing item listed', async () => {
-    ({ applicant, intake, reviewer, decider, surveyor, admin, auditor, supervisor, documents } = people())
+    ({ applicant, intake, reviewer, decider, surveyor, admin, auditor, supervisor, documents, cadastral } = people())
     await ready(applicant)
     const list = await applicant.open('My applications')
     await list.getByRole('link', { name: 'New application' }).first().click()
@@ -246,8 +247,20 @@ export function applicationJourneys(people: () => ApplicationPeople, parcel: () 
     await decide.getByRole('dialog').getByRole('button', { name: 'Claim this case' }).click()
     await expect(decide.getByRole('note').filter({ hasText: 'Simulated decision — no legal effect' })).toBeVisible()
 
-    // The parcel still carries the overlap alerts its journey (and earlier runs at the same place)
-    // raised: no decision until a cadastral officer resolves them.
+    // An open overlap alert on the case's parcel holds the decision. The test makes one itself
+    // (never relying on what earlier runs left): the parcel's author records a parcel over it, so
+    // the surveyor, author of neither version, may resolve it.
+    await ready(cadastral)
+    const target = (await cadastral.api('GET', `/parcels/${parcel()}`)).body as {
+      officeCode: string; current: { geometry: unknown }
+    }
+    // The authoritative geometry (EPSG:4326), recorded again: a duplicate, so an alert for sure.
+    const over = await cadastral.api('POST', '/parcels', {
+      officeCode: target.officeCode, locality: `Over the case parcel, e2e ${RUN}`,
+      srid: 4326, geometry: target.current.geometry,
+    }, { 'Idempotency-Key': `e2e-${RUN}-over-case-parcel` })
+    expect(over.status, JSON.stringify(over.body)).toBe(201)
+    await decide.reload()
     const decideButton = decide.getByRole('button', { name: 'Record the simulated decision' })
     await expect(decide.getByText(/overlap or duplicate alert\(s\) open on the parcel/).first()).toBeVisible()
     await expect(decideButton).toBeDisabled()

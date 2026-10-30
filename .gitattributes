@@ -11,3 +11,6 @@
 *.yaml text eol=lf
 # Data whose checksum is pinned (common-passwords.txt): never convert line endings.
 *.txt  text eol=lf
+# Extensionless scripts and configuration read inside Linux containers.
+mvnw       text eol=lf
+Caddyfile  text eol=lf

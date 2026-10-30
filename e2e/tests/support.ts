@@ -150,19 +150,19 @@ export class Person {
   }
 
   /** A call from the page, with the session cookie and the CSRF header, as the interface sends it. */
-  async api(method: string, path: string, body?: unknown): Promise<{ status: number; body: any }> {
-    return this.page.evaluate(async ({ method, path, body }) => {
+  async api(method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<{ status: number; body: any }> {
+    return this.page.evaluate(async ({ method, path, body, extra }) => {
       const csrf = await (await fetch('/api/v1/auth/csrf')).json()
       const cookie = document.cookie.split(';').map((c) => c.trim().split('='))
         .find(([name]) => name === csrf.cookieName)
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      const headers: Record<string, string> = { 'Content-Type': 'application/json', ...extra }
       if (cookie) headers[csrf.headerName] = decodeURIComponent(cookie[1])
       const response = await fetch(`/api/v1${path}`, {
         method, headers, body: body === undefined ? undefined : JSON.stringify(body),
       })
       const text = await response.text()
       return { status: response.status, body: text ? JSON.parse(text) : null }
-    }, { method, path, body })
+    }, { method, path, body, extra })
   }
 
   async session(): Promise<any> {

@@ -124,6 +124,25 @@ Verification works by number (QR code, printed copy, typed) or by file (the PDF 
 | ADR-035 | unchanged: the acknowledgment is not a decision |
 | ADR-037 | unchanged: no tariff in this slice |
 
+## Clarification (30 Oct 2026): certificates of ownership
+
+The project owner's decision D7 (recorded in [ADR-040](040-land-register.md) §11) makes the
+Certificate of Ownership a **future** document type of this same registry and verification
+service. It is not built, and none is issued, even as a DEMO, until a separate slice is
+authorised. When it is built, this registry is extended, not replaced:
+
+- the statuses `VALID`, `EXPIRED`, `REVOKED` and `SUPERSEDED` (`EXPIRED` is new);
+- the issuance date, effective date and expiry date where applicable, plus the validity rule
+  that governs them, configured from the approved legal rule;
+- verification that tells a genuine historical certificate from one valid now;
+- an official template, and a signatory who is never the processing officer;
+- a physical channel: issuance details recorded, `READY_FOR_COLLECTION`, collection with the
+  recipient's identity;
+- a digital channel kept disabled until electronic issuance is legally authorised.
+
+A QR code or a digital signature never replaces a legally required physical stamp or
+signature. Slice 1's DEMO acknowledgment is unchanged.
+
 ## Alternatives rejected
 
 - **A PAdES signature inside the PDF.** Readers would show a signature panel, but it needs a

@@ -72,6 +72,12 @@ script or a tool updates this workflow in the same change.
 Tests run under the `test` profile, which allows plain TCP and in-memory keys. Transport
 and key custody are covered by the probes and the startup self-test instead.
 
+The integration tests never read the developer's `.env`: failsafe sets `SNIGF_ENV_FILE` to a
+file that does not exist, as on the CI runner, which has no `.env`. Every value that
+`application.yaml` takes from a `${SNIGF_...}` setting must therefore be set in
+`application-test.yaml`. A new setting without a test value fails locally with "is not a valid
+..." or "Could not resolve placeholder", not only in CI.
+
 The database is shared by every test in the run, so:
 
 - every integration test class extends `PostgisIntegrationTest`, so they share one

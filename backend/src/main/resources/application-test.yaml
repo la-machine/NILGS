@@ -58,6 +58,10 @@ snigf:
     page-size: 50
     simulator:
       channel: IN_PROCESS
+      # Never called in tests (in-process channel), but bound at start-up.
+      url: https://localhost:47999
+      connect-timeout: PT3S
+      request-timeout: PT5S
   document:
     directory: target/test-documents
     max-bytes: 1048576
@@ -122,6 +126,12 @@ management:
     port: 0
 
 spring:
+  # The test profile never reads ../.env (CI has none): every value application.yaml takes from it
+  # is set here. These equal .env.example's SNIGF_DOCUMENT_MAX_BYTES and SNIGF_PROXY_MAX_BODY_BYTES.
+  servlet:
+    multipart:
+      max-file-size: 10485760B
+      max-request-size: 10600000B
   session:
     timeout: 30m
     jdbc:

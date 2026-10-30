@@ -33,4 +33,9 @@ nobody (including a database administrator) may alter it afterwards without dete
 
 - Recording a decision needs the officer's authenticator present; this is intended.
 - The canonical encoding gets a parity test like the audit chain.
-- Delivered with E-15 (review and decision).
+- ~~Delivered with E-15 (review and decision).~~ **Amended (30 Oct 2026, with
+  [ADR-040](040-land-register.md)):** E-15 recorded recommendations and decisions without officer
+  signatures, and the `RECORD` key is provisioned but unused, so this decision is **not yet
+  implemented**. It is first implemented by Slice 2, for land-register inscriptions (WebAuthn
+  assertion over the canonical form plus the `RECORD` key, ADR-040 §5), as a shared service.
+  Review decisions (ADR-035) adopt it in a separate change.

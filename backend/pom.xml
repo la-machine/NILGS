@@ -232,6 +232,13 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
+                <configuration>
+                    <!-- Never the developer's ../.env: a value missing from application-test.yaml
+                         must fail here as it does in CI, where no .env exists. -->
+                    <environmentVariables>
+                        <SNIGF_ENV_FILE>target/no-env-file-in-tests</SNIGF_ENV_FILE>
+                    </environmentVariables>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>

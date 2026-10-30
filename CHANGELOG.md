@@ -9,10 +9,68 @@ Each entry names the decision record (ADR) and the guide (`docs/guides/`) that e
 
 ## [Unreleased]
 
+### CI: tests no longer depend on the developer's machine
+
+- **Cause of the red backend job** (every run since `eea05e4`, 28 Oct 2026), reproduced:
+  - `application.yaml` reads `../.env` when it exists;
+  - `application-test.yaml` had no value for the multipart limits (from E-13) or the payment
+    simulator's URL and timeouts (from E-17);
+  - locally the developer's `.env` filled the gap; on the runner there is none, so the
+    application context failed to start (`'${SNIGF_DOCUMENT_MAX_BYTES}B' ...`,
+    `'${SNIGF_PAYMENT_SIMULATOR_CONNECT_TIMEOUT}' is not a valid duration`).
+- **Fix:**
+  - the test profile sets those values;
+  - failsafe points `SNIGF_ENV_FILE` at a missing file, so a value missing from the test profile
+    now fails locally too;
+  - no test or check was weakened.
+- The full `verify` passes without `.env` (187 unit, 137 integration).
+- **Cause of the red end-to-end step** (the same runs), reproduced on a fresh clone with fresh
+  volumes and secrets, as the runner does. Two tests relied on data from earlier runs:
+  - On an empty register, the Parcels page offers "New parcel" twice (header and empty state).
+    The click was ambiguous; it now takes the first, as the applications journey already did.
+  - The decision test expected open overlap alerts that only earlier runs had left on the case's
+    parcel. It now raises one itself: the parcel's author records the same geometry again, and
+    the surveyor, who authored neither version, resolves it. The check that an open alert holds
+    the decision is unchanged.
+- e2e passes on the fresh stack and on the developer's stack: 29 passed, 1 skipped (the design
+  tour).
+- **Fresh Windows clones:** `.gitattributes` now keeps LF on `mvnw` and `Caddyfile`. Without it,
+  a Windows checkout turned `mvnw` into CRLF and the backend image failed to build. CI was not
+  affected (Linux).
+
+### Land register: decisions recorded, implementation plan for review (Slice 2, docs only)
+
+Decision: [ADR-040](docs/adr/040-land-register.md), revision 3, accepted in principle by the
+project owner on 30 Oct 2026 (D1–D10). **No code yet**: the implementation plan at the end of
+ADR-040 awaits review.
+
+- **The register**:
+  - append-only inscriptions per title, PROPOSED then REGISTERED;
+  - holders, rights, charges, area and status derived by the database, never edited;
+  - closure, cancellation and correction under dual control, the originals always kept;
+  - each inscription signed by the conservator's security key and the `RECORD` key;
+  - synthetic DEMO data only, and real paper titles blocked until an approved migration exists.
+- **Pending transactions**:
+  - a second deposit is recorded as a conflict for an authorised decision, never lost and
+    never queued;
+  - a lock is reviewed after 30 days (`SNIGF_REGISTER_LOCK_REVIEW_AFTER`, configurable) and
+    never expires on its own;
+  - counter deposits record the receiving conservator and the submitting notary as distinct
+    actors.
+- **Certificates of ownership**: designed as a future service with digital and physical
+  delivery, but none is issued, not even a DEMO. Slice 2 shows only a screen extract labelled
+  "NOT A CERTIFICATE — DEMONSTRATION DATA".
+- **[ADR-019](docs/adr/019-officer-signed-records.md) amended**: it said "delivered with E-15",
+  but it was never implemented. Slice 2 implements it first.
+- **[ADR-039](docs/adr/039-issued-documents-and-verification.md) clarified**: certificates of
+  ownership will extend its registry (EXPIRED, validity rules, a signatory distinct from the
+  processing officer, physical collection).
+
 ### Secret scan: the reviewed false positives (Slice 0)
 
-- **The failing CI step** was gitleaks (`generic-api-key`) on two synthetic test-account
-  passwords in committed tests: `IdentityIntegrationTest.java` (commit `4f1264b`, line 62) and
+- **Two gitleaks findings** (`generic-api-key`, found by a local scan of the history; in CI the
+  scan has not run yet, because it comes after the end-to-end step, which fails) on two
+  synthetic test-account passwords in committed tests: `IdentityIntegrationTest.java` (commit `4f1264b`, line 62) and
   `AuthFlowIT.java` (commit `6e87075`, line 44). Neither is a credential of any system. The
   rules are unchanged: the two findings are listed by fingerprint in `.gitleaksignore`, with the
   reason, and the current line carries `gitleaks:allow`.
