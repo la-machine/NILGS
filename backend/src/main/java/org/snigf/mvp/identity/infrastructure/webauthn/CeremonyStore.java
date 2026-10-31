@@ -23,7 +23,7 @@ import java.util.UUID;
  */
 final class CeremonyStore {
 
-    enum Kind { REGISTRATION, ASSERTION }
+    enum Kind { REGISTRATION, ASSERTION, SIGNING }
 
     private record Pending(Kind kind, UUID userId, Object options, Instant expiresAt) {
     }

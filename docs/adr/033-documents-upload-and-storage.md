@@ -121,6 +121,8 @@ This covers a crash between storing and committing, and a deleted draft.
 
 ## Consequences
 
+- **Added 31 Oct 2026 ([ADR-040](040-land-register.md)):** the `document` module publishes `DocumentFiles`, so the land register keeps a counter deposit's files with these same checks and this same storage, under its own records. `document_storage_keys_known` knows both, so the orphan cleanup removes neither.
+
 - New:
   - migration V14;
   - pgTAP test `16`;

@@ -2,6 +2,9 @@
 
 *Copyright (c) 2026 FLYT. Author: Pythagore.*
 
+The land register's journeys are in `e2e/tests/register.ts`, with two conservators (`officer` and
+`surveyor` take that role as a second one, in `e2e.sh`).
+
 ## What and why
 
 Unit, integration and database tests prove each layer. Only a real browser proves that the

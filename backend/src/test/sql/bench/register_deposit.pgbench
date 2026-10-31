@@ -1,0 +1,9 @@
+-- SNIGF/NILGS - Copyright (c) 2026 FLYT.
+-- Author: Pythagore.
+-- One deposit on the bench title, as the application: exactly one of all the racing clients holds.
+BEGIN;
+SELECT set_config('snigf.actor_id', '00000000-0000-0000-0000-00000000ba02', true);
+SELECT snigf.transaction_deposit(
+    (SELECT id FROM snigf.land_title LIMIT 1), 'SALE',
+    (SELECT id FROM snigf.register_party LIMIT 1), NULL, ARRAY['DEMO-DEED'], interval '30 days');
+COMMIT;

@@ -191,6 +191,10 @@ case "$key" in *'"exportable":false'*) case "$key" in *'"deletion_allowed":false
   ok "keys are not exportable, not deletable, no plaintext backup" ;; *) bad "no plaintext backup" "$key" ;; esac ;;
   *) bad "keys are not deletable" "$key" ;; esac ;; *) bad "keys are not exportable" "$key" ;; esac
 
+# The record key (ADR-019, ADR-040): the app seals officers' signatures with it, and can do nothing else to it.
+resp="$(curl -sS --cacert "$CA" $APP_ID $AUTH -X POST -d '{"input":"U05JR0Y="}' "$BAO/$T/sign/$SNIGF_KEY_RECORD_SIGNING" 2>&1)"
+case "$resp" in *'"signature":'*) ok "app can sign with the record key (control)" ;;
+  *) bad "app can sign with the record key (control)" "$resp" ;; esac
 # The document-issuance key (ADR-039): Ed25519, kept in custody like the others; the app signs with it.
 key="$(curl -sS --cacert "$CA" $APP_ID $AUTH "$BAO/$T/keys/$SNIGF_KEY_DOCUMENT_ISSUANCE" 2>&1)"
 case "$key" in *'"type":"ed25519"'*) case "$key" in *'"exportable":false'*) case "$key" in *'"deletion_allowed":false'*)
@@ -211,6 +215,10 @@ forbid GET  "$T/export/signing-key/$SNIGF_KEY_AUDIT_CHECKPOINT"
 forbid GET  "$T/backup/$SNIGF_KEY_AUDIT_CHECKPOINT"
 forbid POST "$T/keys/$SNIGF_KEY_AUDIT_CHECKPOINT/rotate"
 forbid POST "$T/keys/$SNIGF_KEY_AUDIT_CHECKPOINT/config" '{"deletion_allowed":true}'
+forbid GET  "$T/export/signing-key/$SNIGF_KEY_RECORD_SIGNING"
+forbid GET  "$T/backup/$SNIGF_KEY_RECORD_SIGNING"
+forbid POST "$T/keys/$SNIGF_KEY_RECORD_SIGNING/rotate"
+forbid POST "$T/keys/$SNIGF_KEY_RECORD_SIGNING/config" '{"min_available_version":2}'
 forbid GET  "$T/export/signing-key/$SNIGF_KEY_DOCUMENT_ISSUANCE"
 forbid GET  "$T/backup/$SNIGF_KEY_DOCUMENT_ISSUANCE"
 forbid POST "$T/keys/$SNIGF_KEY_DOCUMENT_ISSUANCE/rotate"
@@ -224,7 +232,7 @@ forbid GET  "sys/mounts"
 forbid POST "sys/mounts/probe" '{"type":"kv"}'
 forbid GET  "auth/$SNIGF_BAO_AUTH_MOUNT/certs/$SNIGF_BAO_APP_ROLE"
 forbid POST "auth/token/create" '{}'
-[ -z "$denied" ] && ok "app token is refused everything outside its policy (18 operations: export, backup, rotate, reconfigure, create, list, raw encrypt, other algorithm, policies, mounts, auth config, token creation; and export, backup, rotate, reconfigure of the document-issuance key)" \
+[ -z "$denied" ] && ok "app token is refused everything outside its policy (22 operations: export, backup, rotate, reconfigure, create, list, raw encrypt, other algorithm, policies, mounts, auth config, token creation; and export, backup, rotate, reconfigure of the record and document-issuance keys)" \
   || bad "app token is refused everything outside its policy" "$denied"
 rm -f /tmp/bao-token /tmp/foreign.key /tmp/foreign.crt
 

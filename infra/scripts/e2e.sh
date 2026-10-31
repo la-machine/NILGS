@@ -62,6 +62,9 @@ promote decider DECISION_AUTHORITY
 # The supervisor is also the document officer (ADR-039): a second role, because one address may
 # register only SNIGF_RATE_REGISTER_PER_HOUR accounts an hour, and this run registers ten.
 promote supervisor DOCUMENT_OFFICER
+# Two conservators of the office (ADR-040): dual control needs a second person.
+promote officer CONSERVATOR
+promote surveyor CONSERVATOR
 
 bash infra/scripts/maps-synthetic-imagery.sh --if-absent
 

@@ -4,7 +4,7 @@
 
 | Status | Date | Deciders |
 | --- | --- | --- |
-| **Accepted in principle, revision 3** (decisions D1–D10 of 30 Oct 2026). The implementation plan at the end is **for review**; no change to the register's integrity or authorization model is coded before it is approved. | 2026-10-30 | Project owner, Pythagore (FLYT) |
+| **Accepted, revision 5** (decisions D1–D10 of 30 Oct 2026; deposit documents decided 31 Oct 2026; implementation plan approved by the project owner on 31 Oct 2026 and Slice 2 implemented; see "As implemented"). | 2026-10-31 | Project owner, Pythagore (FLYT) |
 
 ## Context
 
@@ -403,14 +403,91 @@ No part of this is built in Slice 2.
 These sources are secondary or dated, and some conflict. None of their fees or deadlines is
 used.
 
-## Implementation plan for Slice 2 (for review)
+## As implemented (Slice 2, 31 Oct 2026)
+
+Where the code differs from the sections above, the code and this section are right.
+
+**Stronger than the design:**
+
+- **No direct writes.** `snigf_app` has `SELECT` only on the register's tables. Every write is one
+  `SECURITY DEFINER` function, and a refusal is SQLSTATE `RG001` with the reason code as its message.
+- **The seal covers the officer's evidence.** `RECORD` signs the canonical bytes and all of the
+  officer's signature (`RecordSeal`), not the canonical form alone, so swapping the evidence or the
+  copied public key breaks the seal.
+- **A copy of the public key is kept with each signature.** An officer may remove a lost key
+  (ADR-028), and what they signed must stay verifiable.
+- **The database checks a signature's context.** The bytes against its own encoding, the challenge
+  against those bytes and the nonce, and the key belonging to the actor. It cannot verify the
+  cryptographic signature itself: the application does, and anyone can again from the stored evidence.
+- **Whoever received a deposit cannot decide its conflict**, which is what makes it a second
+  conservator's decision.
+- **Signing and deciding permissions are not delegable** by special grant (`register.read` is).
+
+**Different from the design:**
+
+- **Signatures have their own table**, `inscription_signature`, one row per signing act, because
+  dual control has two signers.
+- **Single control and dual control follow two paths.** `CLOSURE`, `CANCELLATION` and `CORRECTION`
+  are signed by the proposer and confirmed by another conservator, whose confirmation registers them.
+  The other kinds are registered by one signature, which may be the proposer's.
+- **The new title's id is fixed at proposal** (`new_title_id`), so a CREATION's signed bytes do not
+  change; `land_title` is written at registration.
+- **Counter deposits use `register.propose`.** §6 lists no separate deposit permission.
+- **The audit trail has two more actions:** `REGISTER_PARTY_RECORDED` and
+  `REGISTER_INSCRIPTION_CONFIRMATION_REQUESTED`.
+- **An unknown record answers 403, not 404**, because the office check on the endpoint comes first.
+
+**Narrower than the design; to decide or finish later:**
+
+- **An inscription's evidence stays a list of references**, optionally naming an application's
+  stored document versions. A deposit's files are kept (see below).
+- **The seed registers nothing and holds no charges or transactions** (step 5 said titles, holders,
+  charges and transactions). It proposes; a conservator signs in the browser. The alternative, a
+  seed that writes signatures, would make unsigned data look signed.
+- **Idempotency keys cover proposals and deposits only.** A signing act retried on a finished
+  inscription returns it, for the same officer. Withdrawals, refusals and conflict decisions are not
+  repeated: a second call is refused because the record is already closed.
+- **`IMMATRICULATION` and `MORCELLEMENT` origins are listed but refused** by `ck_land_title_synthetic_only`.
+
+### A deposit's documents (§4.7; project owner's decision of 31 Oct 2026, migration V22)
+
+The register owns the records of a counter deposit's documents, independently of any application.
+
+- **Reuse of ADR-033.** The `document` module publishes `DocumentFiles`: the same staging, limits,
+  inspection from the bytes, random storage keys and hash checks. Nothing is copied. Malware scanning
+  remains a pilot requirement (P-02), as for every document.
+- **Record.** `deposit_document`: the deposit, the office, a category, the display name, the type read
+  from the bytes, size, SHA-256, storage key, uploader and time. Its office is the deposit's; the storage
+  key is never shown.
+- **Access.** Reading and downloading need `register.read` at the office; adding and replacing need
+  `register.propose` there, and never by the depositor. A download checks the hash first, is always an
+  attachment, and is audited. A file that no longer matches is never served.
+- **Nothing replaced or deleted silently.** The application cannot write the table, and triggers refuse
+  every update and delete, even for its owner. A correction is a new row naming the one it replaces,
+  with a required reason, audited as `REGISTER_DEPOSIT_DOCUMENT_REPLACED`. The original stays readable.
+- **Lifecycle.** A deposit takes documents only while `HOLDING` or `IN_CONFLICT`. Once registered,
+  withdrawn or refused, it takes no more and keeps what it has.
+- **Signature binding.** A `TRANSFER`'s canonical bytes also name the id and SHA-256 of every document
+  of its deposit, replaced ones included, and the add function takes the title's lock. A document added
+  during a signature therefore makes that signature fail, and what was signed cannot change afterwards.
+  The bytes are unchanged when a deposit has no documents, so earlier signatures still verify.
+- **No effect on the register.** Storing a document writes that record and nothing else: no inscription,
+  status or holder. pgTAP `23` and `RegisterIT` hold this.
+- **Cleanup.** `document_storage_keys_known` also knows these files, or the orphan cleanup would remove
+  them.
+- **Verification.** A title's re-verification also checks every deposit file against its hash.
+- **Retention.** No retention period exists yet, so nothing is ever removed: every document stays for as
+  long as the deposit's record, which is for ever. **A retention rule needs its own decision** with the
+  competent institutions, and a migration, since the triggers refuse deletion.
+
+## Implementation plan for Slice 2 (approved 31 Oct 2026, done)
 
 Each step ends with its tests green; nothing touches the register's integrity or authorization
 model before this plan is approved.
 
 | # | Step | Content | Tests |
 | --- | --- | --- | --- |
-| 0 | **CI back to green** (blocking) | find the first failing errors of the backend and e2e jobs (they have failed on every run since 28 Oct, including before Slice 1) and fix the cause, never by weakening a test or a check | the GitHub Actions run passes, secret scan included |
+| 0 | **CI back to green** (blocking; done: run of `91954a7`, secret scan included) | find the first failing errors of the backend and e2e jobs (they have failed on every run since 28 Oct, including before Slice 1) and fix the cause, never by weakening a test or a check | the GitHub Actions run passes, secret scan included |
 | 1 | **Signing ceremony spike** (security dependency) | an inscription-signing WebAuthn ceremony on the existing stack (`spring-security-webauthn`, webauthn4j 0.31.9): a challenge set to SHA-256(canonical form ‖ server nonce), user verification required, the officer's own credentials only, single use, separate from sign-in. Plus `RECORD`-key signing and local verification | unit and integration tests with the emulated authenticator: a valid signature; a tampered canonical form; another officer's key; a replayed challenge; an expired challenge |
 | 2 | **ADR-019 implemented as a shared service** | a `SignedRecord` port: canonical bytes, officer assertion, server signature, verification. Used by the register; ADR-035 decisions adopt it in a separate change | parity test of the canonical encoding (Java and SQL), like the audit chain |
 | 3 | **V21 schema and invariants** | the tables of §3; the functions of §7 (`SECURITY DEFINER`, pinned `search_path`); row-level security; triggers freezing registered rows; `CHECK (demo)`; `SYNTHETIC_DEMO` the only origin; the permissions and the CONSERVATOR role; `audit_subjects` extended with `LAND_TITLE` | pgTAP `23_land_register`: every invariant of §1–§4 and §7, including no update or delete, gap-free numbering, one HOLDING per title, a second deposit recorded IN_CONFLICT, no TRANSFER through an open conflict or a blocking restriction or a stale version, dual control (self-confirmation refused), the holder rule, the derived-state recomputation; concurrent deposits (pgbench, like the chain test) |
@@ -454,4 +531,4 @@ model before this plan is approved.
 4. **Dual control in the database.** Self-confirmation and acting on a title one holds an
    interest in are refused by the functions, not only by the service, as in ADR-026 and
    ADR-035.
-5. **CI must be green first** (step 0). A slice of this weight is not built on a red pipeline.
+5. **CI must be green first** (step 0). Met on 31 Oct 2026, before step 1.

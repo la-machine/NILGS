@@ -196,14 +196,14 @@ public abstract class IdentityIntegrationTest extends PostgisIntegrationTest {
 
     /** An emulated FIDO2 authenticator (user verification capable) in a browser at {@code origin}. */
     protected final class Authenticator {
-        final ClientPlatform platform;
-        String credentialId;
+        public final ClientPlatform platform;
+        public String credentialId;
 
-        Authenticator() {
+        public Authenticator() {
             this(ORIGIN);
         }
 
-        Authenticator(String origin) {
+        public Authenticator(String origin) {
             this.platform = new ClientPlatform(new Origin(origin),
                     new WebAuthnAuthenticatorAdaptor(new NoneAttestationAuthenticator()));
         }
@@ -238,12 +238,12 @@ public abstract class IdentityIntegrationTest extends PostgisIntegrationTest {
         }
 
         /** {@code navigator.credentials.get} with the server's options, as the assertion body. */
-        String get(String optionsJson) {
+        public String get(String optionsJson) {
             return get(optionsJson, null);
         }
 
         /** As {@link #get(String)}, but offering {@code credentialId} whatever the server allowed. */
-        String get(String optionsJson, String forcedCredentialId) {
+        public String get(String optionsJson, String forcedCredentialId) {
             JsonNode o = json.readTree(optionsJson);
             List<PublicKeyCredentialDescriptor> allowed = forcedCredentialId == null
                     ? descriptors(o.path("allowCredentials"))

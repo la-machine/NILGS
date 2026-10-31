@@ -62,3 +62,19 @@ if [[ "$VERIFIED" != "t" || "$CHECKED" != "$COUNT" || "$COUNT" != "$MAXPOS" || "
   exit 1
 fi
 echo "PASS: chain contiguous and valid under concurrency"
+
+echo "== Concurrent deposits on one title (8 clients x 25 deposits)"
+psql_super -d "$DB" -f "$TESTS/bench/register_deposit_setup.sql" >/dev/null
+PGPASSWORD="$APP_PW" pgbench -n -h 127.0.0.1 -U snigf_app -c 8 -j 4 -t 25 \
+  -f "$TESTS/bench/register_deposit.pgbench" "$DB" > /dev/null
+RESULT="$(psql_super -tA -d "$DB" -c \
+  "SELECT count(*) FILTER (WHERE status = 'HOLDING'), count(*) FILTER (WHERE status = 'IN_CONFLICT'),
+          (SELECT count(*) FROM snigf.transaction_conflict)
+     FROM snigf.pending_transaction")"
+IFS='|' read -r HOLDING IN_CONFLICT CONFLICTS <<< "$RESULT"
+echo "   holding=$HOLDING in_conflict=$IN_CONFLICT conflicts=$CONFLICTS"
+if [[ "$HOLDING" != "1" || "$IN_CONFLICT" != "199" || "$CONFLICTS" != "199" ]]; then
+  echo "FAIL: racing deposits must leave one holding and every other in conflict" >&2
+  exit 1
+fi
+echo "PASS: one holding transaction, every other deposit recorded in conflict"

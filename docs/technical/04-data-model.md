@@ -45,13 +45,15 @@ checksum. A change is a new migration.
 | `V17__tracking_and_workload.sql` | ADR-036 (MVP-06): no table; `office_stays()` (every stay of an office's applications in a state, from `application_transition` only, `lead()` over its moves; not granted to the application); `workload_office()` (the office when the actor holds `report.workload` there, role or special grant); `workload_target()` (a target in seconds from the settings, none when zero or not a number); `workload_counts()`, `workload_open_cases()` (since, waited, target, overdue, who holds the case), `workload_completed_stays()` (count, average, median, longest, over target since a date), all `SECURITY DEFINER`, returning nothing for an office the actor may not read |
 | `V18__payments.sql` | ADR-037 (MVP-08), **simulated payment, no real money moves**: `payment_policy` (one row: the gate before acceptance, the only approved provider `DEMO_SIMULATOR`; `payment_policy_apply()`); `fee_schedule` (DEMO fees per type in XAF, versions that never overlap, closed once, never edited or deleted; `fee_in_force()`); `payment_request` (DEMO-PAY reference, amount and currency copied from the fee in force at submission by the guard, `expires_at` 1 minute to 7 days after creation, one `PENDING` or `PAID` per application, status changed only in the functions below: never `PAID` past its expiry, never `EXPIRED` before it, final once settled; row-level security through the application's visibility); `payment_record` (every authenticated provider report, append-only, one per provider transaction id, with the database's outcome and `exception`); `payment_exception_resolution` (the finance officer's closing of an exception, append-only, `payment.reconcile`, never on their own application); `payment_callback_apply()` (decides a report under a lock on the request: matched, failed, amount mismatch, unmatched reference, after expiry, already settled, no effect; duplicates by transaction id change nothing); `payment_expire_due()`; `payment_blocks_acceptance()` and the trigger `completeness_payment_guard` (`55000` on an unpaid `COMPLETE` record); the finance views `payment_requests_for_finance()`, `payment_exceptions_for_finance()`, `payment_finance_summary()` and `payment_exception_resolve()`, gated on `payment.reconcile`; all `SECURITY DEFINER` |
 | `V20__document_issuance.sql` | ADR-039 (Slice 1), **DEMO acknowledgment only**: the permissions `document.issued.manage` and `document.incident.review` and the role DOCUMENT_OFFICER; `holds_everywhere()`; `issued_document` (the registry: a random `SNIGF-` number, type, template version, a unique operation key, the application and its reference, office, holder, issuance time within a minute of now, what was printed, SHA-256 of the exact PDF, manifest, signature and key version, `demo` forced true, status and its reason, who changed it, supersedes or superseded by; guard: issued VALID, what was issued never changes, a status leaves VALID once by a manage holder who is not the holder, a superseded document names its replacement, a re-issue replaces a valid document of the same subject and holder; never deleted); `issued_document_artifact` (the exact PDF, matching the registered SHA-256, append-only); `document_verification` (every public verification, append-only, readable by reviewers only); `verification_incident` (altered, fabricated or registry-integrity incidents, resolved once with a note by a reviewer who is not the holder); `issued_document_evidence()` (`SECURITY DEFINER`: the minimal record by number or by SHA-256, with the replacement's number); `audit_subjects()` replaced to map issued documents and incidents to their application; row-level security following the application |
+| `V21__land_register.sql` | ADR-040 (Slice 2), **DEMO only**: the permissions `register.*` and the role CONSERVATOR; the register's tables, append-only with guards; canonical encoding and state derivation; every write through a `SECURITY DEFINER` function (refusals are SQLSTATE `RG001`); `audit_subjects()` extended with `LAND_TITLE`; row-level security by conservation |
+| `V22__deposit_documents.sql` | ADR-040 §4.7: `deposit_document` and its function, append-only; a `TRANSFER`'s canonical bytes name its deposit's documents; `document_storage_keys_known` and `audit_subjects()` extended |
 | `V19__audit_subjects.sql` | ADR-038 (E-18), implementing ADR-027: `audit_event.subjects` (JSON array, GIN index): what an event is about, found by the insert trigger with `audit_subjects()` (`SECURITY DEFINER`) from the record in the same transaction, never from the caller: an application (also for its document versions, payment requests and matched provider reports), a parcel, or both parcels of an alert, each with its office at that moment (none for a draft); `audit_canonical()` encodes such an event `snigf-audit-v2` with the subjects hashed, and keeps `snigf-audit-v1` unchanged for every event without them (no backfill); `audit_readable()`: `audit.event.search` everywhere, or at the office of one of the event's subjects |
 
 Every new function must carry the same `SET search_path`. pgTAP test `06` enforces it.
 V7's constraints and triggers are tested by pgTAP test `09`, V8's approval workflow by test `10`,
 the checkpoint rules (V3, V9) by test `11`, the supervised reset and key removal (V10) by test `12`,
 overlap and duplicate detection (V11, the Baseline's fixture set) by test `13`, resolution by a special-grant
-holder and the note bound (V12) by test `14`, applications under row-level security (V13) by test `15`, documents (V14) by test `16`, the completeness review (V15) by test `17`, review and simulated decision (V16) by test `18`, the tracking and workload functions (V17) by test `19`, simulated payment and reconciliation (V18) by test `20`, audit subjects (V19) by test `21`, issued documents and verification (V20) by test `22`.
+holder and the note bound (V12) by test `14`, applications under row-level security (V13) by test `15`, documents (V14) by test `16`, the completeness review (V15) by test `17`, the land register (V21) by test `23` and the concurrent-deposit run, review and simulated decision (V16) by test `18`, the tracking and workload functions (V17) by test `19`, simulated payment and reconciliation (V18) by test `20`, audit subjects (V19) by test `21`, issued documents and verification (V20) by test `22`.
 
 ## Tables
 
@@ -92,6 +94,19 @@ holder and the note bound (V12) by test `14`, applications under row-level secur
 | `issued_document_artifact` | The exact PDF of each issued document (V20) | insert only, matching the registered SHA-256 |
 | `document_verification` | Every public verification and its outcome (V20) | insert only (in one's own name or anonymously); read by `document.incident.review` |
 | `verification_incident` | Altered, fabricated and registry-integrity incidents (V20) | insert open; resolved once by `document.incident.review` |
+| `register_party` | A holder, beneficiary, depositor or notary as the register knows them; `DEMO` in every name and identity number (V21) | function only; never changed |
+| `land_title` | A title's identity, created by a registered CREATION; only `SYNTHETIC_DEMO` is possible (V21) | function only; never changed |
+| `inscription` | One numbered entry and its status, chain hash and authority (V21) | function only; frozen once final |
+| `inscription_holder` | Holders and exact shares of an inscription (V21) | function only, with its proposal |
+| `inscription_charge` | The charge or restriction of an inscription (V21) | function only, with its proposal |
+| `inscription_signature` | One per signing act: canonical bytes, the officer's WebAuthn evidence with a copy of the public key, the `RECORD` seal (V21) | function only; never changed |
+| `title_version` | The derived state after each registered inscription (V21) | written by the database only; never changed |
+| `title_parcel` | The parcel version a title version rests on (V21) | written by the database only |
+| `title_relation` | Parent and child titles; modelled, used from slice 4 (V21) | no writer yet |
+| `pending_transaction` | A deposited transaction; one `HOLDING` per title (V21) | function only; moves forward |
+| `transaction_conflict` | A later deposit against the holding one; decided once (V21) | function only |
+| `register_migration_batch` | Modelled for a future migration of real titles; only `SYNTHETIC_DEMO` is possible (V21) | no writer: the application has no grant |
+| `deposit_document` | A file of a counter deposit: metadata, uploader, time, SHA-256; a replacement names its original (V22) | function only; never changed or deleted |
 | `decision` | The simulated outcome with its grounds, the cited document versions, the recommendation followed, the author | SELECT (staff who see the case, the applicant), INSERT (the decision authority assigned, guarded); never UPDATE or DELETE |
 | `mfa_reset_request` | Supervised second-factor resets: person, reason, requester, status, confirmer, how the identity was checked (V10) | SELECT, INSERT, UPDATE of decision columns |
 | `role_assignment_request` | Four-eyes requests to assign a role at an office: requester, reason, decision. Approval creates the `role_assignment` with the same id (V8) | SELECT, INSERT, UPDATE of decision columns |
@@ -209,6 +224,25 @@ sides produce identical bytes.
 | `DOCUMENT_STATUS_REFUSED` | a status change, re-issue or resolution was refused (`NOT_VALID`, `OWN_DOCUMENT`, `REASON_REQUIRED`, `INCIDENT_RESOLVED` ...) | issuance |
 | `VERIFICATION_INCIDENT_OPENED` | a verification opened an incident (`ALTERED`, `FABRICATED`, `REGISTRY_INTEGRITY`) | issuance |
 | `VERIFICATION_INCIDENT_RESOLVED` | the document officer resolved an incident (resolution, note length) | issuance |
+| `REGISTER_PARTY_RECORDED` | a party was added to the register (office, kind) | register |
+| `REGISTER_INSCRIPTION_PROPOSED` | an inscription was proposed (kind, office) | register |
+| `REGISTER_INSCRIPTION_CONFIRMATION_REQUESTED` | the proposer of a dual-control inscription signed it | register |
+| `REGISTER_INSCRIPTION_CONFIRMED` | a second conservator confirmed it, which also registers it | register |
+| `REGISTER_INSCRIPTION_REGISTERED` | an inscription was registered, signed (kind, number, credential) | register |
+| `REGISTER_INSCRIPTION_REJECTED` | a conservator rejected a proposal (reason) | register |
+| `REGISTER_INSCRIPTION_WITHDRAWN` | its proposer withdrew a proposal (reason) | register |
+| `REGISTER_TRANSACTION_DEPOSITED` | a deposit was recorded (kind, `channel`, status, review date) | register |
+| `REGISTER_TRANSACTION_WITHDRAWN` | a deposit's withdrawal was recorded (reason) | register |
+| `REGISTER_TRANSACTION_REFUSED` | a conservator refused a deposit (reason) | register |
+| `REGISTER_CONFLICT_OPENED` | a second deposit opened a conflict | register |
+| `REGISTER_CONFLICT_RESOLVED` | a conservator decided a conflict (outcome, reason) | register |
+| `REGISTER_LOCK_OVERDUE` | a holding lock passed its review date, recorded once; nothing is released | register |
+| `REGISTER_REFUSED` | a register operation was refused (`code`, `operation`), on its own transaction | register |
+| `REGISTER_DEPOSIT_DOCUMENT_ADDED` | a file was kept with a deposit (category, type, size, SHA-256) | register |
+| `REGISTER_DEPOSIT_DOCUMENT_REPLACED` | a correction replaced a file, the original kept (reason, `replaces`) | register |
+| `REGISTER_DEPOSIT_DOCUMENT_REJECTED` | a file was refused by the checks of ADR-033 (`code`); nothing kept | register |
+| `REGISTER_DEPOSIT_DOCUMENT_DOWNLOADED` | a deposit's file was downloaded | register |
+| `REGISTER_DEPOSIT_DOCUMENT_INTEGRITY_FAILED` | a deposit's file no longer matches its hash, and was not served | register |
 | `CONFLICT_ALERT_RESOLVE_REJECTED` | a resolution was refused (`RESOLVER_IS_AUTHOR`, `STALE_VERSION`, `ALERT_NOT_OPEN`, note or outcome missing; recorded even though nothing changed) | conflict |
 | `ACCESS_DENIED` | an authenticated call is refused by an access rule | shared security |
 | `AUDIT_EVENTS_READ` | someone reads audit events | audit |

@@ -58,6 +58,12 @@ public enum Permission {
     /** Documents issued by SNIGF (ADR-039): revoke, cancel or re-issue; never by their holder. */
     DOCUMENT_ISSUED_MANAGE("document.issued.manage", Family.BUSINESS, true, "Revoke, cancel or re-issue a document issued by SNIGF", "Révoquer, annuler ou rééditer un document émis par SNIGF", Scope.ANY),
     DOCUMENT_INCIDENT_REVIEW("document.incident.review", Family.BUSINESS, true, "Review document verification incidents", "Examiner les incidents de vérification de documents", Scope.ANY),
+    /** The DEMO land register (ADR-040), held at a conservation. Signing and deciding are never delegable by special grant. */
+    REGISTER_READ("register.read", Family.BUSINESS, true, "Read the land register", "Consulter le livre foncier", Scope.OFFICE),
+    REGISTER_PROPOSE("register.propose", Family.BUSINESS, false, "Propose an inscription or record a deposit", "Proposer une inscription ou enregistrer un dépôt", Scope.OFFICE),
+    REGISTER_INSCRIBE("register.inscribe", Family.BUSINESS, false, "Register an inscription with a signature", "Inscrire au livre foncier avec une signature", Scope.OFFICE),
+    REGISTER_CONFIRM("register.confirm", Family.BUSINESS, false, "Confirm another conservator's inscription (dual control)", "Confirmer l'inscription d'un autre conservateur (double contrôle)", Scope.OFFICE),
+    REGISTER_TRANSACTION_DECIDE("register.transaction.decide", Family.BUSINESS, false, "Refuse a deposit or resolve a conflict", "Refuser un dépôt ou résoudre un conflit", Scope.OFFICE),
     /** The supervisor's in-application confirmation of a second-factor reset (ADR-028); business, so supervisors keep their audit permissions. */
     IDENTITY_RESET_CONFIRM("identity.reset.confirm", Family.BUSINESS, false, "Confirm the identity of a person whose second factor is reset", "Confirmer l’identité d’une personne dont le deuxième facteur est réinitialisé", Scope.OFFICE);
 

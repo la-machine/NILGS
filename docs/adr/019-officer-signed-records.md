@@ -39,3 +39,7 @@ nobody (including a database administrator) may alter it afterwards without dete
   implemented**. It is first implemented by Slice 2, for land-register inscriptions (WebAuthn
   assertion over the canonical form plus the `RECORD` key, ADR-040 §5), as a shared service.
   Review decisions (ADR-035) adopt it in a separate change.
+- **Amended (31 Oct 2026):** implemented for land-register inscriptions, as the `records` module
+  (`SignedRecords`, `CanonicalForm`, `RecordSeal`) and `identity.OfficerSignatures`. The server's
+  signature covers the canonical form and the officer's evidence; a copy of the officer's public key
+  is stored with each signature. Review decisions are **still unsigned**.

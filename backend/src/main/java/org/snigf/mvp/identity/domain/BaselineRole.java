@@ -46,6 +46,11 @@ import static org.snigf.mvp.shared.security.Permission.PAYMENT_RECONCILE;
 import static org.snigf.mvp.shared.security.Permission.DOCUMENT_INCIDENT_REVIEW;
 import static org.snigf.mvp.shared.security.Permission.DOCUMENT_ISSUED_MANAGE;
 import static org.snigf.mvp.shared.security.Permission.REPORT_WORKLOAD;
+import static org.snigf.mvp.shared.security.Permission.REGISTER_CONFIRM;
+import static org.snigf.mvp.shared.security.Permission.REGISTER_INSCRIBE;
+import static org.snigf.mvp.shared.security.Permission.REGISTER_PROPOSE;
+import static org.snigf.mvp.shared.security.Permission.REGISTER_READ;
+import static org.snigf.mvp.shared.security.Permission.REGISTER_TRANSACTION_DECIDE;
 import static org.snigf.mvp.shared.security.Permission.REVIEW_RECOMMEND;
 
 /**
@@ -83,6 +88,10 @@ public enum BaselineRole {
     /** The national document verification service (ADR-039): issued documents' status and verification incidents. */
     DOCUMENT_OFFICER("Agent de vérification documentaire", "Document verification officer", entries(
             DOCUMENT_ISSUED_MANAGE, Scope.ANY, DOCUMENT_INCIDENT_REVIEW, Scope.ANY)),
+    /** The keeper of the DEMO land register at a conservation (ADR-040): nothing here is a legal registration. */
+    CONSERVATOR("Conservateur (démonstration)", "Conservator (demonstration)", entries(
+            PARCEL_READ, Scope.ANY, REGISTER_READ, Scope.OFFICE, REGISTER_PROPOSE, Scope.OFFICE, REGISTER_INSCRIBE, Scope.OFFICE,
+            REGISTER_CONFIRM, Scope.OFFICE, REGISTER_TRANSACTION_DECIDE, Scope.OFFICE)),
     SYSTEM_ADMIN("Administrateur du système", "System administrator", entries(
             ADMIN_ACCOUNT_LIST, Scope.ANY, ADMIN_ROLE_ASSIGN, Scope.ANY, ADMIN_ASSIGNMENT_READ, Scope.ANY,
             ADMIN_ASSIGNMENT_APPROVE, Scope.ANY, ADMIN_ROLE_REVOKE, Scope.ANY,

@@ -36,6 +36,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class JdbcAuditEventRepository implements AuditEventRepository {
 
+    private static final String LAND_TITLE = "LAND_TITLE";
+
     private static final String COLUMNS = """
             chain_pos, id, occurred_at, actor_type, actor_id, actor_label, actor_roles, action,
             entity_type, entity_id, entity_ref, outcome, reason, correlation_id,
@@ -142,6 +144,15 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
 
     @Override
     public Optional<UUID> subjectByReference(String subjectType, String reference) {
+        if (LAND_TITLE.equals(subjectType)) {
+            // Register events are about inscriptions and deposits; each names its title as a subject.
+            return jdbc.sql("""
+                            SELECT (s->>'id')::uuid FROM audit_event, jsonb_array_elements(subjects) s
+                             WHERE entity_ref = :ref AND subjects IS NOT NULL AND s->>'type' = :type
+                             ORDER BY chain_pos LIMIT 1""")
+                    .param("type", subjectType).param("ref", reference)
+                    .query(UUID.class).optional();
+        }
         return jdbc.sql("""
                         SELECT entity_id FROM audit_event
                          WHERE entity_type = :type AND entity_ref = :ref AND entity_id IS NOT NULL AND subjects IS NOT NULL
@@ -152,6 +163,14 @@ public class JdbcAuditEventRepository implements AuditEventRepository {
 
     @Override
     public Optional<String> referenceOf(String subjectType, UUID subjectId) {
+        if (LAND_TITLE.equals(subjectType)) {
+            return jdbc.sql("""
+                            SELECT entity_ref FROM audit_event
+                             WHERE subjects @> jsonb_build_array(jsonb_build_object('type', :type, 'id', :id)) AND entity_ref IS NOT NULL
+                             ORDER BY chain_pos LIMIT 1""")
+                    .param("type", subjectType).param("id", subjectId.toString())
+                    .query(String.class).optional();
+        }
         return jdbc.sql("""
                         SELECT entity_ref FROM audit_event
                          WHERE entity_type = :type AND entity_id = :id AND entity_ref IS NOT NULL

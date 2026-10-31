@@ -44,6 +44,17 @@ older JDKs with "Detected JDK ... is version 17 ... not in the allowed range [25
 | Whole application | `ApplicationSmokeIT` (health, 401 for anonymous calls, least-privilege role) |
 | Ids | `UuidV7Test` |
 
+The land register (ADR-040): pgTAP `23_land_register` holds every invariant in the database, and
+`db-test.sh` races 200 deposits on one title (exactly one holds, every other is recorded in
+conflict). `OfficerSignatureIT` runs the signing ceremony with emulated authenticators: a valid
+signature, a tampered record, another officer's key, a replay, an expired challenge, a sign-in
+ceremony reused, a removed key. `RegisterIT` runs each operation and refusal through the endpoints,
+and tampers with a row behind the signatures to show verification finds it; re-encoding a registered
+row in Java and comparing it with the bytes the database signed is the canonical-encoding parity test.
+It also covers a deposit's documents: the checks of ADR-033, replacement with the original kept, the
+deposit's lifecycle, a signature failing when a document is added during it, the orphan cleanup keeping
+their files, a changed file never served, and access by office.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push and pull request, with the same scripts and

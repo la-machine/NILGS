@@ -16,6 +16,7 @@ const DashboardPage = lazy(() => import('../features/dashboard').then((m) => ({ 
 const ApplicationsRoutes = lazy(() => import('../features/applications').then((m) => ({ default: m.ApplicationsRoutes })))
 const CasesRoutes = lazy(() => import('../features/cases').then((m) => ({ default: m.CasesRoutes })))
 const ReviewsRoutes = lazy(() => import('../features/reviews').then((m) => ({ default: m.ReviewsRoutes })))
+const RegisterRoutes = lazy(() => import('../features/register').then((m) => ({ default: m.RegisterRoutes })))
 const ParcelsRoutes = lazy(() => import('../features/parcels').then((m) => ({ default: m.ParcelsRoutes })))
 const AlertsRoutes = lazy(() => import('../features/conflicts').then((m) => ({ default: m.AlertsRoutes })))
 const AccountsPage = lazy(() => import('../features/accounts').then((m) => ({ default: m.AccountsPage })))
@@ -67,6 +68,7 @@ export function Pages({ route, place, allowed, ctx, onAddKey }: {
       {place === 'applications' && <ApplicationsRoutes ctx={ctx} route={route} />}
       {place === 'cases' && <CasesRoutes ctx={ctx} route={route} />}
       {place === 'reviews' && <ReviewsRoutes ctx={ctx} route={route} />}
+      {place === 'register' && <RegisterRoutes ctx={ctx} route={route} />}
       {place === 'parcels' && <ParcelsRoutes ctx={ctx} route={route} />}
       {place === 'alerts' && <AlertsRoutes ctx={ctx} route={route} />}
       {place === 'accounts' && <AccountsPage ctx={ctx} />}

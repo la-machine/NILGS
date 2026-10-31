@@ -40,6 +40,7 @@ becomes a drawer.
 | `#/workload` | an office's workload: stages against their DEMO targets, counts per state, load per officer, stage durations, the queue of cases under way (`?office=`, `?state=`, `?overdue=1`) (ADR-036) | `report.workload` somewhere |
 | `#/payments` | DEMO payments, simulated (no real money moves): counts, the exceptions to reconcile and their resolution, resolved exceptions, the payment requests (`?view=open\|resolved\|requests`, `?status=`) (ADR-037) | `payment.reconcile` |
 | `#/issued-documents` | documents issued by SNIGF: look one up by number, revoke, cancel or re-issue it with a reason; the verification incidents to review, each resolved with a note (ADR-039) | `document.issued.manage` or `document.incident.review` |
+| `#/register`, `#/register/titles/<id>` | the **DEMO** land register: titles, proposals to sign with a security key, conflicts, overdue locks, a title's derived state and full history, counter deposits, re-verification, and an on-screen extract labelled as not a certificate (`features/register`, ADR-040) |
 | `#/verify`, `#/verify/<number>` | **public, no sign-in**: verify an SNIGF document by number (the record and its status) or by its PDF (the exact file); the address the QR code names (ADR-039) | everyone, signed in or not |
 | `#/confirmations` | identity confirmations | `identity.reset.confirm` somewhere |
 | `#/audit` | verification, checkpoints, keys, events (a supervisor's limited to their offices), the way to a timeline | an audit permission, by role or special grant |

@@ -24,7 +24,7 @@ import { auditApi } from './api'
 import type { AuditEvent, Timeline, TimelineType } from './api'
 
 const OUTCOME_TONE: Record<string, Tone> = { SUCCESS: 'success', DENIED: 'danger', FAILED: 'warning' }
-const TYPES: TimelineType[] = ['APPLICATION', 'PARCEL']
+const TYPES: TimelineType[] = ['APPLICATION', 'PARCEL', 'LAND_TITLE']
 
 /** The action in words when the texts know it, its code otherwise. */
 function actionWords(texts: Texts, code: string): string | null {

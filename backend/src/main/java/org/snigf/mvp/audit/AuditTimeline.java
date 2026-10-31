@@ -17,6 +17,6 @@ public record AuditTimeline(String subjectType, UUID subjectId, String reference
                             boolean truncated) {
 
     /** The kinds of record a timeline is about. */
-    public static final Set<String> SUBJECT_TYPES = Set.of("APPLICATION", "PARCEL");
+    public static final Set<String> SUBJECT_TYPES = Set.of("APPLICATION", "PARCEL", "LAND_TITLE");
     public static final int MAX_EVENTS = 500;
 }

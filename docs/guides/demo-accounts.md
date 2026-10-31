@@ -66,6 +66,10 @@ works too.
 If a demo account loses its keys, use the recovery codes, or the supervised reset with
 `admin1` asking and `supervisor.yde` confirming.
 
+The conservators `conservator.yde@demo.invalid` and `conservator2.yde@demo.invalid` keep the DEMO
+land register at YDE1. `infra/scripts/dev-seed-register.sh` adds its synthetic data: see the
+[land register guide](land-register.md).
+
 ## What to try
 
 - **Tracking and workload:** the applicant opens a submitted application and reads where it

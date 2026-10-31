@@ -24,8 +24,8 @@ because each of them can be copied. What proves a document is the **registry**:
 Decision: [ADR-039](../adr/039-issued-documents-and-verification.md) (Slice 1, approved on
 29 Oct 2026). It extends [ADR-018](../adr/018-openbao-key-management.md) with one key purpose
 and changes no other decision: uploads ([ADR-033](../adr/033-documents-upload-and-storage.md))
-and issued documents never mix, and the `RECORD` key (ADR-019) stays reserved for officers'
-decision signatures.
+and issued documents never mix, and the `RECORD` key (ADR-019) is used only for officer-signed
+records.
 
 | What is presented | What SNIGF answers | Incident |
 | --- | --- | --- |

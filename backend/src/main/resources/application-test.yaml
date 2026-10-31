@@ -39,6 +39,10 @@ snigf:
     target-pending-decision: P5D
     duration-window: P90D
     page-size: 50
+  register:
+    lock-review-after: P30D
+    overdue-cron: "-"
+    page-size: 50
   issuance:
     verify-base-url: https://localhost:47000
     max-upload-bytes: 2097152

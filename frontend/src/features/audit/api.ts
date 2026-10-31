@@ -24,12 +24,12 @@ export interface AuditEvent {
   /** The account's current name, for reading only (the event records its id). */
   actorName?: string | null
   /** What the event is about, with each record's office at the time (ADR-038). */
-  subjects?: { type: 'APPLICATION' | 'PARCEL'; id: string; officeCode: string | null }[]
+  subjects?: { type: 'APPLICATION' | 'PARCEL' | 'LAND_TITLE'; id: string; officeCode: string | null }[]
   /** Its hash recomputes from its own row: false means the row was altered. */
   intact?: boolean
 }
 
-export type TimelineType = 'APPLICATION' | 'PARCEL'
+export type TimelineType = 'APPLICATION' | 'PARCEL' | 'LAND_TITLE'
 
 export interface Timeline {
   subjectType: TimelineType

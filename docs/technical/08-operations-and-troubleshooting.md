@@ -184,6 +184,14 @@ setting to fix.
 | 503 `ISSUANCE_UNAVAILABLE` on an acknowledgment or a re-issue | OpenBao is down or sealed (the audit reason is `KEY_CUSTODY_UNAVAILABLE`) | `docker compose ps openbao`; nothing is issued unsigned |
 | Public verification says `REGISTRY_INTEGRITY` | a registry row no longer agrees with its signed manifest: someone changed it in the database | treat as an incident (one was opened); compare with a backup; never correct the row by hand |
 | 429 `RATE_LIMITED` on `#/verify` | more than `SNIGF_RATE_VERIFY_PER_MINUTE` verifications from one address | expected; wait for `Retry-After` |
+| 409 `TITLE_CHANGED` on a register proposal | another inscription was registered after it was prepared | expected: withdraw it and propose again on the current version |
+| 409 `OPEN_CONFLICT` or `BLOCKING_RESTRICTION` on a transfer | the title has an open conflict or a registered blocking restriction | decide the conflict, or register the release first |
+| 422 `SIGNATURE_INVALID` on a register signature | another key answered, or the ceremony was over other bytes | sign again; look for `REGISTER_REFUSED` in the audit trail |
+| 503 `KEY_CUSTODY_UNAVAILABLE` on a register signature | OpenBao is down or sealed: nothing was registered | `docker compose ps openbao`; `docker compose up -d` unseals it |
+| 500 `DOCUMENT_INTEGRITY_FAILED` on a deposit's document, or verification reports "the file no longer matches its hash" | a kept file changed on disk: it is not served | treat as an incident ([audit incident procedure](../audit.md)) |
+| 409 `TRANSACTION_CLOSED` on a deposit's document | the deposit is registered, withdrawn or refused | expected: it keeps its documents and takes no more |
+| Title verification reports "the row differs from what was signed" | a register row was changed in the database, past the guards | treat as an incident ([audit incident procedure](../audit.md)) |
+| App refuses to start: `snigf.register.lock-review-after must be positive` | `SNIGF_REGISTER_LOCK_REVIEW_AFTER` is zero or negative | set an ISO-8601 duration such as `P30D` |
 | An exception on `#/payments` | a provider report matched no pending request of the same amount (`AMOUNT_MISMATCH`, `UNMATCHED_REFERENCE`, `AFTER_EXPIRY`, `ALREADY_SETTLED`) | expected for those DEMO scenarios; the finance officer resolves it (simulated refund or nothing to do), which never pays a request |
 
 ### Audit trail

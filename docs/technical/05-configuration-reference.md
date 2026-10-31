@@ -161,6 +161,9 @@ an environment variable of the same name.
 | `SNIGF_ISSUANCE_MAX_UPLOAD_BYTES` | `2097152` | The largest PDF accepted for verification (1 KB to 5 MB) | compose, `application.yaml` |
 | `SNIGF_RATE_VERIFY_PER_MINUTE` | `20` | Public verifications per client address per minute (1 to 600); beyond, 429 with `Retry-After` | compose, `application.yaml` |
 | `SNIGF_ISSUANCE_PAGE_SIZE` | `50` | Incidents per page of the document officer's queue (5 to 200) | compose, `application.yaml` |
+| `SNIGF_REGISTER_LOCK_REVIEW_AFTER` | `P30D` | How long after a deposit a holding lock is due for review (ISO-8601). A lock never expires on its own (ADR-040) | compose, `application.yaml` |
+| `SNIGF_REGISTER_OVERDUE_CRON` | `0 15 * * * *` | When overdue locks are recorded for review (Spring cron; `-` turns it off) | compose, `application.yaml` |
+| `SNIGF_REGISTER_PAGE_SIZE` | `20` | Entries per page in the register's lists (5 to 200) | compose, `application.yaml` |
 | `SNIGF_DOCUMENT_DIRECTORY` | `../var/documents` | Where document files are kept when running from the IDE; compose mounts the volume `document-data` at `/var/lib/snigf/documents` | `application.yaml` |
 | `SNIGF_DOCUMENT_MAX_BYTES` | `10485760` | Largest document accepted, in bytes (Baseline: 10 MB DEMO limit; at most 100 MB) | compose, `application.yaml` (also the servlet's `max-file-size`) |
 | `SNIGF_DOCUMENT_MAX_VERSIONS` | `10` | Versions one document may have (1 to 100) | compose, `application.yaml` |

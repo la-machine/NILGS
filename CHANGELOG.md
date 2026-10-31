@@ -9,6 +9,59 @@ Each entry names the decision record (ADR) and the guide (`docs/guides/`) that e
 
 ## [Unreleased]
 
+### Land register: DEMO titles, signed inscriptions, deposits and conflicts (Slice 2)
+
+Decision: [ADR-040](docs/adr/040-land-register.md), revision 4; what differs from the design is
+under "As implemented". Guide: [the land register](docs/guides/land-register.md).
+
+**DEMO only: no legal effect.** "Registered" means registered in the SNIGF DEMO register. All data
+is synthetic, and no certificate of ownership is issued, not even a DEMO one.
+
+- **Officer signatures ([ADR-019](docs/adr/019-officer-signed-records.md), first implementation).**
+  - A signing ceremony separate from sign-in: the challenge is SHA-256(canonical bytes ‖ a
+    single-use nonce), user verification is required, and only the officer's own keys are allowed.
+  - The new `records` module adds the `RECORD` key's seal over the canonical bytes and the officer's
+    evidence. Review decisions (ADR-035) are still unsigned.
+  - A copy of the public key is kept, so a signature survives the key's removal (ADR-028).
+- **The register (migration V21, module `register`).**
+  - Append-only inscriptions: PROPOSED, then REGISTERED. Holders, charges, restrictions and area are
+    computed by the database, never edited.
+  - The application cannot write these tables: every change is one database function.
+  - `CLOSURE`, `CANCELLATION` and `CORRECTION` need two conservators, and both sign. Originals stay
+    readable, marked as cancelled or corrected.
+  - The new baseline role CONSERVATOR, with five `register.*` permissions at the office.
+- **Deposits and conflicts.**
+  - One deposit holds a title. A second is recorded in conflict, never refused and never queued, and
+    blocks the transfer until a conservator who received neither deposit decides.
+  - A lock past its review date (`SNIGF_REGISTER_LOCK_REVIEW_AFTER`, default `P30D`) is recorded as
+    `REGISTER_LOCK_OVERDUE` once. Nothing expires on its own.
+  - At the counter, the conservator is the receiving officer; a notary is only a named party.
+- **Verification.** `GET /api/v1/register/titles/{id}/verification` checks each row against its signed
+  bytes, both signatures, the chain and every derived version.
+- **Screens FR/EN** (`#/register`): titles, proposals, conflicts, overdue locks, a title's history, and
+  an on-screen extract labelled "NOT A CERTIFICATE — DEMONSTRATION DATA".
+- **Audit timeline:** a title's events are readable by office under the new subject `LAND_TITLE`.
+- **Synthetic data:** `dev-seed-register.sh` proposes; a conservator signs in the browser, because the
+  seed holds no key.
+- **Security probe:** the application can sign with `RECORD`, and cannot export, back up, rotate or
+  reconfigure it.
+
+- **A counter deposit keeps its documents (migration V22, ADR-040 §4.7).**
+  - The register owns the records, independently of any application; the `document` module publishes
+    `DocumentFiles`, with the checks and storage of ADR-033.
+  - Read and added only at the office. Each file records its deposit, metadata, uploader, time and SHA-256.
+  - Never changed or deleted. A correction names the file it replaces and why, is audited, and the
+    original stays readable. A closed deposit takes no more and keeps what it has.
+  - Storing a document registers nothing. A `TRANSFER`'s signature covers its deposit's document hashes.
+  - The orphan cleanup now knows these files; re-verification checks them.
+
+**Known limits** (ADR-040, "As implemented"):
+
+- No retention period has been decided, so deposit documents are never removed.
+- Uploads are not scanned for malware until the pilot (P-02), as for every document.
+- An inscription's own evidence is a list of references.
+- Idempotency keys cover proposals and deposits only; other operations rely on their state checks.
+
 ### CI: tests no longer depend on the developer's machine
 
 - **Cause of the red backend job** (every run since `eea05e4`, 28 Oct 2026), reproduced:

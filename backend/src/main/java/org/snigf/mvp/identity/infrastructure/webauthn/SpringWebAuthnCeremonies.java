@@ -2,14 +2,18 @@
 // Author: Pythagore.
 package org.snigf.mvp.identity.infrastructure.webauthn;
 
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Clock;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
+import org.snigf.mvp.identity.OfficerSignature;
 import org.snigf.mvp.identity.application.IdentityProperties;
 import org.snigf.mvp.identity.application.WebAuthnCeremonies;
+import org.snigf.mvp.identity.domain.SigningChallenge;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -61,12 +65,19 @@ public class SpringWebAuthnCeremonies implements WebAuthnCeremonies {
 
     private static final Pattern LABEL = Pattern.compile("[\\p{L}\\p{N} ._'()-]{1,64}");
     private static final int MAX_RESPONSE_CHARS = 32_768;
+    private static final int NONCE_BYTES = 32;
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    /** A started signature: the options and the nonce behind their challenge. */
+    private record PendingSignature(PublicKeyCredentialRequestOptions options, byte[] nonce) {
+    }
 
     private final Webauthn4JRelyingPartyOperations relyingParty;
     private final JdbcPublicKeyCredentialUserEntityRepository userEntities;
     private final JdbcUserCredentialRepository credentials;
     private final CeremonyStore ceremonies;
     private final JsonMapper json;
+    private final SignatureEvidenceVerifier evidence;
 
     public SpringWebAuthnCeremonies(JdbcOperations jdbc, IdentityProperties properties, Clock clock) {
         IdentityProperties.WebAuthn settings = properties.webauthn();
@@ -92,6 +103,7 @@ public class SpringWebAuthnCeremonies implements WebAuthnCeremonies {
                 .userVerification(UserVerificationRequirement.REQUIRED));
         this.ceremonies = new CeremonyStore(settings.timeout(), 10_000, clock);
         this.json = JsonMapper.builder().addModule(new WebauthnJacksonModule()).build();
+        this.evidence = new SignatureEvidenceVerifier(settings.rpId());
     }
 
     @Override
@@ -152,6 +164,62 @@ public class SpringWebAuthnCeremonies implements WebAuthnCeremonies {
         if (owner == null || !userId.toString().equals(owner.getName())) {
             throw new Rejected("the credential belongs to another account");
         }
+    }
+
+    @Override
+    public Started beginSigning(UUID userId, byte[] canonical) {
+        PublicKeyCredentialRequestOptions base = relyingParty.createCredentialRequestOptions(
+                new ImmutablePublicKeyCredentialRequestOptionsRequest(as(userId)));
+        if (base.getAllowCredentials() == null || base.getAllowCredentials().isEmpty()) {
+            throw new Rejected("the account has no authenticator");
+        }
+        byte[] nonce = new byte[NONCE_BYTES];
+        RANDOM.nextBytes(nonce);
+        // Only the challenge differs from a sign-in: same relying party, keys, timeout and verification.
+        PublicKeyCredentialRequestOptions options = PublicKeyCredentialRequestOptions.builder()
+                .challenge(new Bytes(SigningChallenge.of(canonical, nonce)))
+                .timeout(base.getTimeout())
+                .rpId(base.getRpId())
+                .allowCredentials(base.getAllowCredentials())
+                .userVerification(base.getUserVerification())
+                .extensions(base.getExtensions())
+                .build();
+        String id = ceremonies.put(CeremonyStore.Kind.SIGNING, userId, new PendingSignature(options, nonce));
+        return new Started(id, json.writeValueAsString(options));
+    }
+
+    @Override
+    public OfficerSignature finishSigning(String ceremonyId, UUID userId, byte[] canonical, String responseJson) {
+        PendingSignature pending = ceremonies
+                .take(ceremonyId, CeremonyStore.Kind.SIGNING, userId, PendingSignature.class)
+                .orElseThrow(() -> new Rejected("no matching signature in progress"));
+        if (!MessageDigest.isEqual(pending.options().getChallenge().getBytes(),
+                SigningChallenge.of(canonical, pending.nonce()))) {
+            throw new Rejected("the record changed after the signature began");
+        }
+        PublicKeyCredential<AuthenticatorAssertionResponse> credential = parse(responseJson, new TypeReference<>() { });
+        PublicKeyCredentialUserEntity owner;
+        try {
+            owner = relyingParty.authenticate(new RelyingPartyAuthenticationRequest(pending.options(), credential));
+        } catch (RuntimeException e) {
+            throw new Rejected("the signature did not verify", e);
+        }
+        if (owner == null || !userId.toString().equals(owner.getName())) {
+            throw new Rejected("the credential belongs to another account");
+        }
+        CredentialRecord record = credentials.findByCredentialId(credential.getRawId());
+        if (record == null) {
+            throw new Rejected("the credential is no longer registered");
+        }
+        AuthenticatorAssertionResponse response = credential.getResponse();
+        return new OfficerSignature(credential.getRawId().toBase64UrlString(), record.getPublicKey().getBytes(),
+                pending.nonce(), response.getAuthenticatorData().getBytes(), response.getClientDataJSON().getBytes(),
+                response.getSignature().getBytes());
+    }
+
+    @Override
+    public boolean verifySignature(byte[] canonical, OfficerSignature signature) {
+        return evidence.verify(canonical, signature);
     }
 
     @Override

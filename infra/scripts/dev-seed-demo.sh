@@ -46,6 +46,8 @@ decision.yde@demo.invalid|Demo Decision Yaounde|DECISION_AUTHORITY|YDE1
 supervisor.yde@demo.invalid|Demo Supervisor Yaounde|SUPERVISOR|YDE1
 auditor@demo.invalid|Demo Auditor|AUDITOR|YDE1
 finance.yde@demo.invalid|Demo Finance Yaounde|FINANCE_OFFICER|YDE1
+conservator.yde@demo.invalid|Demo Conservator Yaounde|CONSERVATOR|YDE1
+conservator2.yde@demo.invalid|Demo Second Conservator Yaounde|CONSERVATOR|YDE1
 admin1@demo.invalid|Demo Admin One|SYSTEM_ADMIN|YDE1
 admin2@demo.invalid|Demo Admin Two|SYSTEM_ADMIN|YDE1
 "

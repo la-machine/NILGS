@@ -185,6 +185,16 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
                     + "/acknowledgment")),
             new Endpoint("GET /cases/{unknown}/acknowledgment/file", Permission.APPLICATION_READ, () -> get("/api/v1/cases/" + SOMEONE
                     + "/acknowledgment/file")),
+            new Endpoint("GET /register/titles?office=DEMOIT", Permission.REGISTER_READ, () -> get("/api/v1/register/titles").param("office", "DEMOIT"), Reach.TEST_OFFICE),
+            new Endpoint("GET /register/proposals?office=DEMOIT", Permission.REGISTER_READ, () -> get("/api/v1/register/proposals").param("office", "DEMOIT"), Reach.TEST_OFFICE),
+            new Endpoint("GET /register/parties?office=DEMOIT", Permission.REGISTER_READ, () -> get("/api/v1/register/parties").param("office", "DEMOIT"), Reach.TEST_OFFICE),
+            new Endpoint("GET /register/transactions?office=DEMOIT", Permission.REGISTER_READ, () -> get("/api/v1/register/transactions").param("office", "DEMOIT"), Reach.TEST_OFFICE),
+            new Endpoint("GET /register/conflicts?office=DEMOIT", Permission.REGISTER_READ, () -> get("/api/v1/register/conflicts").param("office", "DEMOIT"), Reach.TEST_OFFICE),
+            new Endpoint("GET /register/parcels/{unknown}?office=DEMOIT", Permission.REGISTER_READ, () -> get("/api/v1/register/parcels/UNKNOWN").param("office", "DEMOIT"), Reach.TEST_OFFICE),
+            new Endpoint("POST /register/parties", Permission.REGISTER_PROPOSE, () -> post("/api/v1/register/parties").contentType(JSON)
+                    .content("{\"officeCode\":\"DEMOIT\"}"), Reach.TEST_OFFICE),
+            new Endpoint("POST /register/inscriptions", Permission.REGISTER_PROPOSE, () -> post("/api/v1/register/inscriptions").contentType(JSON)
+                    .content("{\"officeCode\":\"DEMOIT\",\"expectedVersion\":0}"), Reach.TEST_OFFICE),
             new Endpoint("GET /issued-documents/{unknown}", Permission.DOCUMENT_ISSUED_MANAGE, () -> get(
                     "/api/v1/issued-documents/SNIGF-ZZZZZZZZZZZZZZZZZZZZZZZZZZ")),
             new Endpoint("POST /issued-documents/{unknown}/revocation", Permission.DOCUMENT_ISSUED_MANAGE, () -> post(

@@ -13,10 +13,12 @@
 //     and the lost keys removed; every key and code lost -> an administrator asks, the
 //     supervisor confirms in the application how the identity was checked, old codes dead,
 //     enrolment again; the reset is in the audit trail;
-//   - parcels and map views (parcels.ts), with the same people.
+//   - parcels and map views (parcels.ts), with the same people;
+//   - the DEMO land register (register.ts), with two conservators.
 import { expect, test } from '@playwright/test'
 import { applicationJourneys } from './applications'
 import { parcelJourneys } from './parcels'
+import { registerJourneys } from './register'
 import { designTour } from './tour'
 import { OFFICE, Person, RUN, SIGNED_IN, email } from './support'
 
@@ -297,5 +299,7 @@ const parcelReference = parcelJourneys(() => ({ cadastral: officer, colleague: s
 // The applicant applies for the parcel recorded above (MVP-02).
 applicationJourneys(() => ({ applicant, intake, reviewer, decider, surveyor, admin: admin1, auditor, supervisor,
   documents: supervisor, cadastral: officer }), parcelReference)
+
+registerJourneys(() => ({ first: officer, second: surveyor }), parcelReference)
 
 designTour(() => ({ cadastral: officer, admin: admin1, auditor, reference: parcelReference }))

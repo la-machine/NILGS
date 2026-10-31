@@ -132,6 +132,10 @@ snigf:
     duration-window: ${SNIGF_REPORTING_DURATION_WINDOW}
     page-size: ${SNIGF_REPORTING_PAGE_SIZE}
   # Documents issued by SNIGF and their verification (ADR-039). DEMO acknowledgment only.
+  register:
+    lock-review-after: ${SNIGF_REGISTER_LOCK_REVIEW_AFTER}
+    overdue-cron: ${SNIGF_REGISTER_OVERDUE_CRON}
+    page-size: ${SNIGF_REGISTER_PAGE_SIZE}
   issuance:
     verify-base-url: ${SNIGF_ISSUANCE_VERIFY_BASE_URL}
     max-upload-bytes: ${SNIGF_ISSUANCE_MAX_UPLOAD_BYTES}
