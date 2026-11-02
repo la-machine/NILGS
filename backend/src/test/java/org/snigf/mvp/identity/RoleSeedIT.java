@@ -41,14 +41,14 @@ class RoleSeedIT extends IdentityIntegrationTest {
         jdbc.query("""
                 SELECT d.code, d.name_fr, d.name_en, d.assignable, d.status,
                        string_agg(p.permission || '=' || p.scope, ',' ORDER BY p.permission COLLATE "C") AS permissions
-                  FROM role_definition d JOIN role_permission p ON p.role_code = d.code
+                  FROM role_definition d LEFT JOIN role_permission p ON p.role_code = d.code
                  WHERE d.system GROUP BY d.code""", rs -> {
             database.put(rs.getString(1), rs.getString(2) + "|" + rs.getString(3) + "|" + rs.getBoolean(4) + "|"
-                    + rs.getString(5) + "|" + rs.getString(6));
+                    + rs.getString(5) + "|" + (rs.getString(6) == null ? "" : rs.getString(6)));
         });
         Map<String, String> code = new TreeMap<>();
         for (BaselineRole role : BaselineRole.values()) {
-            code.put(role.name(), role.nameFr() + "|" + role.nameEn() + "|" + (role != BaselineRole.APPLICANT) + "|ACTIVE|"
+            code.put(role.name(), role.nameFr() + "|" + role.nameEn() + "|" + role.assignable() + "|ACTIVE|"
                     + role.permissions().entrySet().stream()
                     .sorted(Map.Entry.comparingByKey(java.util.Comparator.comparing(Permission::code)))
                     .map(e -> e.getKey().code() + "=" + e.getValue()).collect(Collectors.joining(",")));

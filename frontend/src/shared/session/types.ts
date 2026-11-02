@@ -20,7 +20,7 @@ export interface ActiveGrant {
 export interface Session {
   userId: string
   displayName: string
-  accountType: 'APPLICANT' | 'STAFF'
+  accountType: 'APPLICANT' | 'STAFF' | 'PROFESSIONAL'
   roles: string[]
   grants: RoleGrant[]
   /** Role permissions: `code` (everywhere) or `code@OFFICE`; empty before every factor is proven. */

@@ -302,17 +302,8 @@ class RegisterController {
                                                                                     @PathVariable UUID documentId) {
         RegisterService.DocumentDownload download = register.downloadDocument(staff, id, documentId);
         Register.DepositDocument d = download.document();
-        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
-        headers.setContentType(MediaType.parseMediaType(d.mediaType()));
-        headers.setContentLength(d.sizeBytes());
-        headers.setContentDisposition(org.springframework.http.ContentDisposition.attachment()
-                .filename(d.originalName(), java.nio.charset.StandardCharsets.UTF_8).build());
-        headers.setCacheControl("no-store");
-        headers.set("X-Content-Type-Options", "nosniff");
-        headers.set("Content-Security-Policy", "default-src 'none'; sandbox");
-        headers.set("Cross-Origin-Resource-Policy", "same-origin");
-        headers.set("Repr-Digest", "sha-256=:" + java.util.Base64.getEncoder().encodeToString(java.util.HexFormat.of().parseHex(d.sha256())) + ":");
-        return ResponseEntity.ok().headers(headers).body(new org.springframework.core.io.InputStreamResource(download.content()));
+        return ResponseEntity.ok().headers(DocumentHeaders.attachment(d.mediaType(), d.sizeBytes(), d.originalName(), d.sha256()))
+                .body(new org.springframework.core.io.InputStreamResource(download.content()));
     }
 
     private static String ceremony(HttpServletRequest request) {

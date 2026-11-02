@@ -61,3 +61,5 @@ confirmation was free text) are closed by
   `docs/technical/08-operations-and-troubleshooting.md` ("Reset a lost second factor").
 - **Revisiting:** if the project owner prefers TOTP, a new ADR supersedes this one. The
   database is already able to hold a TOTP secret.
+- **Confirmed (1 Nov 2026, [ADR-041](041-professional-accounts.md)):** professional accounts get no TOTP either; the project owner kept
+  WebAuthn.

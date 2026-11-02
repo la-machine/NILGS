@@ -5,10 +5,15 @@
 Who may do what (ADR-025; Slice 1 design §6; Baseline, "actors and permissions"). Every
 endpoint is protected by one fine-grained permission. People get permissions in two ways:
 
-- **Roles.** The nine baseline roles below are code
+- **Roles.** The baseline roles below are code
   (`backend/src/main/java/org/snigf/mvp/identity/domain/BaselineRole.java`), seeded by
   migration V7 as *system* roles that nobody can change at run time. Administrators define
   further *custom* roles in the database, with four-eyes approval.
+- **Professional roles** (ADR-041). NOTARY and SWORN_SURVEYOR are never assigned: an approved, `ACTIVE`
+  professional account holds its profession's role at each of its approved offices, computed on every
+  request. Their four `register.deposit.*` permissions are held by nobody else: no staff role, custom role,
+  assignment or special grant can carry them (V25). SWORN_SURVEYOR holds no permission yet. They open the
+  `/api/v1/professional/titles` and `/api/v1/professional/deposits` endpoints only (V26).
 - **Special grants.** One permission to one staff member for a task, optionally at one
   office, limited by an end date, a number of uses, both or neither. Four-eyes approval too.
 
@@ -44,6 +49,10 @@ roles; `PermissionMatrixIT` checks every staff role against every protected endp
 | `admin.grant.request` | administration | no | any | Request a special grant for a user |
 | `admin.grant.approve` | administration | no | any | Approve or reject special grant requests |
 | `admin.grant.revoke` | administration | no | any | Revoke a special grant |
+| `admin.professional.read` | administration | no | any | Read professional accounts, their requests and history |
+| `admin.professional.verify` | administration | no | any | Verify a professional's credential and propose their offices |
+| `admin.professional.approve` | administration | no | any | Approve or reject a professional account request |
+| `admin.professional.suspend` | administration | no | any | Suspend a professional account, or request its reinstatement, revocation or office change |
 | `audit.event.search` | audit | yes | any, office | Search audit events |
 | `audit.chain.verify` | audit | yes | any | Verify the audit chain |
 | `audit.checkpoint.create` | audit | yes | any | Sign an audit checkpoint |
@@ -73,55 +82,67 @@ roles; `PermissionMatrixIT` checks every staff role against every protected endp
 | `register.inscribe` | business | no | office | Register an inscription with a signature |
 | `register.confirm` | business | no | office | Confirm another conservator's inscription (dual control) |
 | `register.transaction.decide` | business | no | office | Refuse a deposit or resolve a conflict |
-| `identity.reset.confirm` | business | no | office | Confirm the identity of a person whose second factor is reset |
+| `register.deposit.submit` | business | no | office | Look up a title and deposit a transaction on it, as a professional |
+| `register.deposit.read` | business | no | own | Read one's own deposits and their documents |
+| `register.deposit.document` | business | no | own | Add or replace documents on one's own open deposit |
+| `register.deposit.withdraw` | business | no | own | Withdraw one's own deposit |
+| `identity.reset.confirm` | business | no | office | Confirm the identity of a person whose second factor is reset |] 
 
 ## Baseline roles
 
-| Permission | APPLICANT | INTAKE_OFFICER | CADASTRAL_OFFICER | REVIEWER | DECISION_AUTHORITY | SUPERVISOR | AUDITOR | FINANCE_OFFICER | DOCUMENT_OFFICER | CONSERVATOR | SYSTEM_ADMIN |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `admin.account.list` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.role.assign` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.assignment.read` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.assignment.approve` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.role.revoke` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.mfa.reset` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.role.read` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.role.define` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.role.approve` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.grant.read` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.grant.request` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.grant.approve` | — | — | — | — | — | — | — | — | — | — | any |
-| `admin.grant.revoke` | — | — | — | — | — | — | — | — | — | — | any |
-| `audit.event.search` | — | — | — | — | — | office | any | — | — | — | — |
-| `audit.chain.verify` | — | — | — | — | — | any | any | — | — | — | — |
-| `audit.checkpoint.create` | — | — | — | — | — | — | any | — | — | — | — |
-| `audit.checkpoint.list` | — | — | — | — | — | — | any | — | — | — | — |
-| `audit.checkpoint.download` | — | — | — | — | — | — | any | — | — | — | — |
-| `audit.key.read` | — | — | — | — | — | — | any | — | — | — | — |
-| `parcel.create` | — | — | office | — | — | — | — | — | — | — | — |
-| `parcel.correct` | — | — | office | — | — | — | — | — | — | — | — |
-| `parcel.read` | linked | any | any | any | any | any | any | — | — | any | — |
-| `application.create` | own | — | — | — | — | — | — | — | — | — | — |
-| `application.submit` | own | — | — | — | — | — | — | — | — | — | — |
-| `application.respond` | own | — | — | — | — | — | — | — | — | — | — |
-| `application.read` | own | office | office | assigned | assigned | office | any | — | — | — | — |
-| `completeness.review` | — | office | — | — | — | — | — | — | — | — | — |
-| `completeness.request-info` | — | office | — | — | — | — | — | — | — | — | — |
-| `alert.review` | — | — | office | — | — | — | — | — | — | — | — |
-| `alert.resolve` | — | — | office | — | — | — | — | — | — | — | — |
-| `review.recommend` | — | — | — | assigned | — | — | — | — | — | — | — |
-| `decision.record` | — | — | — | — | assigned | — | — | — | — | — | — |
-| `report.workload` | — | — | — | — | — | office | — | — | — | — | — |
-| `payment.pay` | own | — | — | — | — | — | — | — | — | — | — |
-| `payment.reconcile` | — | — | — | — | — | — | — | any | — | — | — |
-| `document.issued.manage` | — | — | — | — | — | — | — | — | any | — | — |
-| `document.incident.review` | — | — | — | — | — | — | — | — | any | — | — |
-| `register.read` | — | — | — | — | — | — | — | — | — | office | — |
-| `register.propose` | — | — | — | — | — | — | — | — | — | office | — |
-| `register.inscribe` | — | — | — | — | — | — | — | — | — | office | — |
-| `register.confirm` | — | — | — | — | — | — | — | — | — | office | — |
-| `register.transaction.decide` | — | — | — | — | — | — | — | — | — | office | — |
-| `identity.reset.confirm` | — | — | — | — | — | office | — | — | — | — | — |
+| Permission | APPLICANT | INTAKE_OFFICER | CADASTRAL_OFFICER | REVIEWER | DECISION_AUTHORITY | SUPERVISOR | AUDITOR | FINANCE_OFFICER | DOCUMENT_OFFICER | CONSERVATOR | NOTARY | SWORN_SURVEYOR | SYSTEM_ADMIN |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `admin.account.list` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.role.assign` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.assignment.read` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.assignment.approve` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.role.revoke` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.mfa.reset` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.role.read` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.role.define` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.role.approve` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.grant.read` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.grant.request` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.grant.approve` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.grant.revoke` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.professional.read` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.professional.verify` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.professional.approve` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `admin.professional.suspend` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `audit.event.search` | — | — | — | — | — | office | any | — | — | — | — | — | — |
+| `audit.chain.verify` | — | — | — | — | — | any | any | — | — | — | — | — | — |
+| `audit.checkpoint.create` | — | — | — | — | — | — | any | — | — | — | — | — | — |
+| `audit.checkpoint.list` | — | — | — | — | — | — | any | — | — | — | — | — | — |
+| `audit.checkpoint.download` | — | — | — | — | — | — | any | — | — | — | — | — | — |
+| `audit.key.read` | — | — | — | — | — | — | any | — | — | — | — | — | — |
+| `parcel.create` | — | — | office | — | — | — | — | — | — | — | — | — | — |
+| `parcel.correct` | — | — | office | — | — | — | — | — | — | — | — | — | — |
+| `parcel.read` | linked | any | any | any | any | any | any | — | — | any | — | — | — |
+| `application.create` | own | — | — | — | — | — | — | — | — | — | — | — | — |
+| `application.submit` | own | — | — | — | — | — | — | — | — | — | — | — | — |
+| `application.respond` | own | — | — | — | — | — | — | — | — | — | — | — | — |
+| `application.read` | own | office | office | assigned | assigned | office | any | — | — | — | — | — | — |
+| `completeness.review` | — | office | — | — | — | — | — | — | — | — | — | — | — |
+| `completeness.request-info` | — | office | — | — | — | — | — | — | — | — | — | — | — |
+| `alert.review` | — | — | office | — | — | — | — | — | — | — | — | — | — |
+| `alert.resolve` | — | — | office | — | — | — | — | — | — | — | — | — | — |
+| `review.recommend` | — | — | — | assigned | — | — | — | — | — | — | — | — | — |
+| `decision.record` | — | — | — | — | assigned | — | — | — | — | — | — | — | — |
+| `report.workload` | — | — | — | — | — | office | — | — | — | — | — | — | — |
+| `payment.pay` | own | — | — | — | — | — | — | — | — | — | — | — | — |
+| `payment.reconcile` | — | — | — | — | — | — | — | any | — | — | — | — | — |
+| `document.issued.manage` | — | — | — | — | — | — | — | — | any | — | — | — | — |
+| `document.incident.review` | — | — | — | — | — | — | — | — | any | — | — | — | — |
+| `register.read` | — | — | — | — | — | — | — | — | — | office | — | — | — |
+| `register.propose` | — | — | — | — | — | — | — | — | — | office | — | — | — |
+| `register.inscribe` | — | — | — | — | — | — | — | — | — | office | — | — | — |
+| `register.confirm` | — | — | — | — | — | — | — | — | — | office | — | — | — |
+| `register.transaction.decide` | — | — | — | — | — | — | — | — | — | office | — | — | — |
+| `register.deposit.submit` | — | — | — | — | — | — | — | — | — | — | office | — | — |
+| `register.deposit.read` | — | — | — | — | — | — | — | — | — | — | own | — | — |
+| `register.deposit.document` | — | — | — | — | — | — | — | — | — | — | own | — | — |
+| `register.deposit.withdraw` | — | — | — | — | — | — | — | — | — | — | own | — | — |
+| `identity.reset.confirm` | — | — | — | — | — | office | — | — | — | — | — | — | — |] 
 
 APPLICANT is not assignable: it is what a self-registered account is, not a role an
 administrator grants.

@@ -371,6 +371,37 @@ public abstract class IdentityIntegrationTest extends PostgisIntegrationTest {
         return new SignedIn(id, email, browser);
     }
 
+    /**
+     * An ACTIVE professional at {@code officeCode} with two keys and a FULL session, as an approved activation
+     * leaves them (ADR-041). The bootstrap path: the superuser writes the profile, as {@link #insertStaff} does
+     * for staff; ProfessionalLifecycleIT goes through the real two-administrator workflow.
+     */
+    protected SignedIn activeProfessional(String profession, String officeCode) throws Exception {
+        String email = email();
+        UUID id = UUID.randomUUID();
+        jdbc.update("INSERT INTO app_user (id, email, display_name, password_hash, account_type) VALUES (?, ?, ?, ?, 'PROFESSIONAL')",
+                id, email, "DEMO Professional", hasher.hash(PASSWORD));
+        UUID verifier = insertStaff(email(), "SYSTEM_ADMIN", officeCode);
+        UUID approver = insertStaff(email(), "SYSTEM_ADMIN", officeCode);
+        try (java.sql.Connection su = PostgisDatabase.shared().superuserConnection(); java.sql.Statement st = su.createStatement()) {
+            st.execute("INSERT INTO professional_profile (user_id, profession, chamber, registration_number, jurisdiction, status) VALUES ('"
+                    + id + "', '" + profession + "', 'DEMO Chamber', 'DEMO-" + id.toString().substring(0, 8) + "', 'DEMO Yaounde', 'ACTIVE')");
+            st.execute("WITH v AS (INSERT INTO professional_verification (user_id, verified_by, body, reference, checked_on, note) VALUES ('"
+                    + id + "', '" + verifier + "', 'DEMO Chamber', 'DEMO-REF', current_date, 'Checked with the DEMO chamber') RETURNING id),"
+                    + " r AS (INSERT INTO professional_request (user_id, kind, offices_add, reason, verification_id, requested_by, status, decided_by, decided_at)"
+                    + " SELECT '" + id + "', 'ACTIVATION', ARRAY[(SELECT o.id FROM office o WHERE o.code = '" + officeCode + "')], 'Checked with the DEMO chamber',"
+                    + " v.id, '" + verifier + "', 'APPROVED', '" + approver + "', now() FROM v RETURNING id, offices_add)"
+                    + " INSERT INTO professional_office (user_id, office_id, added_by_request) SELECT '" + id + "', r.offices_add[1], r.id FROM r");
+            su.commit();
+        }
+        Browser browser = new Browser();
+        browser.login(email, PASSWORD);
+        register(browser, new Authenticator(), "Office key");
+        register(browser, new Authenticator(), "Backup key");
+        browser.csrf();
+        return new SignedIn(id, email, browser);
+    }
+
     /** Sends a JSON body with the CSRF token, as the interface does. */
     protected MockHttpServletResponse sendJson(Browser browser,
             org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request, String body) throws Exception {

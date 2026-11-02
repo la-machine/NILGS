@@ -23,9 +23,11 @@ public class JdbcMfaResetRepository implements MfaResetRepository {
 
     private static final String SELECT = """
             SELECT r.id, r.user_id, u.display_name, u.email,
-                   coalesce((SELECT array_agg(DISTINCT o.code ORDER BY o.code) FROM role_assignment a
-                              JOIN office o ON o.id = a.office_id
-                             WHERE a.user_id = r.user_id AND a.revoked_at IS NULL), '{}') AS offices,
+                   coalesce((SELECT array_agg(DISTINCT o.code ORDER BY o.code)
+                               FROM (SELECT a.office_id FROM role_assignment a WHERE a.user_id = r.user_id AND a.revoked_at IS NULL
+                                     UNION ALL
+                                     SELECT * FROM professional_office_ids(r.user_id)) x (office_id)
+                               JOIN office o ON o.id = x.office_id), '{}') AS offices,
                    r.reason, r.requested_by, r.requested_at, r.status, r.decided_by, r.decided_at,
                    r.identity_check, r.decision_reason
               FROM mfa_reset_request r JOIN app_user u ON u.id = r.user_id""";

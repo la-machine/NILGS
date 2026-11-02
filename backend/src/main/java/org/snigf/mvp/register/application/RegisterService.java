@@ -6,7 +6,6 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
@@ -15,8 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.snigf.mvp.audit.AuditAction;
 import org.snigf.mvp.audit.AuditEvent;
@@ -34,11 +31,9 @@ import org.snigf.mvp.register.domain.InscriptionCanonical;
 import org.snigf.mvp.register.domain.Register;
 import org.snigf.mvp.register.domain.RegisterRepository;
 import org.snigf.mvp.shared.db.DatabaseActor;
-import org.snigf.mvp.shared.idempotency.IdempotencyStore;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * The land register's use cases (ADR-040). Every write is one call to a database function, which
@@ -55,11 +50,8 @@ public class RegisterService {
     static final String ENTITY_TRANSACTION = "PENDING_TRANSACTION";
     static final String ENTITY_CONFLICT = "TRANSACTION_CONFLICT";
     static final String ENTITY_TITLE = "LAND_TITLE";
-    static final String ENTITY_DOCUMENT = "DEPOSIT_DOCUMENT";
-    private static final String DOCUMENT_ENDPOINT = "POST /api/v1/register/transactions/{id}/documents";
     private static final String PROPOSE_ENDPOINT = "POST /api/v1/register/inscriptions";
     private static final String DEPOSIT_ENDPOINT = "POST /api/v1/register/transactions";
-    private static final Pattern REASON = Pattern.compile(": ([A-Z][A-Z0-9_]{2,63})\\b");
 
     /** A title with its whole history, as a conservator reads it. */
     public record TitleView(Register.Title title, List<Register.Inscription> inscriptions, List<Register.Transaction> transactions,
@@ -68,23 +60,23 @@ public class RegisterService {
 
     private final RegisterRepository register;
     private final SignedRecords records;
-    private final IdempotencyStore idempotency;
     private final AuditRecorder audit;
     private final DatabaseActor actor;
     private final RegisterProperties properties;
-    private final JsonMapper json;
     private final DocumentFiles files;
+    private final RegisterWrites writes;
+    private final DepositDocuments documents;
 
-    public RegisterService(RegisterRepository register, SignedRecords records, IdempotencyStore idempotency, AuditRecorder audit,
-                           DatabaseActor actor, RegisterProperties properties, JsonMapper json, DocumentFiles files) {
-        this.files = files;
+    RegisterService(RegisterRepository register, SignedRecords records, AuditRecorder audit, DatabaseActor actor, RegisterProperties properties,
+                    DocumentFiles files, RegisterWrites writes, DepositDocuments documents) {
         this.register = register;
         this.records = records;
-        this.idempotency = idempotency;
         this.audit = audit;
         this.actor = actor;
         this.properties = properties;
-        this.json = json;
+        this.files = files;
+        this.writes = writes;
+        this.documents = documents;
     }
 
     // --- Reading ------------------------------------------------------------------------------
@@ -211,17 +203,17 @@ public class RegisterService {
     @Transactional
     public UUID propose(AuthenticatedUser staff, Register.NewInscription proposal, String idempotencyKey) {
         actor.bind(staff.userId());
-        String hash = requestHash(idempotencyKey, proposal);
-        var earlier = idempotency.find(staff.userId(), idempotencyKey);
+        String hash = writes.requestHash(idempotencyKey, proposal);
+        var earlier = writes.earlier(staff.userId(), idempotencyKey, hash);
         if (earlier.isPresent()) {
-            return repeated(earlier.get(), hash);
+            return earlier.get();
         }
         UUID office = office(proposal.officeCode());
         UUID id = guarded(staff, ENTITY_TITLE, proposal.titleId(), "PROPOSE", () -> register.propose(office, proposal));
         Register.Inscription proposed = register.inscription(id).orElseThrow();
         audit.record(AuditEvent.of(AuditAction.REGISTER_INSCRIPTION_PROPOSED, AuditOutcome.SUCCESS).withEntity(ENTITY_INSCRIPTION, id)
                 .withEntityRef(proposed.titleNumber()).withDetails(Map.of("kind", proposal.kind(), "office", proposal.officeCode())));
-        remember(staff, idempotencyKey, PROPOSE_ENDPOINT, hash, id);
+        writes.remember(staff.userId(), idempotencyKey, PROPOSE_ENDPOINT, hash, id);
         return id;
     }
 
@@ -311,10 +303,10 @@ public class RegisterService {
     @Transactional
     public UUID deposit(AuthenticatedUser staff, Register.NewDeposit deposit, String idempotencyKey) {
         actor.bind(staff.userId());
-        String hash = requestHash(idempotencyKey, deposit);
-        var earlier = idempotency.find(staff.userId(), idempotencyKey);
+        String hash = writes.requestHash(idempotencyKey, deposit);
+        var earlier = writes.earlier(staff.userId(), idempotencyKey, hash);
         if (earlier.isPresent()) {
-            return repeated(earlier.get(), hash);
+            return earlier.get();
         }
         UUID id = guarded(staff, ENTITY_TITLE, deposit.titleId(), "DEPOSIT", () -> register.deposit(deposit, properties.lockReviewAfter()));
         Register.Transaction t = register.transaction(id).orElseThrow();
@@ -328,7 +320,7 @@ public class RegisterService {
                 .withEntityRef(t.titleNumber()).withDetails(details));
         register.conflictOf(id).ifPresent(conflict -> audit.record(AuditEvent.of(AuditAction.REGISTER_CONFLICT_OPENED, AuditOutcome.SUCCESS)
                 .withEntity(ENTITY_CONFLICT, conflict).withEntityRef(t.titleNumber()).withDetails(Map.of("office", t.officeCode()))));
-        remember(staff, idempotencyKey, DEPOSIT_ENDPOINT, hash, id);
+        writes.remember(staff.userId(), idempotencyKey, DEPOSIT_ENDPOINT, hash, id);
         return id;
     }
 
@@ -382,58 +374,10 @@ public class RegisterService {
     public UUID addDocument(AuthenticatedUser staff, UUID transactionId, String category, String givenName, InputStream content,
                             UUID replaces, String reason, String idempotencyKey) {
         actor.bind(staff.userId());
-        if (!IdempotencyStore.validKey(idempotencyKey)) {
-            throw new RegisterRefused(RegisterRefused.Kind.INVALID, "IDEMPOTENCY_KEY_REQUIRED");
-        }
+        RegisterWrites.requireKey(idempotencyKey);
         Register.Transaction t = register.transaction(transactionId).orElseThrow(() -> RegisterRefused.of("TRANSACTION_NOT_FOUND"));
-        String key = null;
-        try (DocumentFiles.Received received = files.receive(content, givenName)) {
-            String hash = IdempotencyStore.sha256(transactionId + ":" + category + ":" + replaces + ":" + received.sha256() + ":" + received.name());
-            var earlier = idempotency.find(staff.userId(), idempotencyKey);
-            if (earlier.isPresent()) {
-                return repeated(earlier.get(), hash);
-            }
-            key = received.keep();
-            String storageKey = key;
-            UUID id = guarded(staff, ENTITY_TRANSACTION, transactionId, replaces == null ? "ADD_DOCUMENT" : "REPLACE_DOCUMENT",
-                    () -> register.addDepositDocument(transactionId, category, storageKey, received.sha256(), received.sizeBytes(),
-                            received.mediaType(), received.name(), replaces, reason));
-            Map<String, Object> details = new LinkedHashMap<>();
-            details.put("transaction", transactionId.toString());
-            details.put("category", category);
-            details.put("type", received.mediaType());
-            details.put("sizeBytes", received.sizeBytes());
-            details.put("sha256", received.sha256());
-            details.put("office", t.officeCode());
-            AuditEvent event = AuditEvent.of(replaces == null ? AuditAction.REGISTER_DEPOSIT_DOCUMENT_ADDED : AuditAction.REGISTER_DEPOSIT_DOCUMENT_REPLACED,
-                    AuditOutcome.SUCCESS);
-            if (replaces != null) {
-                details.put("replaces", replaces.toString());
-                event = event.withReason(truncate(reason));
-            }
-            audit.record(event.withEntity(ENTITY_DOCUMENT, id).withEntityRef(t.titleNumber()).withDetails(details));
-            remember(staff, idempotencyKey, DOCUMENT_ENDPOINT, hash, id);
-            return id;
-        } catch (DocumentFiles.Refused e) {
-            Map<String, Object> details = new LinkedHashMap<>();
-            details.put("code", e.code());
-            details.put("transaction", transactionId.toString());
-            if (e.sizeBytes() >= 0) {
-                details.put("sizeBytes", e.sizeBytes());
-            }
-            if (e.detected() != null) {
-                details.put("detected", e.detected());
-            }
-            audit.recordIndependently(AuditEvent.of(AuditAction.REGISTER_DEPOSIT_DOCUMENT_REJECTED, AuditOutcome.FAILED)
-                    .withEntity(ENTITY_TRANSACTION, transactionId).withReason(e.code()).withDetails(details));
-            throw new RegisterRefused("FILE_TOO_LARGE".equals(e.code()) ? RegisterRefused.Kind.TOO_LARGE : RegisterRefused.Kind.INVALID, e.code());
-        } catch (RuntimeException e) {
-            // The transaction rolls back: a file stored for it must not stay.
-            if (key != null) {
-                files.forget(key);
-            }
-            throw e;
-        }
+        return documents.store(staff.userId(), new DepositDocuments.Target(transactionId, t.titleNumber(), t.officeCode()), category, givenName,
+                content, replaces, reason, idempotencyKey);
     }
 
     /** The bytes of a document, checked against the recorded hash before anything is sent. Audited. */
@@ -441,14 +385,7 @@ public class RegisterService {
     public DocumentDownload downloadDocument(AuthenticatedUser staff, UUID transactionId, UUID documentId) {
         actor.bind(staff.userId());
         Register.DepositDocument d = register.depositDocument(transactionId, documentId).orElseThrow(() -> RegisterRefused.of("DOCUMENT_NOT_FOUND"));
-        if (!files.intact(d.storageKey(), d.sha256(), d.sizeBytes())) {
-            audit.recordIndependently(AuditEvent.of(AuditAction.REGISTER_DEPOSIT_DOCUMENT_INTEGRITY_FAILED, AuditOutcome.FAILED)
-                    .withEntity(ENTITY_DOCUMENT, d.id()).withReason("SHA256_MISMATCH").withDetails(Map.of("transaction", transactionId.toString())));
-            throw new RegisterRefused(RegisterRefused.Kind.BROKEN, "DOCUMENT_INTEGRITY_FAILED");
-        }
-        audit.record(AuditEvent.of(AuditAction.REGISTER_DEPOSIT_DOCUMENT_DOWNLOADED, AuditOutcome.SUCCESS)
-                .withEntity(ENTITY_DOCUMENT, d.id()).withDetails(Map.of("transaction", transactionId.toString(), "category", d.category())));
-        return new DocumentDownload(d, files.open(d.storageKey()));
+        return new DocumentDownload(d, documents.open(transactionId, d.id(), d.category(), d.storageKey(), d.sha256(), d.sizeBytes()));
     }
 
     @Transactional(readOnly = true)
@@ -479,66 +416,15 @@ public class RegisterService {
 
     /** Runs a write; the database's refusal becomes a precise code and an independent audit event. */
     private UUID guarded(AuthenticatedUser staff, String entity, UUID entityId, String operation, Supplier<UUID> write) {
-        try {
-            return write.get();
-        } catch (DataAccessException e) {
-            RegisterRefused refused = translated(e);
-            audit.recordIndependently(AuditEvent.of(AuditAction.REGISTER_REFUSED, AuditOutcome.FAILED).withEntity(entity, entityId)
-                    .withReason(refused.code()).withDetails(Map.of("code", refused.code(), "operation", operation)));
-            throw refused;
-        }
+        return writes.guarded(entity, entityId, operation, write);
     }
 
     private RegisterRefused refusedIndependently(AuthenticatedUser staff, String entity, UUID id, RegisterRefused refused) {
-        audit.recordIndependently(AuditEvent.of(AuditAction.REGISTER_REFUSED, AuditOutcome.FAILED).withEntity(entity, id)
-                .withReason(refused.code()).withDetails(Map.of("code", refused.code())));
-        return refused;
+        return writes.refusedIndependently(entity, id, refused);
     }
 
-    /** RG001 carries the reason as its message; a broken constraint is an invalid request. */
     private static RegisterRefused translated(DataAccessException e) {
-        for (Throwable t = e; t != null; t = t.getCause()) {
-            if (t instanceof SQLException sql && sql.getSQLState() != null) {
-                String state = sql.getSQLState();
-                if ("RG001".equals(state)) {
-                    Matcher reason = REASON.matcher(String.valueOf(sql.getMessage()));
-                    return RegisterRefused.of(reason.find() ? reason.group(1) : "REGISTER_REFUSED");
-                }
-                if (state.startsWith("23") || state.startsWith("22")) {
-                    return new RegisterRefused(RegisterRefused.Kind.INVALID, "REGISTER_INVALID");
-                }
-                if ("40001".equals(state) || "40P01".equals(state)) {
-                    return new RegisterRefused(RegisterRefused.Kind.CONFLICT, "TITLE_CHANGED");
-                }
-            }
-        }
-        throw e;
-    }
-
-    private String requestHash(String idempotencyKey, Object request) {
-        if (!IdempotencyStore.validKey(idempotencyKey)) {
-            throw new RegisterRefused(RegisterRefused.Kind.INVALID, "IDEMPOTENCY_KEY_REQUIRED");
-        }
-        return IdempotencyStore.sha256(json.writeValueAsString(request));
-    }
-
-    private UUID repeated(IdempotencyStore.Stored earlier, String hash) {
-        if (!earlier.requestSha256().equals(hash)) {
-            throw new RegisterRefused(RegisterRefused.Kind.INVALID, "IDEMPOTENCY_KEY_REUSED");
-        }
-        return json.readValue(earlier.body(), Created.class).id();
-    }
-
-    private void remember(AuthenticatedUser staff, String key, String endpoint, String hash, UUID id) {
-        try {
-            idempotency.save(staff.userId(), key, endpoint, hash, 201, json.writeValueAsString(new Created(id)));
-        } catch (IdempotencyStore.InProgress e) {
-            throw new RegisterRefused(RegisterRefused.Kind.CONFLICT, "REQUEST_IN_PROGRESS");
-        }
-    }
-
-    /** What an idempotent create stored. */
-    private record Created(UUID id) {
+        return RegisterRefused.translated(e);
     }
 
     private int offset(int page) {
@@ -548,7 +434,7 @@ public class RegisterService {
         return page * properties.pageSize();
     }
 
-    private static String truncate(String text) {
+    static String truncate(String text) {
         String stripped = text == null ? "" : text.strip();
         return stripped.length() > 1000 ? stripped.substring(0, 999) + "…" : stripped;
     }

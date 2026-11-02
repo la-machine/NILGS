@@ -87,3 +87,6 @@ choices the earlier decisions did not settle.
 - The flows are tested end to end with webauthn4j's authenticator emulators
   (`MfaFlowIT`): genuine attestations and signatures, including phishing from another
   origin, replay, and another account's key.
+- **Amended (2 Nov 2026, [ADR-041](041-professional-accounts.md)):** the second-factor checks accept `STAFF` or `PROFESSIONAL`
+  (`AccountType.requiresSecondFactor`); applicants still have none (`ProfessionalSignInIT`).
+  Ceremonies, recovery codes and the lockout are unchanged.

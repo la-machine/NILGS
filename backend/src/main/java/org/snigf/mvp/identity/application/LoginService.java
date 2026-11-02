@@ -15,7 +15,6 @@ import org.snigf.mvp.audit.AuditAction;
 import org.snigf.mvp.audit.AuditEvent;
 import org.snigf.mvp.audit.AuditOutcome;
 import org.snigf.mvp.audit.AuditRecorder;
-import org.snigf.mvp.identity.AccountType;
 import org.snigf.mvp.identity.AuthLevel;
 import org.snigf.mvp.identity.AuthenticatedUser;
 import org.snigf.mvp.identity.domain.EmailAddress;
@@ -114,8 +113,8 @@ public class LoginService {
         if (hasher.needsRehash(user.passwordHash())) {
             users.updatePasswordHash(user.id(), hasher.hash(password));
         }
-        AuthLevel level = user.accountType() == AccountType.STAFF ? AuthLevel.PASSWORD : AuthLevel.FULL;
-        NextStep next = user.accountType() != AccountType.STAFF ? NextStep.DONE
+        AuthLevel level = user.accountType().requiresSecondFactor() ? AuthLevel.PASSWORD : AuthLevel.FULL;
+        NextStep next = !user.accountType().requiresSecondFactor() ? NextStep.DONE
                 : user.secondFactorReady() ? NextStep.MFA_CHALLENGE : NextStep.MFA_ENROLMENT;
         AuthenticatedUser principal = authorization.principal(user, level, now);
 
@@ -138,7 +137,7 @@ public class LoginService {
     public Optional<AuthenticatedUser> restore(UUID userId, AuthLevel level, Instant authenticatedAt) {
         return users.findById(userId)
                 .filter(UserAccount::enabled)
-                .map(u -> authorization.principal(u, u.accountType() == AccountType.STAFF ? level : AuthLevel.FULL,
+                .map(u -> authorization.principal(u, u.accountType().requiresSecondFactor() ? level : AuthLevel.FULL,
                         authenticatedAt));
     }
 

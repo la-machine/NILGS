@@ -70,6 +70,36 @@ The conservators `conservator.yde@demo.invalid` and `conservator2.yde@demo.inval
 land register at YDE1. `infra/scripts/dev-seed-register.sh` adds its synthetic data: see the
 [land register guide](land-register.md).
 
+## Professional accounts
+
+```bash
+bash infra/scripts/dev-seed-professionals.sh   # after dev-seed-demo.sh
+```
+
+| Account | Profession | Office | Typical use |
+| --- | --- | --- | --- |
+| `notary.yde@demo.invalid` | NOTARY | YDE1 | Once active: looks up a title by its number and deposits a DEMO deed for its client; follows their own deposits ([ADR-041](../adr/041-professional-accounts.md)) |
+| `sworn-surveyor.yde@demo.invalid` | SWORN_SURVEYOR | YDE1 | Left verified: only `admin2` may approve or reject it on **Professionals**, because `admin1` verified it. Once active, it holds no operational permission yet |
+
+Neither is a staff account, and no role can be given to them
+([professional accounts guide](professional-accounts.md)). The script uses the real workflow,
+with no short cut:
+
+1. each account is requested on the public endpoint, as on the form at `#/professional-request`;
+2. `admin1` verifies the DEMO credential and proposes YDE1;
+3. `admin2` approves the notary's activation.
+
+Steps 2 and 3 call the database functions the application calls, as those two administrators, so
+the database applies every rule itself. One of them is that an activation needs two security keys,
+and the script holds none. So the first run leaves the notary verified. Sign in as the notary,
+register two keys, then run the script again: it approves the activation, and the notary's
+**My professional account** offers the lookup and the deposit. The passwords are in
+`infra/secrets/demo_accounts`, with the other accounts; the third column holds the profession.
+
+Running it again adds nothing, and leaves alone any status changed by hand (suspended, rejected,
+revoked). An activation left waiting for 30 days expires and sends the account back to "requested";
+the next run verifies it again.
+
 ## What to try
 
 - **Tracking and workload:** the applicant opens a submitted application and reads where it
@@ -99,6 +129,10 @@ land register at YDE1. `infra/scripts/dev-seed-register.sh` adds its synthetic d
   while an overlap alert on the parcel is open: resolve it first as `surveyor.yde`.
   `applicant` reads the decision, marked "Simulated decision — no legal effect", and prints
   it; never the finding.
+- **Professional accounts (ADR-041):** the active `notary.yde` looks up the title proposed by
+  `dev-seed-register.sh` once a conservator has signed it, then deposits a sale with a deed and a
+  client whose name and number contain `DEMO`; `conservator.yde` sees the deposit's channel and the
+  notary on the title page. `admin2` approves or rejects `sworn-surveyor.yde`; `admin1` cannot.
 - **Audit:** `auditor` finds `PARCEL_CREATED`, `APPLICATION_SUBMITTED`, `CONFLICT_ALERT_RESOLVED`, `CASE_CLAIMED`, `DECISION_RECORDED`, `ROLE_GRANTED` and every refusal, then
   verifies the chain.
 

@@ -19,6 +19,8 @@ const ReviewsRoutes = lazy(() => import('../features/reviews').then((m) => ({ de
 const RegisterRoutes = lazy(() => import('../features/register').then((m) => ({ default: m.RegisterRoutes })))
 const ParcelsRoutes = lazy(() => import('../features/parcels').then((m) => ({ default: m.ParcelsRoutes })))
 const AlertsRoutes = lazy(() => import('../features/conflicts').then((m) => ({ default: m.AlertsRoutes })))
+const ProfessionalRoutes = lazy(() => import('../features/professionals').then((m) => ({ default: m.ProfessionalRoutes })))
+const ProfessionalsAdminRoutes = lazy(() => import('../features/professionals').then((m) => ({ default: m.ProfessionalsAdminRoutes })))
 const AccountsPage = lazy(() => import('../features/accounts').then((m) => ({ default: m.AccountsPage })))
 const RolesPage = lazy(() => import('../features/roles').then((m) => ({ default: m.RolesPage })))
 const GrantsPage = lazy(() => import('../features/grants').then((m) => ({ default: m.GrantsPage })))
@@ -66,6 +68,8 @@ export function Pages({ route, place, allowed, ctx, onAddKey }: {
     <Suspense fallback={<div className="page" aria-busy="true"><Skeleton lines={6} /></div>}>
       {place === 'dashboard' && <DashboardPage ctx={ctx} />}
       {place === 'applications' && <ApplicationsRoutes ctx={ctx} route={route} />}
+      {place === 'professional' && <ProfessionalRoutes ctx={ctx} route={route} />}
+      {place === 'professionals' && <ProfessionalsAdminRoutes ctx={ctx} route={route} />}
       {place === 'cases' && <CasesRoutes ctx={ctx} route={route} />}
       {place === 'reviews' && <ReviewsRoutes ctx={ctx} route={route} />}
       {place === 'register' && <RegisterRoutes ctx={ctx} route={route} />}

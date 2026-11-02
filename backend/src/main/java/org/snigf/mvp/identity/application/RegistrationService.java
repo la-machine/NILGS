@@ -13,6 +13,7 @@ import org.snigf.mvp.audit.AuditAction;
 import org.snigf.mvp.audit.AuditEvent;
 import org.snigf.mvp.audit.AuditOutcome;
 import org.snigf.mvp.audit.AuditRecorder;
+import org.snigf.mvp.identity.AccountRegistration;
 import org.snigf.mvp.identity.domain.EmailAddress;
 import org.snigf.mvp.identity.domain.PasswordHasher;
 import org.snigf.mvp.identity.domain.PasswordPolicy;
@@ -27,7 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
  * to discover accounts; the hash is computed in both cases so timing does not tell either.
  */
 @Service
-public class RegistrationService {
+public class RegistrationService implements AccountRegistration {
 
     static final String ENTITY_USER = "USER";
     private static final Set<String> LANGUAGES = Set.of("fr", "en");
@@ -58,9 +59,32 @@ public class RegistrationService {
         }
     }
 
-    /** @throws RegistrationRejected when a rule is broken; nothing is stored then */
+    @Override
     @Transactional
-    public void register(Registration registration) {
+    public Optional<UUID> registerProfessional(AccountRegistration.Account account) {
+        Registration registration = new Registration(account.email(), account.displayName(), account.password(), account.preferredLanguage());
+        EmailAddress email;
+        try {
+            email = validated(registration);
+        } catch (RegistrationRejected e) {
+            throw new AccountRegistration.Rejected(e.codes(), e.onlyPassword());
+        }
+        UUID id = UuidV7.next();
+        Optional<UUID> created = users.createProfessional(id, email, registration.displayName().strip(), hasher.hash(registration.password()),
+                registration.preferredLanguage());
+        if (created.isPresent()) {
+            audit.record(AuditEvent.of(AuditAction.USER_REGISTERED, AuditOutcome.SUCCESS)
+                    .withEntity(ENTITY_USER, id)
+                    .withDetails(Map.of("accountType", "PROFESSIONAL", "preferredLanguage", registration.preferredLanguage())));
+        } else {
+            audit.record(AuditEvent.of(AuditAction.USER_REGISTERED, AuditOutcome.FAILED)
+                    .withEntity(ENTITY_USER, users.findByEmail(email).map(u -> u.id()).orElse(null))
+                    .withReason("e-mail address already registered"));
+        }
+        return created;
+    }
+
+    private EmailAddress validated(Registration registration) {
         List<String> problems = new ArrayList<>();
         EmailAddress email = null;
         try {
@@ -79,7 +103,14 @@ public class RegistrationService {
         if (!problems.isEmpty()) {
             throw new RegistrationRejected(problems);
         }
+        return email;
+    }
 
+    /** @throws RegistrationRejected when a rule is broken; nothing is stored then */
+    @Transactional
+    public void register(Registration registration) {
+        EmailAddress email = validated(registration);
+        String displayName = registration.displayName().strip();
         String hash = hasher.hash(registration.password());
         UUID id = UuidV7.next();
         Optional<UUID> created = users.createApplicant(id, email, displayName, hash, registration.preferredLanguage());

@@ -12,7 +12,8 @@
 #    --if-absent: real imagery is never replaced);
 # 4. runs the journeys (project "flows"): sign-in with virtual security keys, four-eyes role
 #    assignment and custom role, special grant, audit verification, recovery, then parcels and
-#    their three map views.
+#    their three map views, the DEMO land register, and professional accounts (a notary requests
+#    their account on the public form during the run: not registered or promoted here).
 # Reports and traces land in e2e/out/ (git-ignored). Each run uses new accounts, so the
 # registration limit (SNIGF_RATE_REGISTER_PER_HOUR, 10 in development) allows one run per
 # hour from this machine.

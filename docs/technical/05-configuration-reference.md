@@ -98,7 +98,7 @@ an environment variable of the same name.
 | `SNIGF_LOGIN_MAX_FAILURES` | `5` | Consecutive wrong passwords that lock an account (P6) | compose, `application.yaml` |
 | `SNIGF_LOGIN_LOCK_DURATION` | `15m` | Lock duration (P6) | compose, `application.yaml` |
 | `SNIGF_RATE_LOGIN_PER_MINUTE` | `20` | Login attempts per client address per minute (P6) | compose, `application.yaml` |
-| `SNIGF_RATE_REGISTER_PER_HOUR` | `10` | Registrations per client address per hour | compose, `application.yaml` |
+| `SNIGF_RATE_REGISTER_PER_HOUR` | `10` | Registrations per client address per hour; also professional account requests (ADR-041), counted apart | compose, `application.yaml` |
 | `SNIGF_RATE_MAX_TRACKED_CLIENTS` | `10000` | Client addresses remembered by the throttle (least recently seen dropped) | compose, `application.yaml` |
 | `SNIGF_SESSION_IDLE_TIMEOUT` | `30m` | Session idle limit (P5); not above the absolute limit | compose, `application.yaml` |
 | `SNIGF_SESSION_ABSOLUTE_TIMEOUT` | `8h` | Session absolute limit since login (P5) | compose, `application.yaml` |
@@ -124,7 +124,7 @@ an environment variable of the same name.
 
 | Setting | Development value | Meaning | Read by |
 | --- | --- | --- | --- |
-| `SNIGF_ADMIN_REQUEST_TTL` | `7d` | How long a role change or special grant request waits for a second administrator; after that it can only be rejected or requested again. Between `1h` and `30d` | compose, `application.yaml` |
+| `SNIGF_ADMIN_REQUEST_TTL` | `7d` | How long a role change, special grant or professional account request (ADR-041) waits for a second administrator; after that it can only be rejected or requested again. A professional request then closes as expired, and an expired activation sends the account back to `REQUESTED`. Between `1h` and `30d` | compose, `application.yaml` |
 
 ### Parcels and map views (ADR-029)
 
@@ -164,6 +164,7 @@ an environment variable of the same name.
 | `SNIGF_REGISTER_LOCK_REVIEW_AFTER` | `P30D` | How long after a deposit a holding lock is due for review (ISO-8601). A lock never expires on its own (ADR-040) | compose, `application.yaml` |
 | `SNIGF_REGISTER_OVERDUE_CRON` | `0 15 * * * *` | When overdue locks are recorded for review (Spring cron; `-` turns it off) | compose, `application.yaml` |
 | `SNIGF_REGISTER_PAGE_SIZE` | `20` | Entries per page in the register's lists (5 to 200) | compose, `application.yaml` |
+| `SNIGF_RATE_LOOKUP_PER_HOUR` | `60` | Title lookups per professional account per hour (ADR-041 §6), 1 to 10000; the accounts counted at once follow `SNIGF_RATE_MAX_TRACKED_CLIENTS` | compose, `application.yaml` |
 | `SNIGF_DOCUMENT_DIRECTORY` | `../var/documents` | Where document files are kept when running from the IDE; compose mounts the volume `document-data` at `/var/lib/snigf/documents` | `application.yaml` |
 | `SNIGF_DOCUMENT_MAX_BYTES` | `10485760` | Largest document accepted, in bytes (Baseline: 10 MB DEMO limit; at most 100 MB) | compose, `application.yaml` (also the servlet's `max-file-size`) |
 | `SNIGF_DOCUMENT_MAX_VERSIONS` | `10` | Versions one document may have (1 to 100) | compose, `application.yaml` |
@@ -286,7 +287,7 @@ mounted only into the services listed.
 | `payment_sim_tls_crt`, `payment_sim_tls_key` | The DEMO payment simulator's server certificate (name `payment-sim`) | payment-sim |
 | `payment_sim_client_crt`, `payment_sim_client_key` | The simulator's identity towards the proxy's provider listener and its OpenBao login | payment-sim, security-probe |
 | `app_provider_client_crt`, `app_provider_client_key` | The app's identity towards the simulator | app |
-| `demo_accounts` | **Development only**: the demonstration accounts and their passwords, written by `dev-seed-demo.sh` ([guide](../guides/demo-accounts.md)); one line per account, `email|password|role|office` | nothing: read by people |
+| `demo_accounts` | **Development only**: the demonstration accounts and their passwords, written by `dev-seed-demo.sh` and `dev-seed-professionals.sh` ([guide](../guides/demo-accounts.md)); one line per account, `email|password|role|office` (the profession in place of the role for a professional) | nothing: read by people |
 
 Not mounted anywhere:
 

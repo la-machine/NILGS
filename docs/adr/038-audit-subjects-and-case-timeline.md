@@ -154,3 +154,5 @@ read it. The supervisor's audit page now shows the event search, limited to thei
 - **Offline verifiers** must implement v2 (`docs/audit.md`). Checkpoints are unchanged.
 - **A draft's history** (creation, edits, uploads before submission) has no office. It is in the
   auditor's timeline, not the supervisor's: the office was not responsible for it yet.
+- **Professional deposits (2 Nov 2026, [ADR-041](041-professional-accounts.md))** keep the title as their subject (`LAND_TITLE`); events
+  about a professional account take none.

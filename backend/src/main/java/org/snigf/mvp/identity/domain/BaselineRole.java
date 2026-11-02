@@ -17,6 +17,10 @@ import static org.snigf.mvp.shared.security.Permission.ADMIN_GRANT_READ;
 import static org.snigf.mvp.shared.security.Permission.ADMIN_GRANT_REQUEST;
 import static org.snigf.mvp.shared.security.Permission.ADMIN_GRANT_REVOKE;
 import static org.snigf.mvp.shared.security.Permission.ADMIN_MFA_RESET;
+import static org.snigf.mvp.shared.security.Permission.ADMIN_PROFESSIONAL_APPROVE;
+import static org.snigf.mvp.shared.security.Permission.ADMIN_PROFESSIONAL_READ;
+import static org.snigf.mvp.shared.security.Permission.ADMIN_PROFESSIONAL_SUSPEND;
+import static org.snigf.mvp.shared.security.Permission.ADMIN_PROFESSIONAL_VERIFY;
 import static org.snigf.mvp.shared.security.Permission.ADMIN_ROLE_APPROVE;
 import static org.snigf.mvp.shared.security.Permission.ADMIN_ROLE_ASSIGN;
 import static org.snigf.mvp.shared.security.Permission.ADMIN_ROLE_DEFINE;
@@ -47,6 +51,10 @@ import static org.snigf.mvp.shared.security.Permission.DOCUMENT_INCIDENT_REVIEW;
 import static org.snigf.mvp.shared.security.Permission.DOCUMENT_ISSUED_MANAGE;
 import static org.snigf.mvp.shared.security.Permission.REPORT_WORKLOAD;
 import static org.snigf.mvp.shared.security.Permission.REGISTER_CONFIRM;
+import static org.snigf.mvp.shared.security.Permission.REGISTER_DEPOSIT_DOCUMENT;
+import static org.snigf.mvp.shared.security.Permission.REGISTER_DEPOSIT_READ;
+import static org.snigf.mvp.shared.security.Permission.REGISTER_DEPOSIT_SUBMIT;
+import static org.snigf.mvp.shared.security.Permission.REGISTER_DEPOSIT_WITHDRAW;
 import static org.snigf.mvp.shared.security.Permission.REGISTER_INSCRIBE;
 import static org.snigf.mvp.shared.security.Permission.REGISTER_PROPOSE;
 import static org.snigf.mvp.shared.security.Permission.REGISTER_READ;
@@ -92,12 +100,19 @@ public enum BaselineRole {
     CONSERVATOR("Conservateur (démonstration)", "Conservator (demonstration)", entries(
             PARCEL_READ, Scope.ANY, REGISTER_READ, Scope.OFFICE, REGISTER_PROPOSE, Scope.OFFICE, REGISTER_INSCRIBE, Scope.OFFICE,
             REGISTER_CONFIRM, Scope.OFFICE, REGISTER_TRANSACTION_DECIDE, Scope.OFFICE)),
+    /** A notary's account once approved (ADR-041): computed from the profile and its offices, never assigned. */
+    NOTARY("Notaire (démonstration)", "Notary (demonstration)", entries(
+            REGISTER_DEPOSIT_SUBMIT, Scope.OFFICE, REGISTER_DEPOSIT_READ, Scope.OWN, REGISTER_DEPOSIT_DOCUMENT, Scope.OWN,
+            REGISTER_DEPOSIT_WITHDRAW, Scope.OWN)),
+    /** A sworn surveyor's account (ADR-041, D12): verified now, no operational permission until slice 4. */
+    SWORN_SURVEYOR("Géomètre assermenté (démonstration)", "Sworn surveyor (demonstration)", entries()),
     SYSTEM_ADMIN("Administrateur du système", "System administrator", entries(
             ADMIN_ACCOUNT_LIST, Scope.ANY, ADMIN_ROLE_ASSIGN, Scope.ANY, ADMIN_ASSIGNMENT_READ, Scope.ANY,
             ADMIN_ASSIGNMENT_APPROVE, Scope.ANY, ADMIN_ROLE_REVOKE, Scope.ANY,
             ADMIN_MFA_RESET, Scope.ANY, ADMIN_ROLE_READ, Scope.ANY, ADMIN_ROLE_DEFINE, Scope.ANY,
             ADMIN_ROLE_APPROVE, Scope.ANY, ADMIN_GRANT_READ, Scope.ANY, ADMIN_GRANT_REQUEST, Scope.ANY,
-            ADMIN_GRANT_APPROVE, Scope.ANY, ADMIN_GRANT_REVOKE, Scope.ANY));
+            ADMIN_GRANT_APPROVE, Scope.ANY, ADMIN_GRANT_REVOKE, Scope.ANY, ADMIN_PROFESSIONAL_READ, Scope.ANY,
+            ADMIN_PROFESSIONAL_VERIFY, Scope.ANY, ADMIN_PROFESSIONAL_APPROVE, Scope.ANY, ADMIN_PROFESSIONAL_SUSPEND, Scope.ANY));
 
     private final String nameFr;
     private final String nameEn;
@@ -119,6 +134,16 @@ public enum BaselineRole {
 
     public Map<Permission, Scope> permissions() {
         return permissions;
+    }
+
+    /** A role of professional accounts only, computed and never assigned (ADR-041). */
+    public boolean professional() {
+        return this == NOTARY || this == SWORN_SURVEYOR;
+    }
+
+    /** May be granted at an office by an assignment: neither the applicant's role nor a professional one. */
+    public boolean assignable() {
+        return this != APPLICANT && !professional();
     }
 
     private static Map<Permission, Scope> entries(Object... pairs) {

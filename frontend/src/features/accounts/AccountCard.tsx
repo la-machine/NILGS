@@ -60,7 +60,7 @@ export function AccountCard({ ctx, account, roles, canReset, act }: {
         <div className="account-identity">
           <h3>{account.displayName} <small>{account.email}</small></h3>
           <p className="tags">
-            <Badge>{account.accountType === 'STAFF' ? texts.account.staff : texts.account.applicant}</Badge>
+            <Badge>{texts.account.types[account.accountType]}</Badge>
             {account.secondFactorReady
               ? <Badge tone="success" icon="key">{texts.enrolled}</Badge>
               : <Badge tone="warning" icon="alert">{texts.notEnrolled}</Badge>}

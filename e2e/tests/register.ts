@@ -16,7 +16,7 @@ export interface RegisterPeople {
 }
 
 /** A minimal synthetic PDF, recognised from its bytes. */
-const PDF = Buffer.from([
+export const PDF = Buffer.from([
   '%PDF-1.4', '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj', '2 0 obj << /Type /Pages /Kids [] /Count 0 >> endobj',
   'trailer << /Root 1 0 R >>', '%%EOF', '',
 ].join('\n'))
@@ -28,10 +28,14 @@ async function choose(scope: Locator, label: string, option: string) {
   await scope.getByLabel(label).selectOption({ label: option })
 }
 
-export function registerJourneys(people: () => RegisterPeople, parcelReference: () => string) {
+/** The journey's title, for the professional journey that follows (tests/professionals.ts). */
+export interface JourneyTitle { href: string; number: string; version: number }
+
+export function registerJourneys(people: () => RegisterPeople, parcelReference: () => string): () => JourneyTitle {
   let first: Person
   let second: Person
   let titleHref = ''
+  let titleNumber = ''
 
   const openTitle = async (who: Person) => {
     await who.page.goto(titleHref)
@@ -74,6 +78,7 @@ export function registerJourneys(people: () => RegisterPeople, parcelReference: 
     await row.getByRole('link').click()
     await expect(first.page.locator('[data-title-page]')).toHaveAttribute('data-version', '1')
     titleHref = first.page.url()
+    titleNumber = (await first.page.locator('[data-title-page]').getAttribute('data-title-page')) ?? ''
   })
 
   test('a second deposit is recorded as a conflict and blocks the transfer', async () => {
@@ -185,4 +190,6 @@ export function registerJourneys(people: () => RegisterPeople, parcelReference: 
     await main.getByRole('button', { name: 'Verify again' }).click()
     await expect(main.locator('[data-verification="intact"]')).toContainText('3 inscriptions, 4 signatures and 3 derived versions checked')
   })
+
+  return () => ({ href: titleHref, number: titleNumber, version: 3 })
 }

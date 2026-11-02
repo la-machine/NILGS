@@ -68,6 +68,9 @@ public record RoleDefinition(String code, String nameFr, String nameEn, String d
             Optional<Permission> permission = Permission.ofCode(entry.getKey());
             if (permission.isEmpty()) {
                 problems.add("PERMISSION_UNKNOWN");
+            } else if (permission.get().professional()) {
+                // Held only by approved professional accounts (ADR-041); the database refuses it too (V25).
+                problems.add("PERMISSION_PROFESSIONAL_ONLY");
             } else if (entry.getValue() == null || !permission.get().scopes().contains(entry.getValue())) {
                 problems.add("SCOPE_NOT_ALLOWED");
             } else {

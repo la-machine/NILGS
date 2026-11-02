@@ -19,6 +19,7 @@
 | Backend from the IDE | see [README "Develop"](../../README.md#develop) |
 | Real satellite imagery for the whole country (Sentinel-2 mosaic and aerial details) | `bash infra/scripts/maps-build-satellite.sh` (resumable; [step-by-step guide](../guides/satellite-imagery.md)) |
 | Demonstration accounts, one per role, with passwords (development only) | `bash infra/scripts/dev-seed-demo.sh`, then read `infra/secrets/demo_accounts` ([guide](../guides/demo-accounts.md)) |
+| A DEMO notary and a DEMO sworn surveyor at YDE1 (development only) | `bash infra/scripts/dev-seed-professionals.sh`; run it again once the notary has registered two keys, to approve them ([guide](../guides/demo-accounts.md#professional-accounts)) |
 | Make a registered account staff (development only; also bootstraps the first `SYSTEM_ADMIN` and `AUDITOR`) | `bash infra/scripts/dev-make-staff.sh <email> [ROLE]` |
 | Reset a lost second factor | [account recovery procedure](#account-recovery-procedure): an administrator who is not the person requests it; the person's supervisor checks the identity out of band and confirms in the application |
 
@@ -192,6 +193,14 @@ setting to fix.
 | 409 `TRANSACTION_CLOSED` on a deposit's document | the deposit is registered, withdrawn or refused | expected: it keeps its documents and takes no more |
 | Title verification reports "the row differs from what was signed" | a register row was changed in the database, past the guards | treat as an incident ([audit incident procedure](../audit.md)) |
 | App refuses to start: `snigf.register.lock-review-after must be positive` | `SNIGF_REGISTER_LOCK_REVIEW_AFTER` is zero or negative | set an ISO-8601 duration such as `P30D` |
+| 403 `FOUR_EYES` on a professional account request | the administrator who requested it, or verified the account, tried to decide it | another administrator decides ([professional accounts guide](../guides/professional-accounts.md)) |
+| 409 `SECURITY_KEYS_REQUIRED` on an activation | the professional has fewer than two registered security keys | they sign in and register two keys; then approve again |
+| 409 `INVALID_STATUS`, `REQUEST_ALREADY_OPEN` or `REQUEST_EXPIRED` on a professional account | the status does not allow it (verify a `REQUESTED` account, suspend an `ACTIVE` one), another request is waiting, or it is older than `SNIGF_ADMIN_REQUEST_TTL` (an expired activation sends the account back to `REQUESTED`) | decide the open request first; verify again after an expiry |
+| 422 `VERIFICATION_INCOMPLETE` or `OFFICES_INVALID` | a body or reference under 2 characters, a note under 10, a check date in the future; no office, or an unknown, repeated or already held one | complete the form |
+| 404 `TITLE_NOT_FOUND` on a notary's lookup | an unknown number, a title at an office they do not serve, or an account not active: deliberately the same answer | check the number, and the account's status and offices on `#/professional` |
+| 422 `DEED_REQUIRED` or `DEPOSITOR_INVALID`, 409 `DUPLICATE_DEPOSIT`, 403 `ACTOR_HAS_INTEREST` on a professional deposit | no file in the `DEED` category; a client's name or identity number without `DEMO`; the same deed on the same title while their earlier deposit is open; a title the notary holds an interest in | nothing was recorded and nothing locked: correct it and deposit again; a duplicate is already deposited; another notary or the counter deposits |
+| A notary's deposit reads "open" while the conservator sees it in conflict | by design: a professional never learns that the title is held (ADR-041 §6) | expected |
+| `dev-seed-professionals.sh` leaves the notary verified | an activation needs two keys, and the script holds none | sign in as `notary.yde@demo.invalid`, register two keys, run the script again |
 | An exception on `#/payments` | a provider report matched no pending request of the same amount (`AMOUNT_MISMATCH`, `UNMATCHED_REFERENCE`, `AFTER_EXPIRY`, `ALREADY_SETTLED`) | expected for those DEMO scenarios; the finance officer resolves it (simulated refund or nothing to do), which never pays a request |
 
 ### Audit trail

@@ -55,6 +55,26 @@ It also covers a deposit's documents: the checks of ADR-033, replacement with th
 deposit's lifecycle, a signature failing when a document is added during it, the orphan cleanup keeping
 their files, a changed file never served, and access by office.
 
+Professional accounts (ADR-041, [guide](../guides/professional-accounts.md)):
+
+- **pgTAP:**
+  - `24`: the account type and profile, and every staff function false for a professional;
+  - `25`: every lifecycle transition and its four-eyes rule, two keys before an activation, expiry;
+  - `26`: every forbidden permission and special grant refused for a professional;
+  - `27`: deposits under the V21 rules, no lock from a refused deposit, the holder rule and offices.
+- **`db-test.sh`:** conservators and a notary's account race deposits on one title, leaving exactly
+  one holding.
+- **Integration tests:**
+  - `ProfessionalSignInIT`: two keys like staff, and applicants still password-only;
+  - `ProfessionalLifecycleIT`: the transitions and refusals, and the evidence audited;
+  - `ProfessionalPermissionsIT`: the computed roles, and a suspension effective at the next request;
+  - `ProfessionalDepositIT`: the lookup and its throttling, valid and refused deposits, retries and
+    duplicates, isolation, withdrawal.
+- **`PermissionMatrixIT`:** the professionals are refused on every staff endpoint, and the notary
+  reaches exactly its own.
+- **Browser:** `professionals.test.tsx` (Vitest), and the acceptance journey in
+  `e2e/tests/professionals.ts`.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs on every push and pull request, with the same scripts and

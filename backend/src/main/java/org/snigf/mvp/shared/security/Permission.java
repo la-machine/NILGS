@@ -29,6 +29,11 @@ public enum Permission {
     ADMIN_GRANT_REQUEST("admin.grant.request", Family.ADMINISTRATION, false, "Request a special grant for a user", "Demander une autorisation spéciale pour un utilisateur"),
     ADMIN_GRANT_APPROVE("admin.grant.approve", Family.ADMINISTRATION, false, "Approve or reject special grant requests", "Approuver ou rejeter les autorisations spéciales"),
     ADMIN_GRANT_REVOKE("admin.grant.revoke", Family.ADMINISTRATION, false, "Revoke a special grant", "Révoquer une autorisation spéciale"),
+    /** Professional accounts (ADR-041): read, verify, approve (never the verifier), suspend or request a change. */
+    ADMIN_PROFESSIONAL_READ("admin.professional.read", Family.ADMINISTRATION, false, "Read professional accounts, their requests and history", "Consulter les comptes professionnels, leurs demandes et leur historique"),
+    ADMIN_PROFESSIONAL_VERIFY("admin.professional.verify", Family.ADMINISTRATION, false, "Verify a professional's credential and propose their offices", "Vérifier la qualité d'un professionnel et proposer ses bureaux"),
+    ADMIN_PROFESSIONAL_APPROVE("admin.professional.approve", Family.ADMINISTRATION, false, "Approve or reject a professional account request", "Approuver ou rejeter une demande sur un compte professionnel"),
+    ADMIN_PROFESSIONAL_SUSPEND("admin.professional.suspend", Family.ADMINISTRATION, false, "Suspend a professional account, or request its reinstatement, revocation or office change", "Suspendre un compte professionnel, ou demander sa réintégration, sa révocation ou un changement de bureaux"),
 
     // --- Audit ---------------------------------------------------------------------------
     AUDIT_EVENT_SEARCH("audit.event.search", Family.AUDIT, true, "Search audit events", "Rechercher dans la piste d’audit", Scope.ANY, Scope.OFFICE),
@@ -64,6 +69,14 @@ public enum Permission {
     REGISTER_INSCRIBE("register.inscribe", Family.BUSINESS, false, "Register an inscription with a signature", "Inscrire au livre foncier avec une signature", Scope.OFFICE),
     REGISTER_CONFIRM("register.confirm", Family.BUSINESS, false, "Confirm another conservator's inscription (dual control)", "Confirmer l'inscription d'un autre conservateur (double contrôle)", Scope.OFFICE),
     REGISTER_TRANSACTION_DECIDE("register.transaction.decide", Family.BUSINESS, false, "Refuse a deposit or resolve a conflict", "Refuser un dépôt ou résoudre un conflit", Scope.OFFICE),
+    /**
+     * A notary's deposits (ADR-041): only an ACTIVE professional holds these, computed from their profile and
+     * approved offices; no staff role, custom role or special grant can carry them (V25).
+     */
+    REGISTER_DEPOSIT_SUBMIT("register.deposit.submit", Family.BUSINESS, false, "Look up a title and deposit a transaction on it, as a professional", "Rechercher un titre et y déposer une transaction, en tant que professionnel", Scope.OFFICE),
+    REGISTER_DEPOSIT_READ("register.deposit.read", Family.BUSINESS, false, "Read one's own deposits and their documents", "Consulter ses propres dépôts et leurs pièces", Scope.OWN),
+    REGISTER_DEPOSIT_DOCUMENT("register.deposit.document", Family.BUSINESS, false, "Add or replace documents on one's own open deposit", "Ajouter ou remplacer des pièces sur son propre dépôt ouvert", Scope.OWN),
+    REGISTER_DEPOSIT_WITHDRAW("register.deposit.withdraw", Family.BUSINESS, false, "Withdraw one's own deposit", "Retirer son propre dépôt", Scope.OWN),
     /** The supervisor's in-application confirmation of a second-factor reset (ADR-028); business, so supervisors keep their audit permissions. */
     IDENTITY_RESET_CONFIRM("identity.reset.confirm", Family.BUSINESS, false, "Confirm the identity of a person whose second factor is reset", "Confirmer l’identité d’une personne dont le deuxième facteur est réinitialisé", Scope.OFFICE);
 
@@ -98,6 +111,14 @@ public enum Permission {
         this.descriptionEn = descriptionEn;
         this.descriptionFr = descriptionFr;
         this.scopes = scopes.length == 0 ? EnumSet.of(Scope.ANY) : EnumSet.of(scopes[0], scopes);
+    }
+
+    /** Held only by professional accounts, through their profession's role (ADR-041); never by staff. */
+    public boolean professional() {
+        return switch (this) {
+            case REGISTER_DEPOSIT_SUBMIT, REGISTER_DEPOSIT_READ, REGISTER_DEPOSIT_DOCUMENT, REGISTER_DEPOSIT_WITHDRAW -> true;
+            default -> false;
+        };
     }
 
     /** The authority for this permission held everywhere. */

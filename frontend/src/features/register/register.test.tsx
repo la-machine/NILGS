@@ -105,6 +105,28 @@ describe('a title', () => {
     expect(screen.getByText('Corrected by no. 2')).toBeTruthy()
   })
 
+  it('shows how each deposit arrived: the notary\'s account and capacity, or the officer at the counter', async () => {
+    const deposit = {
+      id: 'x1', titleId: 't1', titleNumber: view.title.number, officeCode: 'DEMO1', kind: 'SALE', depositorName: 'DEMO Client', submittedByName: 'DEMO Notary',
+      evidenceReferences: [], status: 'HOLDING', depositedAt: '2026-11-01T10:00:00Z', reviewDueAt: '2026-12-01T10:00:00Z', overdue: false, closedReason: null,
+    }
+    vi.spyOn(registerApi, 'title').mockResolvedValue({ ...view, transactions: [
+      { ...deposit, channel: 'PROFESSIONAL_ACCOUNT', receivedByName: null, submittedByAccount: 'n1', submittedByAccountName: 'DEMO Notary', capacity: 'NOTARY' },
+      { ...deposit, id: 'x2', status: 'IN_CONFLICT', channel: 'COUNTER', receivedByName: 'Officer', submittedByAccount: null, submittedByAccountName: null, capacity: null },
+    ] })
+    vi.spyOn(registerApi, 'parties').mockResolvedValue([])
+    vi.spyOn(registerApi, 'documents').mockResolvedValue([])
+    page()
+    const professional = await waitFor(() => { const e = document.querySelector('[data-transaction="x1"]'); if (!e) throw new Error('x1'); return e as HTMLElement })
+    expect(professional.querySelector('[data-channel]')?.textContent).toBe('Professional account')
+    expect(professional.querySelector('[data-deposited-by]')?.textContent).toBe('DEMO Notary (notary)')
+    expect(professional.textContent).not.toContain('Received by')
+    const counter = document.querySelector('[data-transaction="x2"]') as HTMLElement
+    expect(counter.querySelector('[data-channel]')?.textContent).toBe('At the counter')
+    expect(counter.textContent).toContain('Received by')
+    expect(counter.querySelector('[data-deposited-by]')).toBeNull()
+  })
+
   it('labels the extract as not a certificate and offers no download or print', async () => {
     vi.spyOn(registerApi, 'title').mockResolvedValue(view)
     vi.spyOn(registerApi, 'parties').mockResolvedValue([])

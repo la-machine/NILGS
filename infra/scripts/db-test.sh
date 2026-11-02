@@ -63,18 +63,21 @@ if [[ "$VERIFIED" != "t" || "$CHECKED" != "$COUNT" || "$COUNT" != "$MAXPOS" || "
 fi
 echo "PASS: chain contiguous and valid under concurrency"
 
-echo "== Concurrent deposits on one title (8 clients x 25 deposits)"
+echo "== Concurrent deposits on one title, conservators and a notary's account (8 clients x 25 deposits)"
 psql_super -d "$DB" -f "$TESTS/bench/register_deposit_setup.sql" >/dev/null
 PGPASSWORD="$APP_PW" pgbench -n -h 127.0.0.1 -U snigf_app -c 8 -j 4 -t 25 \
-  -f "$TESTS/bench/register_deposit.pgbench" "$DB" > /dev/null
+  -f "$TESTS/bench/register_deposit.pgbench@1" -f "$TESTS/bench/register_deposit_professional.pgbench@1" "$DB" > /dev/null
 RESULT="$(psql_super -tA -d "$DB" -c \
   "SELECT count(*) FILTER (WHERE status = 'HOLDING'), count(*) FILTER (WHERE status = 'IN_CONFLICT'),
-          (SELECT count(*) FROM snigf.transaction_conflict)
+          (SELECT count(*) FROM snigf.transaction_conflict),
+          count(*) FILTER (WHERE channel = 'PROFESSIONAL_ACCOUNT'),
+          count(*) FILTER (WHERE channel = 'PROFESSIONAL_ACCOUNT' AND NOT EXISTS (
+              SELECT 1 FROM snigf.deposit_document d WHERE d.transaction_id = pending_transaction.id AND d.category = 'DEED'))
      FROM snigf.pending_transaction")"
-IFS='|' read -r HOLDING IN_CONFLICT CONFLICTS <<< "$RESULT"
-echo "   holding=$HOLDING in_conflict=$IN_CONFLICT conflicts=$CONFLICTS"
-if [[ "$HOLDING" != "1" || "$IN_CONFLICT" != "199" || "$CONFLICTS" != "199" ]]; then
-  echo "FAIL: racing deposits must leave one holding and every other in conflict" >&2
+IFS='|' read -r HOLDING IN_CONFLICT CONFLICTS PROFESSIONAL NO_DEED <<< "$RESULT"
+echo "   holding=$HOLDING in_conflict=$IN_CONFLICT conflicts=$CONFLICTS professional=$PROFESSIONAL without_deed=$NO_DEED"
+if [[ "$HOLDING" != "1" || "$IN_CONFLICT" != "199" || "$CONFLICTS" != "199" || "$PROFESSIONAL" -lt 1 || "$NO_DEED" != "0" ]]; then
+  echo "FAIL: racing deposits must leave one holding and every other in conflict, each professional one with its deed" >&2
   exit 1
 fi
-echo "PASS: one holding transaction, every other deposit recorded in conflict"
+echo "PASS: one holding transaction, every other deposit recorded in conflict, each professional one with its deed"

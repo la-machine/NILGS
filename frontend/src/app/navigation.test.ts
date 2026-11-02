@@ -31,6 +31,16 @@ describe('navigation follows the session', () => {
       .toEqual(['dashboard', 'parcels', 'workload', 'confirmations', 'audit'])
   })
 
+  it('shows a professional their own page, whatever their status, and nothing of the staff', () => {
+    expect(visible(session([], { accountType: 'PROFESSIONAL' }))).toEqual(['dashboard', 'professional'])
+    const notary = ['register.deposit.submit@YDE1', 'register.deposit.read#own', 'register.deposit.document#own', 'register.deposit.withdraw#own']
+    expect(visible(session(notary, { accountType: 'PROFESSIONAL' }))).toEqual(['dashboard', 'professional'])
+  })
+
+  it('shows the administrators of professional accounts their page', () => {
+    expect(visible(session(['admin.professional.read', 'admin.professional.verify']))).toEqual(['dashboard', 'professionals'])
+  })
+
   it('opens the audit trail for a special grant on an audit action', () => {
     const grant = { id: 'g', permission: 'audit.key.read', officeCode: null, validUntil: null, usesLeft: 1 }
     expect(visible(session([], { specialGrants: [grant] }))).toEqual(['dashboard', 'audit'])

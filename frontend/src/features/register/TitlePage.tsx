@@ -189,9 +189,13 @@ function TransactionItem({ texts, lang, transaction: t, canPropose, canDecide, o
         {t.overdue && <Badge tone="warning" icon="clock">{k.overdue}</Badge>}
       </div>
       <dl className="properties">
+        <div><dt>{k.channel}</dt><dd data-channel={t.channel}>{(k.channels as Record<string, string>)[t.channel] ?? t.channel}</dd></div>
         <div><dt>{k.depositor}</dt><dd>{t.depositorName}</dd></div>
-        {t.submittedByName && <div><dt>{k.submittedBy}</dt><dd>{t.submittedByName}</dd></div>}
-        <div><dt>{k.receivedBy}</dt><dd>{t.receivedByName}</dd></div>
+        {t.submittedByAccountName && (
+          <div><dt>{k.depositedBy}</dt><dd data-deposited-by>{t.submittedByAccountName}{t.capacity ? ` (${(k.capacities as Record<string, string>)[t.capacity] ?? t.capacity})` : ''}</dd></div>
+        )}
+        {t.submittedByName && !t.submittedByAccountName && <div><dt>{k.submittedBy}</dt><dd>{t.submittedByName}</dd></div>}
+        {t.receivedByName && <div><dt>{k.receivedBy}</dt><dd>{t.receivedByName}</dd></div>}
         <div><dt>{k.reviewDue}</dt><dd className="num">{new Date(t.reviewDueAt).toLocaleDateString()}</dd></div>
         {t.closedReason && <div><dt>{k.reason}</dt><dd>{t.closedReason}</dd></div>}
       </dl>

@@ -74,11 +74,15 @@ public final class Register {
     public record NewDeposit(UUID titleId, String kind, UUID depositorPartyId, UUID submittedByPartyId, List<String> evidenceReferences) {
     }
 
-    /** {@code receivedByName} is the officer who authenticated the record; {@code submittedByName} a notary, never an actor. */
+    /**
+     * At the counter, {@code receivedByName} is the officer who authenticated the record and {@code submittedByName} a notary,
+     * never an actor. Through a professional account (ADR-041 §7) nobody received it: {@code submittedByAccount} is the
+     * professional who deposited, in {@code capacity}, and {@code submittedByName} their party.
+     */
     public record Transaction(UUID id, UUID titleId, String titleNumber, String officeCode, String kind, String channel, UUID depositorPartyId,
                               String depositorName, String submittedByName, UUID receivedBy, String receivedByName,
                               List<String> evidenceReferences, String status, Instant depositedAt, Instant reviewDueAt, boolean overdue,
-                              String closedReason) {
+                              String closedReason, UUID submittedByAccount, String submittedByAccountName, String capacity) {
     }
 
     public record Conflict(UUID id, UUID titleId, String titleNumber, String officeCode, UUID holdingId, String holdingDepositor,
@@ -119,5 +123,34 @@ public final class Register {
     }
 
     public record OverdueLock(UUID transactionId, UUID titleId, Instant dueAt) {
+    }
+
+    // --- The professional channel (ADR-041 §6 and §7) ------------------------------------------------------
+
+    /** All the restricted lookup tells: never holders, charges, restrictions, history or pending deposits. */
+    public record TitleLookup(UUID id, String number, String officeCode, boolean acceptsDeposit) {
+    }
+
+    /** The professional's client, recorded as a party of the office. */
+    public record NewDepositor(String kind, String fullName, String identityKind, String identityNumber) {
+    }
+
+    /** A file already kept through the checks of ADR-033, to record with the deposit. */
+    public record KeptDocument(String category, String storageKey, String sha256, long sizeBytes, String mediaType, String name) {
+    }
+
+    /** {@code conflictId}: the conflict the deposit opened, arriving on a held title; never shown to the professional. */
+    public record DepositOutcome(UUID transactionId, UUID conflictId) {
+    }
+
+    /** A professional's own deposit as they read it: an open one is {@code OPEN}, never HOLDING or IN_CONFLICT. */
+    public record ProfessionalDeposit(UUID id, UUID titleId, String titleNumber, String officeCode, String kind, String status, String depositorName,
+                                      String capacity, Instant depositedAt, Instant closedAt, String closedReason, long documents) {
+    }
+
+    /** A file of the professional's own deposit; who else uploaded is not theirs to see. */
+    public record ProfessionalDocument(UUID id, UUID transactionId, String category, String storageKey, String sha256, long sizeBytes,
+                                       String mediaType, String originalName, boolean uploadedBySelf, Instant uploadedAt, UUID replacesId,
+                                       String replaceReason, UUID replacedById) {
     }
 }

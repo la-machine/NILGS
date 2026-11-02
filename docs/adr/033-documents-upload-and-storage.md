@@ -142,3 +142,6 @@ This covers a crash between storing and committing, and a deleted draft.
 - **Backups (P-01)** must include `document-data` together with the database. A restore of one
   without the other leaves versions without files (refused at download) or files without
   versions (removed by the cleanup).
+- **Added 2 Nov 2026 ([ADR-041](041-professional-accounts.md)):** a professional's verification evidence and a notary's deposit files go
+  through `DocumentFiles`, with these same checks and this same storage. `document_storage_keys_known`
+  knows the evidence, so the orphan cleanup keeps it.

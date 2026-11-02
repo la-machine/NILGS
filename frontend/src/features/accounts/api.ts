@@ -9,7 +9,7 @@ export interface Account {
   id: string
   email: string
   displayName: string
-  accountType: 'APPLICANT' | 'STAFF'
+  accountType: 'APPLICANT' | 'STAFF' | 'PROFESSIONAL'
   enabled: boolean
   secondFactorReady: boolean
   locked: boolean

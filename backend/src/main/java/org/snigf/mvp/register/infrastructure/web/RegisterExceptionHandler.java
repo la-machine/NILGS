@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 /** Register refusals as problem details with a precise {@code code} (ADR-011). */
-@RestControllerAdvice(assignableTypes = RegisterController.class)
+@RestControllerAdvice(assignableTypes = {RegisterController.class, ProfessionalDepositController.class})
 class RegisterExceptionHandler {
 
     @ExceptionHandler(RegisterRefused.class)
@@ -28,6 +28,7 @@ class RegisterExceptionHandler {
             case UNAVAILABLE -> HttpStatus.SERVICE_UNAVAILABLE;
             case TOO_LARGE -> HttpStatus.CONTENT_TOO_LARGE;
             case BROKEN -> HttpStatus.INTERNAL_SERVER_ERROR;
+            case RATE_LIMITED -> HttpStatus.TOO_MANY_REQUESTS;
         };
         return ResponseEntity.status(status).body(body(status, e.code()));
     }

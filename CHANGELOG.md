@@ -9,6 +9,167 @@ Each entry names the decision record (ADR) and the guide (`docs/guides/`) that e
 
 ## [Unreleased]
 
+### Professional accounts, step 8: full verification (Slice 3)
+
+[ADR-041](docs/adr/041-professional-accounts.md), step 8 of 8. No code or schema change; every suite
+CI runs, run locally on a rebuilt stack (2 Nov 2026):
+
+- backend: 190 unit and 190 integration tests;
+- pgTAP: 27 files, 642 tests; the concurrent audit chain; 200 racing deposits of conservators and a
+  notary (one holding, 199 in conflict, each professional one with its deed);
+- frontend: lint, 122 unit tests, build;
+- security probe 38/38, segmentation probe 4/4;
+- end-to-end: 37 passed, 1 skipped (the design tour);
+- gitleaks: clean on the history and on the uncommitted changes.
+
+The results are in ADR-041 ("Verified in step 8") and the README. CI runs once the branch is pushed.
+
+### Professional accounts, step 7: documentation (Slice 3)
+
+[ADR-041](docs/adr/041-professional-accounts.md), step 7 of 8. Documentation only.
+
+- **ADR-041 is Accepted** (revision 3). It lists the questions left for review: whether a notary sees
+  a conflict, retention, a second person on document replacement, the directory's order, a dashboard
+  count.
+- **Amendments applied** as dated notes in ADR-016, 023, 024, 025, 026, 028, 033, 038 and 040.
+- **New guide:** [professional accounts](docs/guides/professional-accounts.md), indexed in the
+  guides' README.
+- **Manual:**
+  - chapter 2: the guide link;
+  - chapter 3: a control row and two known limits;
+  - chapter 5: the request limit and time to live;
+  - chapter 7: the professional tests;
+  - chapter 8: eight entries in the error catalogue.
+- **Guides and README:** the land register and demo accounts guides link the new one. The README gains
+  the Slice 3 row, the `professional` module and the seed scripts.
+
+### Professional accounts, step 6: DEMO seed (Slice 3)
+
+[ADR-041](docs/adr/041-professional-accounts.md), step 6 of 8. Development only; no change to the
+application or the schema.
+
+- `infra/scripts/dev-seed-professionals.sh` creates `notary.yde@demo.invalid` and
+  `sworn-surveyor.yde@demo.invalid` through the real workflow: the public request, then `admin1`
+  verifies and `admin2` approves, through the database functions the application calls.
+- The notary becomes active only after registering two security keys. The script holds none, so it
+  approves the activation on its next run. The surveyor is left verified, waiting for `admin2`.
+- It can run again safely, and leaves alone any status changed by hand. Passwords go in
+  `infra/secrets/demo_accounts`.
+- Docs: the [demo accounts guide](docs/guides/demo-accounts.md#professional-accounts), the
+  operations chapter, the configuration reference and the system overview.
+
+### Professional accounts, step 5: screens (Slice 3)
+
+[ADR-041](docs/adr/041-professional-accounts.md), step 5 of 8. Front end only; no migration, no new
+setting.
+
+- **Public request:** `#/professional-request`, linked from the sign-in screen, for notaries and
+  sworn surveyors.
+- **The professional's page** (`#/professional`): credential, status, offices and history for every
+  professional account; for an active notary, the restricted title lookup, the deposit in one request
+  with a deed, and their own deposits with documents and withdrawal.
+- **Administrators** (`#/professionals`): the queue for a second administrator, accounts by status,
+  verification with evidence, approval and rejection, suspension, and change requests.
+- **Conservators** see each deposit's channel, and the notary and capacity of a professional deposit.
+- **Checks:**
+  - Vitest `professionals.test.tsx`, plus cases in `register.test.tsx` and `navigation.test.ts`;
+  - the acceptance journey in `e2e/tests/professionals.ts`.
+
+### Professional accounts, step 4: title lookup and deposits (Slice 3)
+
+[ADR-041](docs/adr/041-professional-accounts.md), step 4 of 8. Migration V26. New setting
+`SNIGF_RATE_LOOKUP_PER_HOUR` (60): run `bash infra/scripts/dev-setup.sh` to add it to a local `.env`.
+
+- **Title lookup:** `GET /api/v1/professional/titles?number=` returns the title's id, number and office,
+  and whether it accepts a deposit, for an office the notary serves. Unknown and elsewhere get the same
+  404. Each lookup is audited (`REGISTER_TITLE_LOOKED_UP`) and throttled per account.
+- **Professional deposits:** `POST /api/v1/professional/deposits` takes the title, kind, client and
+  files in one request, a `DEED` required. Any refusal records nothing and locks nothing; a valid
+  deposit follows the V21 lock and conflict rules. It records the account and capacity, never a
+  receiving officer (`ck_transaction_channel`). Retries return the same deposit; the same deed again
+  on the same title is refused (`DUPLICATE_DEPOSIT`).
+- **Their own deposits only:** list, read, documents (add, replace, download) and withdrawal. Another
+  deposit's id answers 404, a conflicting one included. Open deposits read `OPEN`: the professional is
+  not told whether the title is held.
+- **Conservators** see professional deposits with their channel, account and capacity, and decide them
+  as counter deposits.
+- **Refactor:** the counter's document storing, refusal translation and idempotency moved to
+  `DepositDocuments` and `RegisterWrites`, shared by both channels, with unchanged behaviour.
+- **Checks:**
+  - pgTAP `27`;
+  - a mixed race of conservators and a notary in `db-test.sh`;
+  - `ProfessionalDepositIT`;
+  - the professional endpoints in `PermissionMatrixIT`.
+
+### Professional accounts, step 3: permissions (Slice 3)
+
+[ADR-041](docs/adr/041-professional-accounts.md), step 3 of 8. Migration V25.
+
+- **Four professional permissions:** `register.deposit.submit` (office), `.read`, `.document` and
+  `.withdraw` (own). No endpoint uses them yet; deposits come in step 4.
+- **NOTARY holds the four; SWORN_SURVEYOR holds none.** Both roles are computed from an `ACTIVE`
+  profile and its approved offices, never assigned, read on every request: a suspension or office
+  change applies at the next request.
+- **Nobody else can hold them:** no staff role, custom role, assignment, assignment request or special
+  grant. The database refuses each case, the superuser included for assignments.
+- **The professional's own function**, `holds_professional_at`. The staff functions are still not
+  widened.
+- **Checks:** pgTAP `26`, `ProfessionalPermissionsIT`, and active professionals refused on every staff
+  endpoint in `PermissionMatrixIT`.
+- **Fix (Slice 2):** the register's party list is newest first. It was alphabetical and limited to
+  `SNIGF_REGISTER_PAGE_SIZE`, so once an office had more parties, a party just added could be missing
+  from the holder and depositor pickers.
+
+### Professional accounts, step 2: the lifecycle (Slice 3)
+
+[ADR-041](docs/adr/041-professional-accounts.md), step 2 of 8. Migration V24; new module `professional`.
+
+- **Request:** a notary or sworn surveyor requests an account on a public, throttled endpoint
+  (`POST /api/v1/professional-requests`), with the same password rules as an applicant. The answer is
+  the same whether the address was new or not.
+- **Verify, then approve by another:** administrator A records how the credential was checked, adds
+  evidence (the checks of ADR-033) and proposes offices. Administrator B, never A, approves, and only
+  once the professional holds two security keys.
+- **One suspends; two reinstate, revoke or change offices.** One open request per professional;
+  requests expire after `SNIGF_ADMIN_REQUEST_TTL`.
+- **Enforced by the database:** every write is a `SECURITY DEFINER` function. Evidence is readable by
+  verifiers and approvers only, and every read of it is audited. Each event names the capacity.
+- **Lost keys:** a professional's keys are reset through a supervisor of one of their offices.
+- **New permissions** `admin.professional.read`, `verify`, `approve`, `suspend` (SYSTEM_ADMIN).
+- **Still none for professionals:** they hold no business permission until step 3.
+
+### Professional accounts, step 1: the account type and its second factor (Slice 3)
+
+[ADR-041](docs/adr/041-professional-accounts.md), step 1 of 8. Migration V23.
+
+- **A third account type, `PROFESSIONAL`,** and `professional_profile` (notary or sworn surveyor,
+  synthetic credential, status). An account never becomes or stops being professional after creation.
+- **Sign-in as staff:** password, then two WebAuthn keys; recovery codes and lockout. Only the
+  second-factor checks widened (`AccountType.requiresSecondFactor`). Applicants are unchanged.
+- **No right of any kind yet.** The staff permission functions were reviewed and left unchanged, so
+  each refuses a professional, even one given a staff role by the superuser (pgTAP `24`).
+  Professionals sign nothing in the register and receive no special grant.
+- **Not yet possible:** requesting an account, the lifecycle, offices and deposits (steps 2 to 4).
+  A professional's lost keys cannot be reset until step 2 gives them an office.
+
+### External professional accounts: decisions recorded (Slice 3, docs only)
+
+[ADR-041](docs/adr/041-professional-accounts.md), revision 2, accepted in principle by the project
+owner on 1 Nov 2026 (D11 to D16). **No code yet**; it is built step by step from here.
+
+- A `PROFESSIONAL` account type (notaries, sworn surveyors). Sign-in stays WebAuthn, as for staff:
+  no authenticator app, ADR-024 stands.
+- Verified by one administrator, approved by another. One administrator suspends; revocation,
+  reinstatement and office changes need two.
+- Professionals have their own permission function and offices. The staff functions are not widened,
+  so a professional fails every staff check.
+- Only a valid, attributable deposit with a deed locks a title; a refused one records nothing.
+  Duplicates are refused. Counter deposits remain.
+- Surveyors are verified now, with no operational permission. Title lookup reveals only that a number
+  exists at a served office and accepts a deposit.
+- **Limitation:** one person who is both applicant and professional holds two accounts for now. A
+  unified identity needs its own ADR. Every professional action records its capacity.
+
 ### Land register: DEMO titles, signed inscriptions, deposits and conflicts (Slice 2)
 
 Decision: [ADR-040](docs/adr/040-land-register.md), revision 4; what differs from the design is

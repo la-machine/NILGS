@@ -1,15 +1,31 @@
 -- SNIGF/NILGS - Copyright (c) 2026 FLYT.
 -- Author: Pythagore.
 -- Fixture of the concurrent-deposit test (infra/scripts/db-test.sh): one registered DEMO title at
--- a demo office, a conservator with a key, and a depositor. Runs on the throwaway test database.
+-- a demo office, a conservator with a key, a depositor, and an ACTIVE notary serving the office (ADR-041),
+-- as an approved activation leaves them. Runs on the throwaway test database.
 SET search_path = snigf, public;
 
 INSERT INTO office (id, code, name_fr, name_en) VALUES
     ('00000000-0000-0000-0000-00000000ba01', 'BENCH', 'Bureau de test', 'Bench office');
 INSERT INTO app_user (id, email, display_name, password_hash, account_type) VALUES
-    ('00000000-0000-0000-0000-00000000ba02', 'bench@demo.invalid', 'Bench Conservator', 'x', 'STAFF');
+    ('00000000-0000-0000-0000-00000000ba02', 'bench@demo.invalid', 'Bench Conservator', 'x', 'STAFF'),
+    ('00000000-0000-0000-0000-00000000ba05', 'bench-notary@demo.invalid', 'DEMO Bench Notary', 'x', 'PROFESSIONAL'),
+    ('00000000-0000-0000-0000-00000000ba06', 'bench-admin1@demo.invalid', 'Bench Admin One', 'x', 'STAFF'),
+    ('00000000-0000-0000-0000-00000000ba07', 'bench-admin2@demo.invalid', 'Bench Admin Two', 'x', 'STAFF');
 INSERT INTO role_assignment (id, user_id, role, office_id, grant_reason) VALUES
-    (gen_random_uuid(), '00000000-0000-0000-0000-00000000ba02', 'CONSERVATOR', '00000000-0000-0000-0000-00000000ba01', 'bench');
+    (gen_random_uuid(), '00000000-0000-0000-0000-00000000ba02', 'CONSERVATOR', '00000000-0000-0000-0000-00000000ba01', 'bench'),
+    (gen_random_uuid(), '00000000-0000-0000-0000-00000000ba06', 'SYSTEM_ADMIN', '00000000-0000-0000-0000-00000000ba01', 'bench');
+INSERT INTO professional_profile (user_id, profession, chamber, registration_number, jurisdiction, status) VALUES
+    ('00000000-0000-0000-0000-00000000ba05', 'NOTARY', 'DEMO Chamber', 'DEMO-N-BENCH', 'DEMO Yaounde', 'ACTIVE');
+WITH v AS (INSERT INTO professional_verification (user_id, verified_by, body, reference, checked_on, note)
+           VALUES ('00000000-0000-0000-0000-00000000ba05', '00000000-0000-0000-0000-00000000ba06', 'DEMO Chamber', 'DEMO-REF', current_date,
+                   'Checked with the DEMO chamber') RETURNING id),
+     r AS (INSERT INTO professional_request (user_id, kind, offices_add, reason, verification_id, requested_by, status, decided_by, decided_at)
+           SELECT '00000000-0000-0000-0000-00000000ba05', 'ACTIVATION', ARRAY['00000000-0000-0000-0000-00000000ba01']::uuid[],
+                  'Checked with the DEMO chamber', v.id, '00000000-0000-0000-0000-00000000ba06', 'APPROVED',
+                  '00000000-0000-0000-0000-00000000ba07', now() FROM v RETURNING id)
+INSERT INTO professional_office (user_id, office_id, added_by_request)
+SELECT '00000000-0000-0000-0000-00000000ba05', '00000000-0000-0000-0000-00000000ba01', r.id FROM r;
 INSERT INTO user_entities (id, name, display_name) VALUES ('hb', '00000000-0000-0000-0000-00000000ba02', 'Bench');
 INSERT INTO user_credentials (credential_id, user_entity_user_id, public_key, backup_eligible, backup_state, label) VALUES
     ('kb', 'hb', '\x0101', false, false, 'Bench key');

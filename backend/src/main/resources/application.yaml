@@ -131,11 +131,18 @@ snigf:
     target-pending-decision: ${SNIGF_REPORTING_TARGET_PENDING_DECISION}
     duration-window: ${SNIGF_REPORTING_DURATION_WINDOW}
     page-size: ${SNIGF_REPORTING_PAGE_SIZE}
-  # Documents issued by SNIGF and their verification (ADR-039). DEMO acknowledgment only.
+  # Professional accounts (ADR-041): public requests are throttled like registration.
+  professional:
+    request-ttl: ${SNIGF_ADMIN_REQUEST_TTL}
+    requests-per-hour: ${SNIGF_RATE_REGISTER_PER_HOUR}
+    max-tracked-clients: ${SNIGF_RATE_MAX_TRACKED_CLIENTS}
   register:
     lock-review-after: ${SNIGF_REGISTER_LOCK_REVIEW_AFTER}
     overdue-cron: ${SNIGF_REGISTER_OVERDUE_CRON}
     page-size: ${SNIGF_REGISTER_PAGE_SIZE}
+    lookups-per-hour: ${SNIGF_RATE_LOOKUP_PER_HOUR}
+    max-tracked-accounts: ${SNIGF_RATE_MAX_TRACKED_CLIENTS}
+  # Documents issued by SNIGF and their verification (ADR-039). DEMO acknowledgment only.
   issuance:
     verify-base-url: ${SNIGF_ISSUANCE_VERIFY_BASE_URL}
     max-upload-bytes: ${SNIGF_ISSUANCE_MAX_UPLOAD_BYTES}

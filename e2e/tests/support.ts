@@ -19,7 +19,8 @@ export const STATE_FILE = `/out/state-${RUN}.json`
 
 /** The accounts of a run; e2e.sh promotes the staff ones between the two phases. */
 export const PEOPLE = ['applicant', 'admin1', 'admin2', 'officer', 'auditor', 'supervisor', 'surveyor', 'intake', 'reviewer', 'decider'] as const
-export type Who = (typeof PEOPLE)[number]
+/** The notary of the run requests their account on the public form (tests/professionals.ts), not here. */
+export type Who = (typeof PEOPLE)[number] | 'notary'
 
 export const email = (who: Who) => `e2e-${RUN}-${who}@demo.invalid`
 export const displayName = (who: Who) => `Test ${who}`

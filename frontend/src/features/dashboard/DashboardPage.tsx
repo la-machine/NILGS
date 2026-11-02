@@ -44,7 +44,8 @@ export function DashboardPage({ ctx }: { ctx: PageContext }) {
   const createsParcels = canSomewhere(session, 'parcel.create')
   const readReach = reach(session, 'parcel.read')
   const parcelOffices = (readReach.everywhere ? homeOffices(session) : readReach.offices).slice(0, 2)
-  const staff = session.accountType === 'STAFF' && session.authLevel === 'FULL'
+  // Staff and professionals sign in with security keys (ADR-041 §5): both see how many they hold.
+  const staff = (session.accountType === 'STAFF' || session.accountType === 'PROFESSIONAL') && session.authLevel === 'FULL'
   const may = {
     assignments: can(session, 'admin.assignment.read'),
     roleChanges: can(session, 'admin.role.read'),
@@ -82,6 +83,9 @@ export function DashboardPage({ ctx }: { ctx: PageContext }) {
   if (canOwn(session, 'application.read')) {
     actions.push({ href: href(['applications']), icon: 'file', title: texts.nav.applications, text: d.actionApplications })
   }
+  if (session.accountType === 'PROFESSIONAL') {
+    actions.push({ href: href(['professional']), icon: 'userCheck', title: texts.nav.professional, text: d.actionProfessional })
+  }
   if (createsParcels) actions.push({ href: href(['parcels', 'new']), icon: 'plus', title: texts.newParcelTitle, text: d.actionCreate })
   if (readsParcels) actions.push({ href: href(['parcels']), icon: 'search', title: d.actionSearchTitle, text: d.actionSearch })
   if (canSomewhere(session, 'report.workload')) {
@@ -97,7 +101,7 @@ export function DashboardPage({ ctx }: { ctx: PageContext }) {
   return (
     <div className="page">
       <PageHeader title={fill(d.welcome, { name: session.displayName })} breadcrumbLabel={texts.shell.breadcrumb}
-        description={roles.length > 0 ? roles.join(' — ') : d.applicantIntro}
+        description={roles.length > 0 ? roles.join(' — ') : session.accountType === 'PROFESSIONAL' ? texts.account.types.PROFESSIONAL : d.applicantIntro}
         meta={<span className="meta-item"><Icon name="clock" size={14} />{today.toLocaleDateString(lang, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</span>} />
 
       {anyPending && pending && (

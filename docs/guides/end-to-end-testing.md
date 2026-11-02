@@ -5,6 +5,13 @@
 The land register's journeys are in `e2e/tests/register.ts`, with two conservators (`officer` and
 `surveyor` take that role as a second one, in `e2e.sh`).
 
+Professional accounts (ADR-041) are in `e2e/tests/professionals.ts`, after the register's journeys:
+a notary requests an account on the public form during the run (not registered or promoted by
+`e2e.sh`), enrols two keys, `admin1` verifies with the office, `admin2` approves (the verifier is
+refused, by the screen and by the API), the notary looks up the register journey's title and
+deposits a sale with a deed, `officer` sees the channel and the notary and registers the transfer,
+and the notary sees the deposit registered.
+
 ## What and why
 
 Unit, integration and database tests prove each layer. Only a real browser proves that the

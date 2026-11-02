@@ -33,7 +33,7 @@ Decisions: [ADR-040](../adr/040-land-register.md) and
 | Use cases and endpoints | `register`: `RegisterService`, `OverdueLocks`, `RegisterController` |
 | Screens | `frontend/src/features/register` (`#/register`, `#/register/titles/<id>`) |
 | A deposit's documents | `V22__deposit_documents.sql`; `document`: `DocumentFiles`, `DocumentFileService`; `frontend/src/features/register/DepositDocuments.tsx` |
-| Tests | pgTAP `23_land_register`, `bench/register_deposit*`, `OfficerSignatureIT`, `RegisterIT`, `InscriptionCanonicalTest`, `e2e/tests/register.ts` |
+| Tests | pgTAP `23_land_register`, `27_professional_deposits`, `bench/register_deposit*`, `OfficerSignatureIT`, `RegisterIT`, `ProfessionalDepositIT`, `InscriptionCanonicalTest`, `e2e/tests/register.ts` |
 | Synthetic data | `infra/scripts/dev-seed-register.sh` |
 
 ## How it works
@@ -87,7 +87,9 @@ Each lock has a `review_due_at`. The job records it once as `REGISTER_LOCK_OVERD
 review. **Nothing expires on its own.**
 
 At the counter, the conservator is the receiving officer and the notary only a named party, never
-an authenticated actor.
+an authenticated actor. A notary with an active professional account deposits through it instead: the
+deposit records the account and the capacity, and no receiving officer
+([professional accounts guide](professional-accounts.md)). Counter deposits remain.
 
 ## How to do it again
 
@@ -140,4 +142,5 @@ Not production-ready, by design:
 - Deposit documents are never removed: no retention period has been decided (ADR-040).
 - Uploads are not scanned for malware until the pilot (P-02), as for every document.
 - Signing ceremonies are kept in memory, so they assume one application instance.
-- Professional accounts, procedures, certificates and morcellement belong to later slices.
+- Procedures, certificates and morcellement belong to later slices. Professional accounts have
+  [their own guide](professional-accounts.md).

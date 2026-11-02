@@ -40,7 +40,9 @@ export interface Inscription {
 }
 export interface Transaction {
   id: string; titleId: string; titleNumber: string; officeCode: string; kind: string; channel: string; depositorName: string; submittedByName: string | null
-  receivedByName: string; evidenceReferences: string[]; status: string; depositedAt: string; reviewDueAt: string; overdue: boolean; closedReason: string | null
+  receivedByName: string | null; evidenceReferences: string[]; status: string; depositedAt: string; reviewDueAt: string; overdue: boolean; closedReason: string | null
+  // Through a professional account (ADR-041): who deposited and in which capacity; nobody received it.
+  submittedByAccount: string | null; submittedByAccountName: string | null; capacity: string | null
 }
 export interface Conflict {
   id: string; titleId: string; titleNumber: string; officeCode: string; holdingDepositor: string; holdingStatus: string; arrivingDepositor: string

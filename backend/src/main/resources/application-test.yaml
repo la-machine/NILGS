@@ -39,10 +39,16 @@ snigf:
     target-pending-decision: P5D
     duration-window: P90D
     page-size: 50
+  professional:
+    request-ttl: P7D
+    requests-per-hour: 1000
+    max-tracked-clients: 1000
   register:
     lock-review-after: P30D
     overdue-cron: "-"
     page-size: 50
+    lookups-per-hour: 30
+    max-tracked-accounts: 10000
   issuance:
     verify-base-url: https://localhost:47000
     max-upload-bytes: 2097152

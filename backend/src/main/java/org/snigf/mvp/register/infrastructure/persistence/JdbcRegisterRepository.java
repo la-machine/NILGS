@@ -51,13 +51,14 @@ class JdbcRegisterRepository implements RegisterRepository {
 
     private static final String TRANSACTION_COLUMNS = """
             SELECT tx.*, t.number AS title_number, o.code AS office_code, dp.full_name AS depositor_name, sp.full_name AS submitted_name,
-                   u.display_name AS received_name
+                   u.display_name AS received_name, pu.display_name AS account_name
               FROM pending_transaction tx
               JOIN land_title t ON t.id = tx.title_id
               JOIN office o ON o.id = tx.office_id
               JOIN register_party dp ON dp.id = tx.depositor_party_id
               LEFT JOIN register_party sp ON sp.id = tx.submitted_by_party_id
-              JOIN app_user u ON u.id = tx.received_by
+              LEFT JOIN app_user u ON u.id = tx.received_by
+              LEFT JOIN app_user pu ON pu.id = tx.submitted_by_account
             """;
 
     private static final String CONFLICT_COLUMNS = """
@@ -195,7 +196,7 @@ class JdbcRegisterRepository implements RegisterRepository {
     public List<Register.Party> parties(String officeCode, int limit, int offset) {
         return jdbc.sql("""
                         SELECT p.* FROM register_party p JOIN office o ON o.id = p.office_id
-                         WHERE o.code = :office ORDER BY p.full_name, p.id LIMIT :limit OFFSET :offset""")
+                         WHERE o.code = :office ORDER BY p.created_at DESC, p.id DESC LIMIT :limit OFFSET :offset""")
                 .param("office", officeCode).param("limit", limit).param("offset", offset)
                 .query((rs, n) -> new Register.Party(rs.getObject("id", UUID.class), rs.getString("kind"), rs.getString("full_name"),
                         rs.getString("identity_kind"), rs.getString("identity_number"), rs.getString("chamber"), rs.getString("registration_number"),
@@ -349,7 +350,8 @@ class JdbcRegisterRepository implements RegisterRepository {
                 rs.getString("office_code"), rs.getString("kind"), rs.getString("channel"), rs.getObject("depositor_party_id", UUID.class),
                 rs.getString("depositor_name"), rs.getString("submitted_name"), rs.getObject("received_by", UUID.class), rs.getString("received_name"),
                 texts(rs.getArray("evidence_references")), rs.getString("status"), instant(rs, "deposited_at"), due,
-                "HOLDING".equals(rs.getString("status")) && !due.isAfter(Instant.now()), rs.getString("closed_reason"));
+                "HOLDING".equals(rs.getString("status")) && !due.isAfter(Instant.now()), rs.getString("closed_reason"),
+                rs.getObject("submitted_by_account", UUID.class), rs.getString("account_name"), rs.getString("submitted_capacity"));
     }
 
     @Override
@@ -468,6 +470,64 @@ class JdbcRegisterRepository implements RegisterRepository {
     @Override
     public String officeCodeOf(String recordType, UUID id) {
         return jdbc.sql("SELECT register_office_code(:type, :id)").param("type", recordType).param("id", id).query(String.class).optional().orElse(null);
+    }
+
+    // --- The professional channel ---------------------------------------------------------------------
+
+    @Override
+    public Optional<Register.TitleLookup> lookupTitle(String number) {
+        return jdbc.sql("SELECT id, number, office_code, accepts_deposit FROM professional_title_lookup(:number)").param("number", number)
+                .query((rs, n) -> new Register.TitleLookup(rs.getObject("id", UUID.class), rs.getString("number"), rs.getString("office_code"),
+                        rs.getBoolean("accepts_deposit")))
+                .optional();
+    }
+
+    @Override
+    public Register.DepositOutcome depositAsProfessional(UUID titleId, String kind, Register.NewDepositor depositor, List<Register.KeptDocument> documents,
+                                                         Duration reviewAfter) {
+        Map<String, Object> party = new LinkedHashMap<>();
+        party.put("kind", depositor == null ? null : depositor.kind());
+        party.put("fullName", depositor == null ? null : depositor.fullName());
+        party.put("identityKind", depositor == null ? null : depositor.identityKind());
+        party.put("identityNumber", depositor == null ? null : depositor.identityNumber());
+        List<Map<String, Object>> files = documents.stream().map(d -> {
+            Map<String, Object> file = new LinkedHashMap<>();
+            file.put("category", d.category());
+            file.put("storageKey", d.storageKey());
+            file.put("sha256", d.sha256());
+            file.put("sizeBytes", d.sizeBytes());
+            file.put("mediaType", d.mediaType());
+            file.put("name", d.name());
+            return file;
+        }).toList();
+        return jdbc.sql("""
+                        SELECT transaction_id, conflict_id
+                          FROM transaction_deposit_professional(:title, :kind, CAST(:depositor AS jsonb), CAST(:documents AS jsonb), CAST(:after AS interval))""")
+                .param("title", titleId).param("kind", kind).param("depositor", json.writeValueAsString(party))
+                .param("documents", json.writeValueAsString(files)).param("after", reviewAfter.toSeconds() + " seconds")
+                .query((rs, n) -> new Register.DepositOutcome(rs.getObject("transaction_id", UUID.class), rs.getObject("conflict_id", UUID.class)))
+                .single();
+    }
+
+    @Override
+    public List<Register.ProfessionalDeposit> professionalDeposits(UUID id, int limit, int offset) {
+        return jdbc.sql("SELECT * FROM professional_deposits(:id, :limit, :offset)")
+                .param("id", id).param("limit", limit).param("offset", offset)
+                .query((rs, n) -> new Register.ProfessionalDeposit(rs.getObject("id", UUID.class), rs.getObject("title_id", UUID.class),
+                        rs.getString("title_number"), rs.getString("office_code"), rs.getString("kind"), rs.getString("status"),
+                        rs.getString("depositor_name"), rs.getString("capacity"), instant(rs, "deposited_at"), instant(rs, "closed_at"),
+                        rs.getString("closed_reason"), rs.getLong("documents")))
+                .list();
+    }
+
+    @Override
+    public List<Register.ProfessionalDocument> professionalDocuments(UUID transactionId) {
+        return jdbc.sql("SELECT * FROM professional_deposit_documents(:transaction)").param("transaction", transactionId)
+                .query((rs, n) -> new Register.ProfessionalDocument(rs.getObject("id", UUID.class), rs.getObject("transaction_id", UUID.class),
+                        rs.getString("category"), rs.getString("storage_key"), rs.getString("sha256"), rs.getLong("size_bytes"),
+                        rs.getString("detected_type"), rs.getString("original_name"), rs.getBoolean("uploaded_by_self"), instant(rs, "uploaded_at"),
+                        rs.getObject("replaces_id", UUID.class), rs.getString("replace_reason"), rs.getObject("replaced_by", UUID.class)))
+                .list();
     }
 
     // --- Derived state, as the database wrote it ------------------------------------------------------

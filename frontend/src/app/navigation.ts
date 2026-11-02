@@ -9,7 +9,7 @@ import { accessTo, can, canAssigned, canOwn, canSomewhere } from '../shared/sess
 import type { Session } from '../shared/session/types'
 import type { IconName } from '../shared/ui/Icon'
 
-export type PlaceId = 'dashboard' | 'applications' | 'cases' | 'reviews' | 'register' | 'parcels' | 'alerts' | 'accounts' | 'roles' | 'grants' | 'workload' | 'payments' | 'issued-documents' | 'confirmations' | 'audit' | 'account'
+export type PlaceId = 'dashboard' | 'applications' | 'professional' | 'professionals' | 'cases' | 'reviews' | 'register' | 'parcels' | 'alerts' | 'accounts' | 'roles' | 'grants' | 'workload' | 'payments' | 'issued-documents' | 'confirmations' | 'audit' | 'account'
 
 export interface Place {
   id: PlaceId
@@ -31,6 +31,11 @@ export const GROUPS: PlaceGroup[] = [
       {
         id: 'applications', icon: 'file', label: (t) => t.nav.applications,
         visible: (s) => canOwn(s, 'application.read'),
+      },
+      {
+        // A professional sees their status from the first sign-in, before any permission (ADR-041).
+        id: 'professional', icon: 'userCheck', label: (t) => t.nav.professional,
+        visible: (s) => s.accountType === 'PROFESSIONAL',
       },
     ],
   },
@@ -59,6 +64,7 @@ export const GROUPS: PlaceGroup[] = [
       { id: 'accounts', icon: 'users', label: (t) => t.nav.accounts, visible: (s) => can(s, 'admin.account.list') },
       { id: 'roles', icon: 'shield', label: (t) => t.nav.roles, visible: (s) => can(s, 'admin.role.read') },
       { id: 'grants', icon: 'key', label: (t) => t.nav.grants, visible: (s) => can(s, 'admin.grant.read') },
+      { id: 'professionals', icon: 'userCheck', label: (t) => t.nav.professionals, visible: (s) => can(s, 'admin.professional.read') },
     ],
   },
   {

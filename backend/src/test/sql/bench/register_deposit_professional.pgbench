@@ -1,0 +1,17 @@
+-- SNIGF/NILGS - Copyright (c) 2026 FLYT.
+-- Author: Pythagore.
+-- One deposit on the bench title through the notary's account (ADR-041 s.7), racing the counter's: a new
+-- deed and storage key each time, so none is a duplicate. Exactly one deposit of all holds.
+BEGIN;
+-- The notary reads no register table (row-level security): the conservator names the title.
+SELECT set_config('snigf.actor_id', '00000000-0000-0000-0000-00000000ba02', true);
+SELECT set_config('bench.title', (SELECT CAST(id AS text) FROM snigf.land_title LIMIT 1), true);
+SELECT set_config('snigf.actor_id', '00000000-0000-0000-0000-00000000ba05', true);
+SELECT transaction_id FROM snigf.transaction_deposit_professional(
+    CAST(current_setting('bench.title') AS uuid), 'SALE',
+    jsonb_build_object('kind', 'NATURAL_PERSON', 'fullName', 'DEMO Bench Buyer', 'identityKind', 'NATIONAL_ID', 'identityNumber', 'DEMO-ID-BUYER'),
+    jsonb_build_array(jsonb_build_object('category', 'DEED', 'storageKey', replace(CAST(gen_random_uuid() AS text), '-', ''),
+                                         'sha256', encode(sha256(convert_to(CAST(gen_random_uuid() AS text), 'UTF8')), 'hex'),
+                                         'sizeBytes', 1000, 'mediaType', 'application/pdf', 'name', 'deed.pdf')),
+    interval '30 days');
+COMMIT;

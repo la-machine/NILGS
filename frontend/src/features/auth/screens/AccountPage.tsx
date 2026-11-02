@@ -20,7 +20,7 @@ import { webAuthnAvailable } from '../webauthn'
 
 export function AccountPage({ ctx, onAddKey }: { ctx: PageContext; onAddKey: (label: string) => Promise<void> }) {
   const { texts, session, notice } = ctx
-  const staff = session.accountType === 'STAFF' && session.authLevel === 'FULL'
+  const staff = session.accountType !== 'APPLICANT' && session.authLevel === 'FULL'
   const roleName = (code: string) => texts.roleNames[code as keyof Texts['roleNames']] ?? code
   return (
     <div className="page">
@@ -31,7 +31,7 @@ export function AccountPage({ ctx, onAddKey }: { ctx: PageContext; onAddKey: (la
         <Card title={texts.account.profile} icon="user">
           <dl className="properties">
             <div><dt>{texts.displayName}</dt><dd>{session.displayName}</dd></div>
-            <div><dt>{texts.account.accountType}</dt><dd>{session.accountType === 'STAFF' ? texts.account.staff : texts.account.applicant}</dd></div>
+            <div><dt>{texts.account.accountType}</dt><dd>{texts.account.types[session.accountType]}</dd></div>
             <div>
               <dt>{texts.level}</dt>
               <dd>

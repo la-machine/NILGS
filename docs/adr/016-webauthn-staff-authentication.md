@@ -37,3 +37,6 @@ land-title workflows.
   pilot plan.
 - Enables officer-signed recommendations and decisions (ADR-019).
 - Delivered in E-03.
+- **Amended (2 Nov 2026, [ADR-041](041-professional-accounts.md)):** professional accounts (notaries, sworn surveyors) authenticate
+  with WebAuthn under the same rules as staff: two keys, user verification, recovery codes, the
+  supervised reset. Officer signatures stay staff-only.

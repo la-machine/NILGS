@@ -14,8 +14,8 @@ same origin as the API, so the session cookie and the CSRF cookie work without C
 | Shared | `frontend/src/shared/` | nothing above it | HTTP client with CSRF, router, session types and access, texts FR/EN, the component library |
 | Styles | `frontend/src/styles/` | | tokens, base elements, layout, components |
 
-Features today: `dashboard`, `auth`, `accounts`, `roles`, `grants`, `recovery`, `audit`, `parcels`,
-`maps`, matching the identity, audit, parcel and maps modules of the back end
+Features today include `dashboard`, `auth`, `accounts`, `roles`, `grants`, `recovery`, `audit`, `parcels`,
+`maps`, `register` and `professionals`, matching the identity, audit, parcel and maps modules of the back end
 ([chapter 2](02-backend-architecture.md)).
 
 ## Shell, navigation and addresses
@@ -40,7 +40,10 @@ becomes a drawer.
 | `#/workload` | an office's workload: stages against their DEMO targets, counts per state, load per officer, stage durations, the queue of cases under way (`?office=`, `?state=`, `?overdue=1`) (ADR-036) | `report.workload` somewhere |
 | `#/payments` | DEMO payments, simulated (no real money moves): counts, the exceptions to reconcile and their resolution, resolved exceptions, the payment requests (`?view=open\|resolved\|requests`, `?status=`) (ADR-037) | `payment.reconcile` |
 | `#/issued-documents` | documents issued by SNIGF: look one up by number, revoke, cancel or re-issue it with a reason; the verification incidents to review, each resolved with a note (ADR-039) | `document.issued.manage` or `document.incident.review` |
-| `#/register`, `#/register/titles/<id>` | the **DEMO** land register: titles, proposals to sign with a security key, conflicts, overdue locks, a title's derived state and full history, counter deposits, re-verification, and an on-screen extract labelled as not a certificate (`features/register`, ADR-040) |
+| `#/register`, `#/register/titles/<id>` | the **DEMO** land register: titles, proposals to sign with a security key, conflicts, overdue locks, a title's derived state and full history, deposits with their channel (counter, or a notary's account with its capacity), re-verification, and an on-screen extract labelled as not a certificate (`features/register`, ADR-040, ADR-041) | `register.read` somewhere |
+| `#/professional`, `#/professional/deposits/<id>` | the professional's own account: credential, status and history; for an active notary, the restricted title lookup (number, office, whether it accepts a deposit), the deposit in one request with a deed, and their own deposits (an open one reads "open"), each with its documents and withdrawal (`features/professionals`, ADR-041) | `PROFESSIONAL` accounts, whatever their status; each block by its permission |
+| `#/professionals`, `#/professionals/<userId>` | professional accounts for administrators: requests waiting for a second administrator, accounts by status, one account's credential, verification with evidence, requests, suspension, changes for another to decide, history (ADR-041) | `admin.professional.read`; each control by its permission |
+| `#/professional-request` | **public, signed out**: a notary or sworn surveyor requests an account, also reached from the sign-in screen (ADR-041) | everyone signed out |
 | `#/verify`, `#/verify/<number>` | **public, no sign-in**: verify an SNIGF document by number (the record and its status) or by its PDF (the exact file); the address the QR code names (ADR-039) | everyone, signed in or not |
 | `#/confirmations` | identity confirmations | `identity.reset.confirm` somewhere |
 | `#/audit` | verification, checkpoints, keys, events (a supervisor's limited to their offices), the way to a timeline | an audit permission, by role or special grant |

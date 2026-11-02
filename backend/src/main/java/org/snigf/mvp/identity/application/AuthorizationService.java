@@ -44,7 +44,10 @@ public class AuthorizationService {
     }
 
     public AuthenticatedUser principal(UserAccount account, AuthLevel level, Instant authenticatedAt) {
-        Set<RoleGrant> grants = users.activeGrants(account.id());
+        // A professional's roles come from their ACTIVE profile and approved offices (V25), read on every request,
+        // so a suspension takes effect at the next one. They never come from role assignments.
+        Set<RoleGrant> grants = account.accountType() == AccountType.PROFESSIONAL
+                ? users.professionalGrants(account.id()) : users.activeGrants(account.id());
         Set<String> permissions = EffectivePermissions.authorities(grants, roles());
         List<SpecialGrant> special = account.accountType() == AccountType.STAFF
                 ? authorization.grantsInForce(account.id(), clock.instant()) : List.of();

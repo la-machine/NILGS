@@ -95,3 +95,6 @@ call spends a use (`frontend/src/shared/session/access.ts`).
 - A database refusal the service did not foresee is answered 409 `REFUSED_BY_DATABASE` and
   logged as a warning: it means a race or an attempt worth looking at.
 - The pilot needs at least two administrators, three when one may be a beneficiary.
+- **Extended (2 Nov 2026, [ADR-041](041-professional-accounts.md)):** four eyes also on a professional's activation (verified by one
+  administrator, approved by another), reinstatement, revocation and office changes, enforced by the
+  database (V24). Suspension takes one administrator: it is the fast, reversible stop.

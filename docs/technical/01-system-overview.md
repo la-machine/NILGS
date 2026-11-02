@@ -160,7 +160,8 @@ infra/
   proxy/                     Caddyfile and proxy image
   probe/                     security and segmentation probes
   maps/                      map tools image and the scripts it runs (ADR-029)
-  scripts/                   dev-setup.sh, dev-pki.sh, dev-make-staff.sh, dev-seed-demo.sh, db-test.sh,
+  scripts/                   dev-setup.sh, dev-pki.sh, dev-make-staff.sh, dev-seed-demo.sh,
+                             dev-seed-register.sh, dev-seed-professionals.sh, db-test.sh,
                              verify-checkpoint.sh, e2e.sh,
                              maps-build-geographic.sh, maps-build-satellite.sh, maps-import-imagery.sh,
                              maps-synthetic-imagery.sh

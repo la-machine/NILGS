@@ -97,6 +97,19 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
                     .contentType(JSON).content(DECISION)),
             new Endpoint("POST /admin/grants/{id}/revoke", Permission.ADMIN_GRANT_REVOKE, () -> post("/api/v1/admin/grants/" + SOMEONE + "/revoke")
                     .contentType(JSON).content(DECISION)),
+            new Endpoint("GET /admin/professionals", Permission.ADMIN_PROFESSIONAL_READ, () -> get("/api/v1/admin/professionals")),
+            new Endpoint("GET /admin/professionals/{unknown}", Permission.ADMIN_PROFESSIONAL_READ, () -> get("/api/v1/admin/professionals/" + SOMEONE)),
+            new Endpoint("GET /admin/professional-requests", Permission.ADMIN_PROFESSIONAL_READ, () -> get("/api/v1/admin/professional-requests")),
+            new Endpoint("POST /admin/professionals/{unknown}/verification", Permission.ADMIN_PROFESSIONAL_VERIFY, () -> post("/api/v1/admin/professionals/" + SOMEONE + "/verification")
+                    .contentType(JSON).content("{}")),
+            new Endpoint("POST /admin/professionals/{unknown}/suspension", Permission.ADMIN_PROFESSIONAL_SUSPEND, () -> post("/api/v1/admin/professionals/" + SOMEONE + "/suspension")
+                    .contentType(JSON).content("{}")),
+            new Endpoint("POST /admin/professionals/{unknown}/requests", Permission.ADMIN_PROFESSIONAL_SUSPEND, () -> post("/api/v1/admin/professionals/" + SOMEONE + "/requests")
+                    .contentType(JSON).content("{}")),
+            new Endpoint("POST /admin/professional-requests/{unknown}/approval", Permission.ADMIN_PROFESSIONAL_APPROVE, () -> post("/api/v1/admin/professional-requests/" + SOMEONE + "/approval")
+                    .contentType(JSON).content("{}")),
+            new Endpoint("POST /admin/professional-requests/{unknown}/rejection", Permission.ADMIN_PROFESSIONAL_APPROVE, () -> post("/api/v1/admin/professional-requests/" + SOMEONE + "/rejection")
+                    .contentType(JSON).content("{}")),
             new Endpoint("GET /parcels?office=DEMOIT", Permission.PARCEL_READ, () -> get("/api/v1/parcels").param("office", "DEMOIT"),
                     Reach.TEST_OFFICE),
             new Endpoint("POST /parcels", Permission.PARCEL_CREATE, () -> post("/api/v1/parcels").contentType(JSON)
@@ -195,6 +208,23 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
                     .content("{\"officeCode\":\"DEMOIT\"}"), Reach.TEST_OFFICE),
             new Endpoint("POST /register/inscriptions", Permission.REGISTER_PROPOSE, () -> post("/api/v1/register/inscriptions").contentType(JSON)
                     .content("{\"officeCode\":\"DEMOIT\",\"expectedVersion\":0}"), Reach.TEST_OFFICE),
+            // The professional channel (ADR-041 step 4). An unknown title has no office, so the deposit is refused for everyone.
+            new Endpoint("GET /professional/titles?number={unknown}", Permission.REGISTER_DEPOSIT_SUBMIT, () -> get("/api/v1/professional/titles")
+                    .param("number", "DEMO-TF-DEMOIT-999999-Z"), Reach.SOMEWHERE),
+            new Endpoint("POST /professional/deposits {unknown title}", Permission.REGISTER_DEPOSIT_SUBMIT, () -> multipart("/api/v1/professional/deposits")
+                    .file(new MockMultipartFile("files", "deed.pdf", "application/pdf", new byte[] {'%'})).param("categories", "DEED")
+                    .param("titleId", SOMEONE.toString()).param("kind", "SALE").param("depositorKind", "NATURAL_PERSON").param("depositorName", "DEMO Buyer")
+                    .param("depositorIdentityKind", "NATIONAL_ID").param("depositorIdentityNumber", "DEMO-ID-1")),
+            new Endpoint("GET /professional/deposits", Permission.REGISTER_DEPOSIT_READ, () -> get("/api/v1/professional/deposits"), Reach.OWN),
+            new Endpoint("GET /professional/deposits/{unknown}", Permission.REGISTER_DEPOSIT_READ, () -> get("/api/v1/professional/deposits/" + SOMEONE), Reach.OWN),
+            new Endpoint("POST /professional/deposits/{unknown}/withdrawal", Permission.REGISTER_DEPOSIT_WITHDRAW, () -> post("/api/v1/professional/deposits/"
+                    + SOMEONE + "/withdrawal").contentType(JSON).content(DECISION), Reach.OWN),
+            new Endpoint("GET /professional/deposits/{unknown}/documents", Permission.REGISTER_DEPOSIT_READ, () -> get("/api/v1/professional/deposits/"
+                    + SOMEONE + "/documents"), Reach.OWN),
+            new Endpoint("POST /professional/deposits/{unknown}/documents", Permission.REGISTER_DEPOSIT_DOCUMENT, () -> multipart("/api/v1/professional/deposits/"
+                    + SOMEONE + "/documents").file(new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[] {'%'})).param("category", "OTHER"), Reach.OWN),
+            new Endpoint("GET /professional/deposits/{unknown}/documents/{unknown}/content", Permission.REGISTER_DEPOSIT_READ, () -> get(
+                    "/api/v1/professional/deposits/" + SOMEONE + "/documents/" + SOMEONE + "/content"), Reach.OWN),
             new Endpoint("GET /issued-documents/{unknown}", Permission.DOCUMENT_ISSUED_MANAGE, () -> get(
                     "/api/v1/issued-documents/SNIGF-ZZZZZZZZZZZZZZZZZZZZZZZZZZ")),
             new Endpoint("POST /issued-documents/{unknown}/revocation", Permission.DOCUMENT_ISSUED_MANAGE, () -> post(
@@ -223,19 +253,13 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
     void everyStaffRoleGetsExactlyWhatTheMatrixGrantsIt() throws Exception {
         List<String> mismatches = new ArrayList<>();
         for (BaselineRole role : BaselineRole.values()) {
-            if (role == BaselineRole.APPLICANT) {
+            // Applicants: applicantsReachOnlyTheirOwnRecords. Professionals: activeProfessionalsReachOnlyWhatTheirProfessionGrants.
+            if (role == BaselineRole.APPLICANT || role.professional()) {
                 continue;
             }
             SignedIn user = signedIn(role.name());
             for (Endpoint endpoint : ENDPOINTS) {
-                Permission.Scope scope = role.permissions().get(endpoint.permission());
-                boolean expected = switch (endpoint.reach()) {
-                    case EVERYWHERE -> scope == Permission.Scope.ANY;
-                    case SOMEWHERE -> scope == Permission.Scope.ANY || scope == Permission.Scope.OFFICE;
-                    case TEST_OFFICE -> scope == Permission.Scope.ANY || scope == Permission.Scope.OFFICE;
-                    case OWN -> scope == Permission.Scope.OWN;
-                    case ASSIGNED -> scope == Permission.Scope.ASSIGNED;
-                };
+                boolean expected = expected(role, endpoint);
                 user.browser().csrf();
                 MockHttpServletResponse response = user.browser().send(endpoint.request().build());
                 boolean allowed = response.getStatus() != 403;
@@ -246,6 +270,38 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
             }
         }
         assertThat(mismatches).isEmpty();
+    }
+
+    private static boolean expected(BaselineRole role, Endpoint endpoint) {
+        Permission.Scope scope = role.permissions().get(endpoint.permission());
+        return switch (endpoint.reach()) {
+            case EVERYWHERE -> scope == Permission.Scope.ANY;
+            case SOMEWHERE -> scope == Permission.Scope.ANY || scope == Permission.Scope.OFFICE;
+            case TEST_OFFICE -> scope == Permission.Scope.ANY || scope == Permission.Scope.OFFICE;
+            case OWN -> scope == Permission.Scope.OWN;
+            case ASSIGNED -> scope == Permission.Scope.ASSIGNED;
+        };
+    }
+
+    /**
+     * ADR-041: an active notary or surveyor holds only professional permissions, so every staff endpoint
+     * refuses them, and of the professional endpoints a notary reaches exactly its own and a surveyor none.
+     */
+    @Test
+    void activeProfessionalsReachOnlyWhatTheirProfessionGrants() throws Exception {
+        List<String> mismatches = new ArrayList<>();
+        for (BaselineRole role : List.of(BaselineRole.NOTARY, BaselineRole.SWORN_SURVEYOR)) {
+            SignedIn professional = activeProfessional(role.name(), "DEMOIT");
+            for (Endpoint endpoint : ENDPOINTS) {
+                professional.browser().csrf();
+                int status = professional.browser().send(endpoint.request().build()).getStatus();
+                if ((status != 403) != expected(role, endpoint)) {
+                    mismatches.add(role + " " + endpoint.name() + ": expected " + (expected(role, endpoint) ? "allowed" : "403") + ", got " + status);
+                }
+            }
+        }
+        assertThat(mismatches).isEmpty();
+        assertThat(ENDPOINTS.stream().filter(e -> expected(BaselineRole.NOTARY, e)).count()).as("a notary reaches the professional endpoints only").isEqualTo(7);
     }
 
     @Test

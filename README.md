@@ -47,8 +47,9 @@ how-to guides in [`docs/guides/`](docs/guides/README.md), and every change in
 | E-18 — audit timeline (MVP-07) | A case or a parcel reconstructed from the audit trail alone: each event's subjects (the application, its documents and payments, the parcel, both parcels of an alert) with their office at the time, found by the database and hashed (canonical v2; v1 unchanged, no backfill); supervisors search events and read timelines of their offices only, filtered per row by the database; every event shown checked intact; the timeline screen in FR/EN, linked from cases and parcels (ADR-038, implementing ADR-027) | 309 backend tests (177 unit, 132 integration, including `TimelineIT`); 388 pgTAP tests + concurrent chain test; 82 frontend unit tests; security probe 35/35, segmentation probe 4/4; end-to-end 28/28 in Chromium; the live chain of 5,033 events (v1 and v2) verifies after V19 (29 Oct 2026) |
 | Slice 1 — documents issued by SNIGF (ADR-039) | **DEMO acknowledgment only, no legal value.** Issued once per submission (PDFBox template, random `SNIGF-` number, QR code); a registry whose manifest binds the exact PDF's SHA-256, signed by a dedicated OpenBao Ed25519 key; public verification by number (record and status, never the paper) or by file (only an identical file is authentic; altered and fabricated files open incidents; files from elsewhere are not accused), minimal answer, throttled; revoke, cancel, re-issue and the incident queue for the new DOCUMENT_OFFICER role; key rotation keeps every version | 324 backend tests (187 unit, 137 integration, including `IssuanceIT`); 420 pgTAP tests + concurrent chain test; 90 frontend unit tests; security probe 37/37, segmentation probe 4/4; end-to-end 29/29 in Chromium; gitleaks history scan clean (30 Oct 2026) |
 | Slice 2 — land register (ADR-040) | **DEMO only, no legal effect.** Append-only inscriptions with state derived by the database; officer WebAuthn signatures sealed by the `RECORD` key (ADR-019, first implementation); no direct writes for the application; dual control on closures, cancellations and corrections; one holding deposit per title, later deposits recorded in conflict; overdue locks reviewed, never expired; a deposit's documents kept with the checks of ADR-033, never changed or deleted, their hashes covered by a transfer's signature; an extract labelled as not a certificate | 356 backend tests (190 unit, 166 integration, including `OfficerSignatureIT` and `RegisterIT`); 507 pgTAP tests + concurrent chain test + 200 racing deposits (one holding, 199 in conflict); 103 frontend unit tests; security probe 38/38, segmentation probe 4/4; end-to-end 33 passed, 1 skipped (the design tour) in Chromium with virtual security keys; gitleaks history scan clean (31 Oct 2026) |
+| Slice 3 — professional accounts (ADR-041) | **Synthetic credentials only.** A `PROFESSIONAL` account type with WebAuthn, never staff; requested on a public form, verified by one administrator and approved by another (two security keys required), suspended by one, reinstated, revoked or moved between offices by two, enforced by the database; their own permission function and offices, never an administration, audit, decision, inscription, registration or signature right; notaries look up a title by number only and deposit valid, attributed deposits with a deed through their own account, under the register's lock and conflict rules; sworn surveyors verified, with no operational permission yet; a DEMO seed through the real workflow | 380 backend tests (190 unit, 190 integration, including `ProfessionalLifecycleIT`, `ProfessionalPermissionsIT`, `ProfessionalDepositIT`, `ProfessionalSignInIT` and `PermissionMatrixIT`); 642 pgTAP tests in 27 files + concurrent chain test + 200 racing deposits of conservators and a notary (one holding, 199 in conflict, each of the 99 professional ones with its deed); 122 frontend unit tests; security probe 38/38, segmentation probe 4/4; end-to-end 37 passed, 1 skipped (the design tour) in Chromium; gitleaks clean on the history and on the uncommitted changes (2 Nov 2026) |
 
-CI (`.github/workflows/ci.yml`) passed on `91954a7` (30 Oct 2026), secret scan included, after being red since 28 Oct (see the CHANGELOG). Slice 2's results above are local: it has not yet been through a GitHub Actions run.
+CI (`.github/workflows/ci.yml`) passed on `91954a7` (30 Oct 2026), secret scan included, after being red since 28 Oct (see the CHANGELOG). Slice 2's results above are local: it has not yet been through a GitHub Actions run. Slice 3's are local too, from a full run on a rebuilt stack; CI runs once it is pushed.
 
 ## Security model in one table
 
@@ -64,7 +65,7 @@ CI (`.github/workflows/ci.yml`) passed on `91954a7` (30 Oct 2026), secret scan i
 | Keys | In OpenBao only (Shamir seal, no stored root token); the app refuses to start if a key is missing, exportable or fails its self-test |
 | Audit trail | Append-only hash chain, recomputed in Java; daily Ed25519 checkpoints signed by OpenBao, stored in the database and on an app-only volume, verifiable offline with OpenSSL; a tampered chain is never signed |
 | Containers | Read-only root filesystem, all capabilities dropped, `no-new-privileges`, non-root, resource limits |
-| Accounts and sessions | Passwords: OpenBao pepper + Argon2id; identical answer for every login failure; lockout and throttling; sessions in PostgreSQL holding plain values only, `__Host-` Secure HttpOnly SameSite=Strict cookie, CSRF on every change; staff stop at the second factor |
+| Accounts and sessions | Passwords: OpenBao pepper + Argon2id; identical answer for every login failure; lockout and throttling; sessions in PostgreSQL holding plain values only, `__Host-` Secure HttpOnly SameSite=Strict cookie, CSRF on every change; staff and professionals stop at the second factor |
 | Configuration | Every value in `.env`; secrets only as files; the app refuses to start without complete transport security (except in automated tests) |
 
 ## Prerequisites
@@ -166,6 +167,7 @@ backend/                     Spring Boot application (one Maven module, ADR-001)
     shared/                  environment guard, correlation id, client-certificate filter, security baseline
     keys/                    KeyService: signing, envelope encryption, HMAC via OpenBao (ADR-018)
     identity/ parcel/ audit/ conflict/ application/ document/ review/ payment/ reporting/ issuance/ records/ register/
+    professional/
                              business modules (boundaries verified by ModularityTest); each one
                              is a published API + domain/ application/ infrastructure/
                              (ADR-021, verified by DddLayeringTest)
@@ -180,7 +182,8 @@ infra/
   payment-sim/               DEMO payment simulator (ADR-037): no real money moves; signs callbacks in OpenBao
   proxy/                     Caddyfile and web image
   probe/                     security and segmentation probes
-  scripts/                   dev-setup.sh, dev-pki.sh, db-test.sh, verify-checkpoint.sh (auditor)
+  scripts/                   dev-setup.sh, dev-pki.sh, db-test.sh, verify-checkpoint.sh (auditor),
+                             dev-seed-*.sh (development data only)
 docs/
   technical/                 technical manual (start here)
   adr/                       architecture decision records

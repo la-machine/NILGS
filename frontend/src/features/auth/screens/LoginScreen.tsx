@@ -9,8 +9,8 @@ import { Button } from '../../../shared/ui/Button'
 import { Field } from '../../../shared/ui/Field'
 import { Section } from '../../../shared/ui/Section'
 
-export function LoginScreen({ texts, busy, onSubmit, onRegister }: {
-  texts: Texts; busy: boolean; onSubmit: (email: string, password: string) => void; onRegister: () => void
+export function LoginScreen({ texts, busy, onSubmit, onRegister, onProfessional }: {
+  texts: Texts; busy: boolean; onSubmit: (email: string, password: string) => void; onRegister: () => void; onProfessional?: () => void
 }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -35,6 +35,12 @@ export function LoginScreen({ texts, busy, onSubmit, onRegister }: {
         <span>{texts.auth.applicantQuestion}</span>
         <button type="button" className="link-button" onClick={onRegister}>{texts.noAccount}</button>
       </div>
+      {onProfessional && (
+        <div className="auth-alt">
+          <span>{texts.professionals.question}</span>
+          <button type="button" className="link-button" onClick={onProfessional}>{texts.professionals.requestLink}</button>
+        </div>
+      )}
     </Section>
   )
 }

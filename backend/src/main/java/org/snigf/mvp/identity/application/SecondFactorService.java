@@ -14,7 +14,6 @@ import org.snigf.mvp.audit.AuditAction;
 import org.snigf.mvp.audit.AuditEvent;
 import org.snigf.mvp.audit.AuditOutcome;
 import org.snigf.mvp.audit.AuditRecorder;
-import org.snigf.mvp.identity.AccountType;
 import org.snigf.mvp.identity.AuthLevel;
 import org.snigf.mvp.identity.AuthenticatedUser;
 import org.snigf.mvp.identity.domain.LockoutPolicy;
@@ -151,8 +150,8 @@ public class SecondFactorService {
     }
 
     private static void fullStaff(AuthenticatedUser user) {
-        if (user.accountType() != AccountType.STAFF || !user.fullyAuthenticated()) {
-            throw new NotAllowed("key management needs a staff session with every factor proven");
+        if (!user.accountType().requiresSecondFactor() || !user.fullyAuthenticated()) {
+            throw new NotAllowed("key management needs a staff or professional session with every factor proven");
         }
     }
 
@@ -271,8 +270,8 @@ public class SecondFactorService {
     private UserAccount staffAccount(AuthenticatedUser user) {
         UserAccount account = users.findById(user.userId()).filter(UserAccount::enabled)
                 .orElseThrow(() -> new NotAllowed("account unavailable"));
-        if (account.accountType() != AccountType.STAFF) {
-            throw new NotAllowed("only staff accounts have a second factor");
+        if (!account.accountType().requiresSecondFactor()) {
+            throw new NotAllowed("only staff and professional accounts have a second factor");
         }
         return account;
     }

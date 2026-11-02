@@ -94,3 +94,7 @@ retirement or an exhausted grant takes effect on the next request, not at the ne
   scope *any*: a security defect, found while building the parcel endpoints, fixed before
   any endpoint relied on a relative scope.
 - Uses are counted per successful HTTP request, so an endpoint should perform one action.
+- **Amended (2 Nov 2026, [ADR-041](041-professional-accounts.md)):** a third account type, `PROFESSIONAL`. Four `register.deposit.*`
+  permissions carry the new `professional` flag and are held only by the computed roles NOTARY and
+  SWORN_SURVEYOR, which are never assigned (V25). Special grants stay staff-only, and none can carry a
+  professional permission: they are not delegable.

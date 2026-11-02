@@ -532,3 +532,13 @@ model before this plan is approved.
    interest in are refused by the functions, not only by the service, as in ADR-026 and
    ADR-035.
 5. **CI must be green first** (step 0). Met on 31 Oct 2026, before step 1.
+
+## Amended by ADR-041 (2 Nov 2026)
+
+- **Counter deposits remain**, beside the professional channel. §4.7 called them temporary "until
+  slice 3"; [ADR-041](041-professional-accounts.md) keeps them.
+- **§6 is implemented** by ADR-041. A deposit records its channel (V26): `received_by` for `COUNTER`;
+  the account, the capacity and the notary's party for `PROFESSIONAL_ACCOUNT`, tied by
+  `ck_transaction_channel`.
+- **The rules of §4 are unchanged** for a professional deposit: lock or conflict, overdue review,
+  conservators decide. A professional reads only their own deposits, and an open one as `OPEN`.

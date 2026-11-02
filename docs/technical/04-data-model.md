@@ -47,13 +47,17 @@ checksum. A change is a new migration.
 | `V20__document_issuance.sql` | ADR-039 (Slice 1), **DEMO acknowledgment only**: the permissions `document.issued.manage` and `document.incident.review` and the role DOCUMENT_OFFICER; `holds_everywhere()`; `issued_document` (the registry: a random `SNIGF-` number, type, template version, a unique operation key, the application and its reference, office, holder, issuance time within a minute of now, what was printed, SHA-256 of the exact PDF, manifest, signature and key version, `demo` forced true, status and its reason, who changed it, supersedes or superseded by; guard: issued VALID, what was issued never changes, a status leaves VALID once by a manage holder who is not the holder, a superseded document names its replacement, a re-issue replaces a valid document of the same subject and holder; never deleted); `issued_document_artifact` (the exact PDF, matching the registered SHA-256, append-only); `document_verification` (every public verification, append-only, readable by reviewers only); `verification_incident` (altered, fabricated or registry-integrity incidents, resolved once with a note by a reviewer who is not the holder); `issued_document_evidence()` (`SECURITY DEFINER`: the minimal record by number or by SHA-256, with the replacement's number); `audit_subjects()` replaced to map issued documents and incidents to their application; row-level security following the application |
 | `V21__land_register.sql` | ADR-040 (Slice 2), **DEMO only**: the permissions `register.*` and the role CONSERVATOR; the register's tables, append-only with guards; canonical encoding and state derivation; every write through a `SECURITY DEFINER` function (refusals are SQLSTATE `RG001`); `audit_subjects()` extended with `LAND_TITLE`; row-level security by conservation |
 | `V22__deposit_documents.sql` | ADR-040 §4.7: `deposit_document` and its function, append-only; a `TRANSFER`'s canonical bytes name its deposit's documents; `document_storage_keys_known` and `audit_subjects()` extended |
+| `V23__professional_accounts.sql` | ADR-041 step 1: the `PROFESSIONAL` account type and `professional_profile` (profession, synthetic credential, status). An account never becomes or stops being professional; the application cannot write a profile yet; the staff permission functions are unchanged, so they refuse a professional |
+| `V24__professional_lifecycle.sql` | ADR-041 step 2: the `admin.professional.*` permissions (SYSTEM_ADMIN); verification and its evidence, requests decided by a second administrator, offices, history; every write through a `SECURITY DEFINER` function (refusals are SQLSTATE `PR001`); a reset may target a professional and is confirmed by a supervisor of their office; the orphan cleanup knows the evidence |
+| `V25__professional_permissions.sql` | ADR-041 step 3: `permission.professional` and `role_definition.professional`; the four `register.deposit.*` permissions; NOTARY (holding them) and SWORN_SURVEYOR (none), never assignable; triggers refusing professional permissions in other roles, staff permissions in professional roles, and any assignment or assignment request of a professional role; `holds_professional_at` and `professional_grants` |
+| `V26__professional_deposits.sql` | ADR-041 step 4: `pending_transaction.submitted_by_account` and `submitted_capacity`, with a `CHECK` tying `received_by` to `COUNTER` and the account to `PROFESSIONAL_ACCOUNT`; `transaction_deposit_professional` (the transaction and its documents together, a `DEED` required, duplicates refused); `professional_title_lookup`; `professional_deposits` and `professional_deposit_documents`; `transaction_close` and `deposit_document_add` replaced with the professional's branch for their own deposits |
 | `V19__audit_subjects.sql` | ADR-038 (E-18), implementing ADR-027: `audit_event.subjects` (JSON array, GIN index): what an event is about, found by the insert trigger with `audit_subjects()` (`SECURITY DEFINER`) from the record in the same transaction, never from the caller: an application (also for its document versions, payment requests and matched provider reports), a parcel, or both parcels of an alert, each with its office at that moment (none for a draft); `audit_canonical()` encodes such an event `snigf-audit-v2` with the subjects hashed, and keeps `snigf-audit-v1` unchanged for every event without them (no backfill); `audit_readable()`: `audit.event.search` everywhere, or at the office of one of the event's subjects |
 
 Every new function must carry the same `SET search_path`. pgTAP test `06` enforces it.
 V7's constraints and triggers are tested by pgTAP test `09`, V8's approval workflow by test `10`,
 the checkpoint rules (V3, V9) by test `11`, the supervised reset and key removal (V10) by test `12`,
 overlap and duplicate detection (V11, the Baseline's fixture set) by test `13`, resolution by a special-grant
-holder and the note bound (V12) by test `14`, applications under row-level security (V13) by test `15`, documents (V14) by test `16`, the completeness review (V15) by test `17`, the land register (V21) by test `23` and the concurrent-deposit run, review and simulated decision (V16) by test `18`, the tracking and workload functions (V17) by test `19`, simulated payment and reconciliation (V18) by test `20`, audit subjects (V19) by test `21`, issued documents and verification (V20) by test `22`.
+holder and the note bound (V12) by test `14`, applications under row-level security (V13) by test `15`, documents (V14) by test `16`, the completeness review (V15) by test `17`, the land register (V21) by test `23` and the concurrent-deposit run, professional accounts (V23) by test `24`, their lifecycle (V24) by test `25`, their permissions (V25) by test `26`, their deposits (V26) by test `27` and the concurrent-deposit run, review and simulated decision (V16) by test `18`, the tracking and workload functions (V17) by test `19`, simulated payment and reconciliation (V18) by test `20`, audit subjects (V19) by test `21`, issued documents and verification (V20) by test `22`.
 
 ## Tables
 
@@ -103,10 +107,16 @@ holder and the note bound (V12) by test `14`, applications under row-level secur
 | `title_version` | The derived state after each registered inscription (V21) | written by the database only; never changed |
 | `title_parcel` | The parcel version a title version rests on (V21) | written by the database only |
 | `title_relation` | Parent and child titles; modelled, used from slice 4 (V21) | no writer yet |
-| `pending_transaction` | A deposited transaction; one `HOLDING` per title (V21) | function only; moves forward |
+| `pending_transaction` | A deposited transaction, at the counter or through a professional account with its account and capacity; one `HOLDING` per title (V21, V26) | function only; moves forward |
 | `transaction_conflict` | A later deposit against the holding one; decided once (V21) | function only |
 | `register_migration_batch` | Modelled for a future migration of real titles; only `SYNTHETIC_DEMO` is possible (V21) | no writer: the application has no grant |
-| `deposit_document` | A file of a counter deposit: metadata, uploader, time, SHA-256; a replacement names its original (V22) | function only; never changed or deleted |
+| `deposit_document` | A file of a deposit, counter or professional: metadata, uploader, time, SHA-256; a replacement names its original (V22, V26) | function only; never changed or deleted |
+| `professional_profile` | A notary's or sworn surveyor's profession, credential and status (V23) | read by its owner; written by the lifecycle functions from step 2; never deleted |
+| `professional_verification` | How a professional's credential and identity were checked, by whom, when (V24) | function only; read by verifiers and approvers; never changed |
+| `professional_verification_document` | Files supporting a verification (V24) | function only, by the verifier; read by verifiers and approvers; never changed |
+| `professional_request` | A change a second administrator decides: activation, reinstatement, revocation, office change (V24) | function only; decided or expired once |
+| `professional_office` | The offices a professional serves (V24) | added and removed only by an approved request |
+| `professional_history` | Every step of a professional account (V24) | function only; never changed |
 | `decision` | The simulated outcome with its grounds, the cited document versions, the recommendation followed, the author | SELECT (staff who see the case, the applicant), INSERT (the decision authority assigned, guarded); never UPDATE or DELETE |
 | `mfa_reset_request` | Supervised second-factor resets: person, reason, requester, status, confirmer, how the identity was checked (V10) | SELECT, INSERT, UPDATE of decision columns |
 | `role_assignment_request` | Four-eyes requests to assign a role at an office: requester, reason, decision. Approval creates the `role_assignment` with the same id (V8) | SELECT, INSERT, UPDATE of decision columns |
@@ -231,7 +241,7 @@ sides produce identical bytes.
 | `REGISTER_INSCRIPTION_REGISTERED` | an inscription was registered, signed (kind, number, credential) | register |
 | `REGISTER_INSCRIPTION_REJECTED` | a conservator rejected a proposal (reason) | register |
 | `REGISTER_INSCRIPTION_WITHDRAWN` | its proposer withdrew a proposal (reason) | register |
-| `REGISTER_TRANSACTION_DEPOSITED` | a deposit was recorded (kind, `channel`, status, review date) | register |
+| `REGISTER_TRANSACTION_DEPOSITED` | a deposit was recorded (kind, `channel`, status, review date; through a professional account, the account and capacity) | register |
 | `REGISTER_TRANSACTION_WITHDRAWN` | a deposit's withdrawal was recorded (reason) | register |
 | `REGISTER_TRANSACTION_REFUSED` | a conservator refused a deposit (reason) | register |
 | `REGISTER_CONFLICT_OPENED` | a second deposit opened a conflict | register |
@@ -243,6 +253,23 @@ sides produce identical bytes.
 | `REGISTER_DEPOSIT_DOCUMENT_REJECTED` | a file was refused by the checks of ADR-033 (`code`); nothing kept | register |
 | `REGISTER_DEPOSIT_DOCUMENT_DOWNLOADED` | a deposit's file was downloaded | register |
 | `REGISTER_DEPOSIT_DOCUMENT_INTEGRITY_FAILED` | a deposit's file no longer matches its hash, and was not served | register |
+| `REGISTER_TITLE_LOOKED_UP` | a professional looked up a title number (found or not), with their capacity; throttled per account | register |
+| `PROFESSIONAL_REQUESTED` | a notary or sworn surveyor requested an account (capacity) | professional |
+| `PROFESSIONAL_VERIFIED` | an administrator verified the credential and proposed offices | professional |
+| `PROFESSIONAL_EVIDENCE_ADDED` | the verifier added a supporting file (type, size, SHA-256) | professional |
+| `PROFESSIONAL_EVIDENCE_READ` | verification evidence was read or downloaded | professional |
+| `PROFESSIONAL_APPROVED` | a second administrator approved the account | professional |
+| `PROFESSIONAL_REJECTED` | a second administrator rejected the account (reason) | professional |
+| `PROFESSIONAL_SUSPENDED` | one administrator suspended the account (reason) | professional |
+| `PROFESSIONAL_REINSTATEMENT_REQUESTED` | a reinstatement was requested (reason) | professional |
+| `PROFESSIONAL_REINSTATED` | a second administrator reinstated the account | professional |
+| `PROFESSIONAL_REVOCATION_REQUESTED` | a revocation was requested (reason) | professional |
+| `PROFESSIONAL_REVOKED` | a second administrator revoked the account | professional |
+| `PROFESSIONAL_OFFICE_CHANGE_REQUESTED` | an office change was requested (offices added and removed) | professional |
+| `PROFESSIONAL_OFFICES_CHANGED` | a second administrator changed the offices | professional |
+| `PROFESSIONAL_CHANGE_REJECTED` | a second administrator rejected a requested change (reason) | professional |
+| `PROFESSIONAL_REQUEST_EXPIRED` | a request passed its time to live undecided | professional |
+| `PROFESSIONAL_REFUSED` | a professional-account operation was refused (`code`, `operation`) | professional |
 | `CONFLICT_ALERT_RESOLVE_REJECTED` | a resolution was refused (`RESOLVER_IS_AUTHOR`, `STALE_VERSION`, `ALERT_NOT_OPEN`, note or outcome missing; recorded even though nothing changed) | conflict |
 | `ACCESS_DENIED` | an authenticated call is refused by an access rule | shared security |
 | `AUDIT_EVENTS_READ` | someone reads audit events | audit |

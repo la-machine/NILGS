@@ -3,7 +3,7 @@
 // The application: the sign-in steps (the server decides the next one), then the signed-in
 // shell with the page the address names (#/parcels/...). One place runs actions with a busy
 // state and turns errors into messages. Pages live in their features; this file only wires.
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import {
   authApi, createCredential, EnrolScreen, getAssertion, LoginScreen, RecoveryCodesScreen, RecoveryScreen,
   RegisterScreen, VerifyScreen,
@@ -25,6 +25,9 @@ import { PublicLayout } from './PublicLayout'
 import type { Screen } from './screens'
 
 const LANG_KEY = 'snigf.lang'
+
+// Loaded only when asked for: the sign-in screens download nothing else of the feature.
+const ProfessionalRequestScreen = lazy(() => import('../features/professionals').then((m) => ({ default: m.ProfessionalRequestScreen })))
 
 function initialLang(): Lang {
   try {
@@ -60,10 +63,11 @@ export function App() {
     else setScreen({ name: 'home', session: await authApi.session(), notice })
   }, [])
 
+  // #/professional-request opens the public request of a professional account (ADR-041).
   useEffect(() => {
     authApi.session()
       .then((session) => follow(session.nextStep))
-      .catch(() => setScreen({ name: 'login' }))
+      .catch(() => setScreen(window.location.hash.startsWith('#/professional-request') ? { name: 'professional-request' } : { name: 'login' }))
   }, [follow])
 
   /** Runs an action with a busy state; errors become a message, never a crash. */
@@ -159,7 +163,8 @@ export function App() {
             setInfo(null)
             await follow((await authApi.login(email, password)).nextStep)
           })}
-          onRegister={() => { setError(null); setInfo(null); setScreen({ name: 'register' }) }} />
+          onRegister={() => { setError(null); setInfo(null); setScreen({ name: 'register' }) }}
+          onProfessional={() => { setError(null); setInfo(null); setScreen({ name: 'professional-request' }) }} />
       )}
       {screen.name === 'register' && (
         <RegisterScreen texts={texts} busy={busy} lang={lang}
@@ -169,6 +174,18 @@ export function App() {
             setInfo(texts.registered)
           })}
           onBack={() => { setError(null); setScreen({ name: 'login' }) }} />
+      )}
+      {screen.name === 'professional-request' && (
+        <Suspense fallback={<Spinner label={texts.shell.loading} />}>
+          <ProfessionalRequestScreen texts={texts} busy={busy} lang={lang}
+            onSubmit={(body) => run(async () => {
+              const { professionalApi } = await import('../features/professionals')
+              await professionalApi.request(body)
+              setScreen({ name: 'login' })
+              setInfo(texts.professionals.requestSent)
+            })}
+            onBack={() => { setError(null); setScreen({ name: 'login' }) }} />
+        </Suspense>
       )}
       {screen.name === 'enrol' && (
         <EnrolScreen texts={texts} busy={busy} registered={screen.registered} required={screen.required}

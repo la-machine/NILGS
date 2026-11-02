@@ -8,6 +8,7 @@ export type Screen =
   | { name: 'loading' }
   | { name: 'login' }
   | { name: 'register' }
+  | { name: 'professional-request' }
   | { name: 'enrol'; registered: number; required: number }
   | { name: 'verify' }
   | { name: 'recovery' }

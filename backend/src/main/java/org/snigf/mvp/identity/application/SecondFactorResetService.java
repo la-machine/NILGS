@@ -13,7 +13,6 @@ import org.snigf.mvp.audit.AuditAction;
 import org.snigf.mvp.audit.AuditEvent;
 import org.snigf.mvp.audit.AuditOutcome;
 import org.snigf.mvp.audit.AuditRecorder;
-import org.snigf.mvp.identity.AccountType;
 import org.snigf.mvp.identity.AuthenticatedUser;
 import org.snigf.mvp.identity.application.AccountAdministrationService.Refused;
 import org.snigf.mvp.identity.domain.MfaResetRepository;
@@ -77,7 +76,7 @@ public class SecondFactorResetService {
             throw new Refused(Refused.Kind.FORBIDDEN, "SOD_SELF_ACTION");
         }
         var target = users.findById(targetId).orElseThrow(() -> new Refused(Refused.Kind.NOT_FOUND, "USER_NOT_FOUND"));
-        if (target.accountType() != AccountType.STAFF) {
+        if (!target.accountType().requiresSecondFactor()) {
             throw new Refused(Refused.Kind.INVALID, "ACCOUNT_NOT_STAFF");
         }
         UUID id = UuidV7.next();

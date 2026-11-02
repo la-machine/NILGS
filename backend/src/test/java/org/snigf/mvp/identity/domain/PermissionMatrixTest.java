@@ -32,7 +32,7 @@ class PermissionMatrixTest {
     /** The baseline roles as the database holds them. */
     static Map<String, RoleDefinition> baseline() {
         return Arrays.stream(BaselineRole.values()).collect(Collectors.toMap(Enum::name, r -> new RoleDefinition(
-                r.name(), r.nameFr(), r.nameEn(), null, true, r != BaselineRole.APPLICANT, true,
+                r.name(), r.nameFr(), r.nameEn(), null, true, r.assignable(), true,
                 r.permissions().entrySet().stream().collect(Collectors.toMap(e -> e.getKey().code(), Map.Entry::getValue,
                         (a, b) -> a, LinkedHashMap::new)))));
     }
@@ -93,7 +93,7 @@ class PermissionMatrixTest {
                 .contains("audit.event.search@DEMO2", "audit.chain.verify", "identity.reset.confirm@DEMO2")
                 .doesNotContain("audit.event.search", "identity.reset.confirm");
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("SYSTEM_ADMIN", "DEMO1")), roles))
-                .hasSize(13).allMatch(a -> a.startsWith("admin."));
+                .hasSize(17).allMatch(a -> a.startsWith("admin."));
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("NOT_A_ROLE", "DEMO1")), roles)).isEmpty();
     }
 

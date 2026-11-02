@@ -93,4 +93,18 @@ public interface RegisterRepository {
     List<Register.OverdueLock> recordOverdueLocks();
 
     String officeCodeOf(String recordType, UUID id);
+
+    // --- The professional channel: through V26's functions, which check the actor themselves ----------------
+
+    /** A title at an office the bound professional serves; empty for an unknown number or another office alike. */
+    Optional<Register.TitleLookup> lookupTitle(String number);
+
+    /** The transaction and its documents in one call; a refusal records nothing and locks nothing. */
+    Register.DepositOutcome depositAsProfessional(UUID titleId, String kind, Register.NewDepositor depositor, List<Register.KeptDocument> documents,
+                                                  Duration reviewAfter);
+
+    /** The bound professional's own deposits, newest first, or the one with {@code id}. */
+    List<Register.ProfessionalDeposit> professionalDeposits(UUID id, int limit, int offset);
+
+    List<Register.ProfessionalDocument> professionalDocuments(UUID transactionId);
 }

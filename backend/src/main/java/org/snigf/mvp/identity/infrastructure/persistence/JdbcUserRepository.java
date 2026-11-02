@@ -81,6 +81,18 @@ public class JdbcUserRepository implements UserRepository {
     }
 
     @Override
+    public Optional<UUID> createProfessional(UUID id, EmailAddress email, String displayName, String passwordHash, String preferredLanguage) {
+        return jdbc.sql("""
+                        INSERT INTO app_user (id, email, display_name, password_hash, account_type, preferred_language)
+                        VALUES (:id, :email, :name, :hash, 'PROFESSIONAL', :lang)
+                        ON CONFLICT ((lower(email))) DO NOTHING
+                        RETURNING id""")
+                .param("id", id).param("email", email.value()).param("name", displayName).param("hash", passwordHash)
+                .param("lang", preferredLanguage)
+                .query(UUID.class).optional();
+    }
+
+    @Override
     public Failure recordFailedLogin(UUID id, LockoutPolicy policy, Instant now) {
         OffsetDateTime lockUntil = OffsetDateTime.ofInstant(policy.lockedUntil(now), ZoneOffset.UTC);
         return jdbc.sql("""
@@ -118,6 +130,14 @@ public class JdbcUserRepository implements UserRepository {
         return new LinkedHashSet<>(jdbc.sql("""
                         SELECT r.role, o.code FROM role_assignment r LEFT JOIN office o ON o.id = r.office_id
                          WHERE r.user_id = :id AND r.revoked_at IS NULL ORDER BY r.role, o.code""")
+                .param("id", id)
+                .query((rs, n) -> new RoleGrant(rs.getString(1), rs.getString(2)))
+                .list());
+    }
+
+    @Override
+    public Set<RoleGrant> professionalGrants(UUID id) {
+        return new LinkedHashSet<>(jdbc.sql("SELECT role, office_code FROM professional_grants(:id)")
                 .param("id", id)
                 .query((rs, n) -> new RoleGrant(rs.getString(1), rs.getString(2)))
                 .list());

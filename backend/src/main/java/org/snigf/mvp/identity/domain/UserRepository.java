@@ -20,6 +20,12 @@ public interface UserRepository {
      * Creates an applicant account with its APPLICANT role. Returns empty when the e-mail
      * address is already registered; nothing is changed then.
      */
+    /** A professional account (ADR-041), with no role; empty when the address is taken. */
+    Optional<UUID> createProfessional(UUID id, EmailAddress email, String displayName, String passwordHash, String preferredLanguage);
+
+    /** The roles and offices of an ACTIVE professional (V25); empty for anyone else, suspended or revoked included. */
+    Set<org.snigf.mvp.identity.RoleGrant> professionalGrants(UUID id);
+
     Optional<UUID> createApplicant(UUID id, EmailAddress email, String displayName, String passwordHash,
                                    String preferredLanguage);
 

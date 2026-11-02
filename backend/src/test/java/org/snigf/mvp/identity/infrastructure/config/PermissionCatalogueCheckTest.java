@@ -20,7 +20,7 @@ class PermissionCatalogueCheckTest {
         Map<String, PermissionCatalogueCheck.Row> rows = new HashMap<>();
         for (Permission p : Permission.values()) {
             rows.put(p.code(), new PermissionCatalogueCheck.Row(p.family().name(), p.delegable(),
-                    p.scopes().stream().map(Enum::name).collect(Collectors.toCollection(TreeSet::new))));
+                    p.scopes().stream().map(Enum::name).collect(Collectors.toCollection(TreeSet::new)), p.professional()));
         }
         return rows;
     }
@@ -34,14 +34,19 @@ class PermissionCatalogueCheckTest {
     void everyKindOfDifferenceIsNamed() {
         Map<String, PermissionCatalogueCheck.Row> database = asInCode();
         database.remove("parcel.create");
-        database.put("audit.key.read", new PermissionCatalogueCheck.Row("AUDIT", true, Set.of("ANY", "OFFICE")));
-        database.put("admin.mfa.reset", new PermissionCatalogueCheck.Row("ADMINISTRATION", true, Set.of("ANY")));
-        database.put("parcel.delete", new PermissionCatalogueCheck.Row("BUSINESS", true, Set.of("ANY")));
+        database.put("audit.key.read", new PermissionCatalogueCheck.Row("AUDIT", true, Set.of("ANY", "OFFICE"), false));
+        database.put("admin.mfa.reset", new PermissionCatalogueCheck.Row("ADMINISTRATION", true, Set.of("ANY"), false));
+        database.put("parcel.delete", new PermissionCatalogueCheck.Row("BUSINESS", true, Set.of("ANY"), false));
 
         assertThat(PermissionCatalogueCheck.check(database)).hasSize(4)
                 .anyMatch(p -> p.startsWith("parcel.create is missing"))
                 .anyMatch(p -> p.startsWith("audit.key.read differs"))
                 .anyMatch(p -> p.startsWith("admin.mfa.reset differs"))
                 .anyMatch(p -> p.startsWith("parcel.delete is in the database but not in the code"));
+
+        Map<String, PermissionCatalogueCheck.Row> unflagged = asInCode();
+        unflagged.put("register.deposit.submit", new PermissionCatalogueCheck.Row("BUSINESS", false, Set.of("OFFICE"), false));
+        assertThat(PermissionCatalogueCheck.check(unflagged)).as("the professional flag is compared too")
+                .singleElement().asString().startsWith("register.deposit.submit differs");
     }
 }

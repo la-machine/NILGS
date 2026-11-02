@@ -61,6 +61,8 @@ public class SecurityConfiguration {
                 .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
                 .requestMatchers(HttpMethod.GET, API + "/auth/csrf").permitAll()
                 .requestMatchers(HttpMethod.POST, API + "/auth/login", API + "/auth/register").permitAll()
+                // A notary or sworn surveyor requests an account (ADR-041); throttled, CSRF still required.
+                .requestMatchers(HttpMethod.POST, API + "/professional-requests").permitAll()
                 .requestMatchers(HttpMethod.POST, PROVIDER_CALLBACKS).permitAll()
                 .requestMatchers(HttpMethod.GET, PUBLIC_VERIFICATION).permitAll()
                 .requestMatchers(HttpMethod.POST, PUBLIC_VERIFICATION_ROOT).permitAll()

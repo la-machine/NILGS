@@ -77,3 +77,6 @@ confirmation cannot be an administration permission.
   `reason`); supervisors use `/api/v1/identity/reset-confirmations`.
 - Each office needs a supervisor holding `identity.reset.confirm` for its staff to be
   recoverable; an office without one cannot reset (fails safe).
+- **Extended (2 Nov 2026, [ADR-041](041-professional-accounts.md)):** a reset may target a professional. A supervisor of one of their
+  approved offices confirms it (V24 widened `mfa_reset_request_insert` and
+  `mfa_reset_request_decide`).

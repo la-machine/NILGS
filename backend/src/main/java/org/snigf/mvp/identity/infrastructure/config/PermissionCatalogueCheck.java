@@ -25,15 +25,15 @@ import org.springframework.stereotype.Component;
 @Component
 public class PermissionCatalogueCheck {
 
-    record Row(String family, boolean delegable, Set<String> scopes) {
+    record Row(String family, boolean delegable, Set<String> scopes, boolean professional) {
     }
 
     public PermissionCatalogueCheck(JdbcClient jdbc) {
         Map<String, Row> database = new HashMap<>();
-        jdbc.sql("SELECT code, family, delegable, scopes FROM permission").query(rs -> {
+        jdbc.sql("SELECT code, family, delegable, scopes, professional FROM permission").query(rs -> {
             Array scopes = rs.getArray(4);
             database.put(rs.getString(1), new Row(rs.getString(2), rs.getBoolean(3),
-                    new TreeSet<>(Arrays.asList((String[]) scopes.getArray()))));
+                    new TreeSet<>(Arrays.asList((String[]) scopes.getArray())), rs.getBoolean(5)));
         });
         List<String> problems = check(database);
         if (!problems.isEmpty()) {
@@ -50,8 +50,9 @@ public class PermissionCatalogueCheck {
             if (row == null) {
                 problems.add(p.code() + " is missing from the permission table (add it in a migration)");
             } else if (!row.family().equals(p.family().name()) || row.delegable() != p.delegable()
-                    || !row.scopes().equals(scopes)) {
-                problems.add(p.code() + " differs: database " + row + ", code " + p.family() + "/" + p.delegable() + "/" + scopes);
+                    || !row.scopes().equals(scopes) || row.professional() != p.professional()) {
+                problems.add(p.code() + " differs: database " + row + ", code " + p.family() + "/" + p.delegable() + "/" + scopes + "/"
+                        + p.professional());
             }
         }
         Set<String> codes = Arrays.stream(Permission.values()).map(Permission::code).collect(Collectors.toSet());

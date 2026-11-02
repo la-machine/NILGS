@@ -14,16 +14,21 @@
 //     supervisor confirms in the application how the identity was checked, old codes dead,
 //     enrolment again; the reset is in the audit trail;
 //   - parcels and map views (parcels.ts), with the same people;
-//   - the DEMO land register (register.ts), with two conservators.
+//   - the DEMO land register (register.ts), with two conservators;
+//   - professional accounts (professionals.ts): a notary requests, two administrators verify and
+//     approve, the notary deposits on the register's title, a conservator registers the transfer.
 import { expect, test } from '@playwright/test'
+import type { Browser } from '@playwright/test'
 import { applicationJourneys } from './applications'
 import { parcelJourneys } from './parcels'
+import { professionalJourneys } from './professionals'
 import { registerJourneys } from './register'
 import { designTour } from './tour'
 import { OFFICE, Person, RUN, SIGNED_IN, email } from './support'
 
 test.describe.configure({ mode: 'serial' })
 
+let browserRef: Browser
 let applicant: Person
 let admin1: Person
 let admin2: Person
@@ -39,6 +44,7 @@ let auditorId: string
 
 test.beforeAll(async ({ browser }, info) => {
   info.setTimeout(300_000)
+  browserRef = browser
   applicant = await Person.open(browser, 'applicant')
   admin1 = await Person.open(browser, 'admin1')
   admin2 = await Person.open(browser, 'admin2')
@@ -300,6 +306,9 @@ const parcelReference = parcelJourneys(() => ({ cadastral: officer, colleague: s
 applicationJourneys(() => ({ applicant, intake, reviewer, decider, surveyor, admin: admin1, auditor, supervisor,
   documents: supervisor, cadastral: officer }), parcelReference)
 
-registerJourneys(() => ({ first: officer, second: surveyor }), parcelReference)
+const journeyTitle = registerJourneys(() => ({ first: officer, second: surveyor }), parcelReference)
+
+// The officer is a conservator: they register the notary's deposit on the register's title.
+professionalJourneys(() => browserRef, () => ({ verifier: admin1, approver: admin2, conservator: officer }), journeyTitle)
 
 designTour(() => ({ cadastral: officer, admin: admin1, auditor, reference: parcelReference }))
