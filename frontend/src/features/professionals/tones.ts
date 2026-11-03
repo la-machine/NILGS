@@ -11,7 +11,11 @@ export const STATUS_TONE: Record<ProfessionalStatus, Tone> = {
 }
 
 export const DEPOSIT_TONE: Record<Deposit['status'], Tone> = {
-  OPEN: 'warning', REGISTERED: 'success', WITHDRAWN: 'neutral', REFUSED: 'danger',
+  HOLDING: 'info', IN_CONFLICT: 'warning', REGISTERED: 'success', WITHDRAWN: 'neutral', REFUSED: 'danger',
+}
+
+export const CONFLICT_TONE: Record<Deposit['conflict'], Tone> = {
+  NONE: 'neutral', UNDER_REVIEW: 'warning', RESOLVED: 'neutral',
 }
 
 export const REQUEST_TONE: Record<ChangeRequest['status'], Tone> = {

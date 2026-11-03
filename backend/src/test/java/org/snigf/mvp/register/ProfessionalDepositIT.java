@@ -26,7 +26,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * The professional channel through the real endpoints (ADR-041 step 4): the restricted lookup, deposits
  * that are valid and attributable or nothing, duplicates and retries, the professional's own deposits and
- * nobody else's, withdrawal, and the boundary between the professional's endpoints and the conservator's.
+ * nobody else's, withdrawal, and the boundary between the professional's endpoints and the conservator's. Since
+ * ADR-041 D17 (step 10), the professional reads their deposit's real status and conflict, and nothing of the other.
  */
 class ProfessionalDepositIT extends CaseFlowIntegrationTest {
 
@@ -109,6 +110,16 @@ class ProfessionalDepositIT extends CaseFlowIntegrationTest {
         return sendJson(who.browser(), post(PRO + "/deposits/" + deposit + "/withdrawal"), body("reason", "The client cancelled the sale"));
     }
 
+    /** What a professional may read of their own deposit (D17): a field added later fails here until reviewed. */
+    private static final List<String> OWN_DEPOSIT_FIELDS = List.of("id", "titleId", "titleNumber", "officeCode", "kind", "status", "conflict",
+            "reviewDueAt", "actionRequired", "depositorName", "capacity", "depositedAt", "closedAt", "closedReason", "documents");
+
+    private static List<String> fields(JsonNode node) {
+        List<String> names = new ArrayList<>();
+        node.propertyNames().forEach(names::add);
+        return names;
+    }
+
     private long scalar(String sql) throws Exception {
         try (Connection su = PostgisDatabase.shared().superuserConnection(); Statement st = su.createStatement(); var rs = st.executeQuery(sql)) {
             rs.next();
@@ -175,7 +186,11 @@ class ProfessionalDepositIT extends CaseFlowIntegrationTest {
 
         String id = deposited(notary, title, deed("DEMO deed"), new Part("IDENTITY", "id.pdf", DocumentFixtures.pdf("/Title (DEMO id)")));
         JsonNode mine = ok(notary.browser().send(get(PRO + "/deposits/" + id)), 200);
-        assertThat(mine.path("status").asString("")).as("open, never HOLDING or IN_CONFLICT to the professional").isEqualTo("OPEN");
+        assertThat(fields(mine)).as("nothing beyond the reviewed fields").containsExactlyInAnyOrderElementsOf(OWN_DEPOSIT_FIELDS);
+        assertThat(mine.path("status").asString("")).as("its real status (D17)").isEqualTo("HOLDING");
+        assertThat(mine.path("conflict").asString("")).isEqualTo("NONE");
+        assertThat(mine.path("actionRequired").asString("")).isEqualTo("NONE");
+        assertThat(mine.path("reviewDueAt").isNull()).as("a review date while open").isFalse();
         assertThat(mine.path("documents").asLong()).isEqualTo(2);
         assertThat(mine.path("capacity").asString("")).isEqualTo("NOTARY");
 
@@ -247,9 +262,10 @@ class ProfessionalDepositIT extends CaseFlowIntegrationTest {
         String arriving = deposited(second, title, deed("DEMO second"));
         assertThat(scalar("SELECT count(*) FROM transaction_conflict WHERE holding_id = '" + holding + "' AND arriving_id = '" + arriving + "'")).isEqualTo(1);
 
-        assertThat(ok(second.browser().send(get(PRO + "/deposits/" + arriving)), 200).path("status").asString("")).isEqualTo("OPEN");
+        assertThat(ok(second.browser().send(get(PRO + "/deposits/" + arriving)), 200).path("status").asString("")).isEqualTo("IN_CONFLICT");
         JsonNode theirs = ok(second.browser().send(get(PRO + "/deposits")), 200);
         assertThat(theirs.findValuesAsString("id")).containsExactly(arriving);
+        assertThat(fields(theirs.get(0))).as("the list shows the same fields, no more").containsExactlyInAnyOrderElementsOf(OWN_DEPOSIT_FIELDS);
 
         String document = ok(first.browser().send(get(PRO + "/deposits/" + holding + "/documents")), 200).get(0).path("id").asString("");
         assertThat(second.browser().send(get(PRO + "/deposits/" + holding)).getStatus()).isEqualTo(404);
@@ -276,6 +292,59 @@ class ProfessionalDepositIT extends CaseFlowIntegrationTest {
     }
 
     @Test
+    void bothNotariesSeeTheConflictUnderReviewAndNeitherSeesTheOther() throws Exception {
+        Officer officer = conservator();
+        String title = title(officer);
+        SignedIn first = activeProfessional("NOTARY", OFFICE);
+        SignedIn second = activeProfessional("NOTARY", OFFICE);
+        String holding = deposited(first, title, deed("DEMO held"));
+        String arriving = deposited(second, title, deed("DEMO arriving"));
+
+        JsonNode held = ok(first.browser().send(get(PRO + "/deposits/" + holding)), 200);
+        JsonNode inConflict = ok(second.browser().send(get(PRO + "/deposits/" + arriving)), 200);
+        assertThat(held.path("status").asString("") + "/" + held.path("conflict").asString("")).as("the holding side").isEqualTo("HOLDING/UNDER_REVIEW");
+        assertThat(inConflict.path("status").asString("") + "/" + inConflict.path("conflict").asString("")).as("the arriving side")
+                .isEqualTo("IN_CONFLICT/UNDER_REVIEW");
+        assertThat(fields(held)).containsExactlyInAnyOrderElementsOf(OWN_DEPOSIT_FIELDS);
+        assertThat(fields(inConflict)).containsExactlyInAnyOrderElementsOf(OWN_DEPOSIT_FIELDS);
+        assertThat(held.toString()).as("nothing of the other deposit or its notary").doesNotContain(arriving).doesNotContain(second.id().toString());
+        assertThat(inConflict.toString()).as("nothing of the other deposit or its notary").doesNotContain(holding).doesNotContain(first.id().toString());
+
+        // A conservator keeps the holding deposit: the arriving notary reads the effect, not the conservators' reason.
+        String conflict = scalarText("SELECT id::text FROM transaction_conflict WHERE arriving_id = '" + arriving + "'");
+        ok(sendJson(officer.browser(), post("/api/v1/register/conflicts/" + conflict + "/resolution"), body("outcome", "KEEP_HOLDING",
+                "reason", "The deed of the other notary was first", "evidenceReferences", List.of("DEMO-DECISION-1"))), 200);
+        JsonNode refused = ok(second.browser().send(get(PRO + "/deposits/" + arriving)), 200);
+        assertThat(refused.path("status").asString("")).isEqualTo("REFUSED");
+        assertThat(refused.path("conflict").asString("")).isEqualTo("RESOLVED");
+        assertThat(refused.path("closedReason").isNull()).as("the resolution's reason is the conservators', and may name the other party").isTrue();
+        assertThat(refused.path("reviewDueAt").isNull()).isTrue();
+        assertThat(ok(first.browser().send(get(PRO + "/deposits/" + holding)), 200).path("conflict").asString("")).isEqualTo("RESOLVED");
+    }
+
+    @Test
+    void aWithdrawalDuringAConflictIsMarkedInTheAuditTrail() throws Exception {
+        Officer officer = conservator();
+        String title = title(officer);
+        SignedIn holder = activeProfessional("NOTARY", OFFICE);
+        SignedIn prober = activeProfessional("NOTARY", OFFICE);
+        String held = deposited(holder, title, deed("DEMO held"));
+        String probe = deposited(prober, title, deed("DEMO probe"));
+
+        JsonNode withdrawn = ok(withdraw(prober, probe), 200);
+        assertThat(withdrawn.path("status").asString("")).isEqualTo("WITHDRAWN");
+        assertThat(withdrawn.path("conflict").asString("")).as("the conflict waits for conservators").isEqualTo("UNDER_REVIEW");
+        assertThat(scalar("SELECT count(*) FROM audit_event WHERE action = 'REGISTER_TRANSACTION_WITHDRAWN' AND entity_id = '" + probe
+                + "' AND details->>'withdrawnDuringConflict' = 'true'")).isEqualTo(1);
+        assertThat(ok(holder.browser().send(get(PRO + "/deposits/" + held)), 200).path("conflict").asString("")).isEqualTo("UNDER_REVIEW");
+        // Outside a conflict, the flag is false.
+        String alone = deposited(prober, title(officer), deed("DEMO alone"));
+        ok(withdraw(prober, alone), 200);
+        assertThat(scalar("SELECT count(*) FROM audit_event WHERE action = 'REGISTER_TRANSACTION_WITHDRAWN' AND entity_id = '" + alone
+                + "' AND details->>'withdrawnDuringConflict' = 'false'")).isEqualTo(1);
+    }
+
+    @Test
     void conservatorsAndProfessionalsKeepToTheirOwnEndpoints() throws Exception {
         Officer officer = conservator();
         String title = title(officer);
@@ -295,7 +364,8 @@ class ProfessionalDepositIT extends CaseFlowIntegrationTest {
         // A conservator refuses it, as a counter deposit.
         assertThat(ok(sendJson(officer.browser(), post("/api/v1/register/transactions/" + id + "/refuse"), body("reason", "Reviewed: the deed is incomplete")), 200)
                 .path("status").asString("")).isEqualTo("REFUSED");
-        assertThat(ok(notary.browser().send(get(PRO + "/deposits/" + id)), 200).path("closedReason").asString("")).isEqualTo("Reviewed: the deed is incomplete");
+        assertThat(ok(notary.browser().send(get(PRO + "/deposits/" + id)), 200).path("closedReason").asString(""))
+                .as("a refusal outside a conflict decision keeps its reason").isEqualTo("Reviewed: the deed is incomplete");
     }
 
     @Test

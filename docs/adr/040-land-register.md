@@ -542,3 +542,6 @@ model before this plan is approved.
   `ck_transaction_channel`.
 - **The rules of §4 are unchanged** for a professional deposit: lock or conflict, overdue review,
   conservators decide. A professional reads only their own deposits, and an open one as `OPEN`.
+  *Amended 2 Nov 2026 by ADR-041 D17 (V27): the professional reads their own deposit's real status and
+  whether a conflict naming it is under review, never the other deposit nor a conflict decision's
+  reason.*

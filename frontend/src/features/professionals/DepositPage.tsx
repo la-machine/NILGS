@@ -1,9 +1,10 @@
 // SNIGF/NILGS - Copyright (c) 2026 FLYT.
 // Author: Pythagore.
 // One of the professional's own deposits (#/professional/deposits/<id>). Any other id answers "not
-// found", a conflicting deposit's included. An open deposit reads OPEN: whether it holds the title
-// is not theirs to know. While it is open they add or replace documents, nothing ever deleted, and
-// may withdraw it with a reason. Conservators decide it; nothing here registers anything.
+// found", a conflicting deposit's included. It shows the deposit's real status and, if a conflict
+// names it, whether conservators are still reviewing it (ADR-041 D17); never the other deposit. While
+// it is open they add or replace documents, nothing ever deleted, and may withdraw it with a reason.
+// Conservators decide it; nothing here registers anything.
 import { useEffect, useState } from 'react'
 import { fill } from '../../shared/i18n'
 import type { Lang, Texts } from '../../shared/i18n'
@@ -16,9 +17,9 @@ import { useDialog } from '../../shared/ui/dialogContext'
 import { Field } from '../../shared/ui/Field'
 import { Alert, Badge, Skeleton } from '../../shared/ui/Feedback'
 import { errorMessage } from '../../shared/ui/errorMessage'
-import { depositsApi, DOCUMENT_CATEGORIES, REASON_MAX, REASON_MIN } from './api'
+import { depositsApi, DOCUMENT_CATEGORIES, isOpen, REASON_MAX, REASON_MIN } from './api'
 import type { Deposit, OwnDocument } from './api'
-import { DEPOSIT_TONE, refusal } from './tones'
+import { CONFLICT_TONE, DEPOSIT_TONE, refusal } from './tones'
 
 export function DepositPage({ ctx, id }: { ctx: PageContext; id: string }) {
   const { texts, session, lang } = ctx
@@ -39,7 +40,7 @@ export function DepositPage({ ctx, id }: { ctx: PageContext; id: string }) {
 
   if (failure && !deposit) return <div className="page"><Alert tone="danger">{failure}</Alert></div>
   if (!deposit) return <div className="page" aria-busy="true"><Skeleton lines={6} /></div>
-  const open = deposit.status === 'OPEN'
+  const open = isOpen(deposit)
 
   const withdraw = async () => {
     const reason = await dialog.reason({
@@ -56,20 +57,27 @@ export function DepositPage({ ctx, id }: { ctx: PageContext; id: string }) {
   }
 
   return (
-    <div className="page" data-own-deposit={deposit.id} data-status={deposit.status}>
+    <div className="page" data-own-deposit={deposit.id} data-status={deposit.status} data-conflict={deposit.conflict}>
       <PageHeader title={deposit.titleNumber} description={p.depositsIntro} breadcrumbLabel={texts.shell.breadcrumb}
         crumbs={[{ label: p.ownTitle, href: href(['professional']) }, { label: deposit.titleNumber }]} />
       <Alert tone="warning" title={texts.register.demoTitle}>{texts.register.demoText}</Alert>
       {failure && <Alert tone="danger">{failure}</Alert>}
+      {deposit.conflict === 'UNDER_REVIEW' && <Alert tone="warning" title={p.conflictTitle}>{p.conflictText}</Alert>}
       <Card title={p.depositsTitle} icon="lock" description={open ? p.openText : undefined}>
         <dl className="properties">
           <div><dt>{p.status}</dt><dd><Badge tone={DEPOSIT_TONE[deposit.status]}>{p.depositStatuses[deposit.status]}</Badge></dd></div>
+          {deposit.conflict !== 'NONE' && (
+            <div><dt>{p.conflict}</dt><dd><Badge tone={CONFLICT_TONE[deposit.conflict]}>{p.conflictStates[deposit.conflict]}</Badge></dd></div>
+          )}
+          {deposit.reviewDueAt && <div><dt>{p.reviewDueAt}</dt><dd className="num">{new Date(deposit.reviewDueAt).toLocaleDateString(lang)}</dd></div>}
+          {open && <div><dt>{p.actionRequired}</dt><dd>{p.actionsRequired[deposit.actionRequired]}</dd></div>}
           <div><dt>{p.title}</dt><dd className="mono">{deposit.titleNumber}</dd></div>
           <div><dt>{p.office}</dt><dd>{deposit.officeCode}</dd></div>
           <div><dt>{p.kind}</dt><dd>{(p.depositKinds as Record<string, string>)[deposit.kind] ?? deposit.kind}</dd></div>
           <div><dt>{p.depositor}</dt><dd>{deposit.depositorName}</dd></div>
           <div><dt>{p.depositedAt}</dt><dd className="num">{new Date(deposit.depositedAt).toLocaleString(lang)}</dd></div>
           {deposit.closedReason && <div><dt>{p.closedReason}</dt><dd>{deposit.closedReason}</dd></div>}
+          {deposit.status === 'REFUSED' && !deposit.closedReason && <div><dt>{p.closedReason}</dt><dd>{p.refusedInConflict}</dd></div>}
         </dl>
         {open && canOwn(session, 'register.deposit.withdraw') && (
           <div className="form-actions start"><Button variant="danger" onClick={withdraw}>{p.withdraw}</Button></div>

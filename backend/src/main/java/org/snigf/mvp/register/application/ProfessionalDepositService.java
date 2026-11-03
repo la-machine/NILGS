@@ -188,7 +188,11 @@ public class ProfessionalDepositService {
         return own(id);
     }
 
-    /** Withdraws the professional's own open deposit, with a reason. Another's does not exist for them. */
+    /**
+     * Withdraws the professional's own open deposit, with a reason. Another's does not exist for them. A withdrawal while a
+     * conflict naming it is under review is marked in the audit trail, so deposits made to learn whether a title is held
+     * can be found (ADR-041 D17).
+     */
     @Transactional
     public Register.ProfessionalDeposit withdraw(AuthenticatedUser professional, UUID id, String reason) {
         actor.bind(professional.userId());
@@ -199,7 +203,8 @@ public class ProfessionalDepositService {
         Register.ProfessionalDeposit d = own(id);
         audit.record(AuditEvent.of(AuditAction.REGISTER_TRANSACTION_WITHDRAWN, AuditOutcome.SUCCESS).withEntity(ENTITY_TRANSACTION, id)
                 .withEntityRef(d.titleNumber()).withReason(RegisterService.truncate(reason))
-                .withDetails(Map.of("office", d.officeCode(), "channel", CHANNEL, "capacity", d.capacity())));
+                .withDetails(Map.of("office", d.officeCode(), "channel", CHANNEL, "capacity", d.capacity(),
+                        "withdrawnDuringConflict", d.conflictUnderReview())));
         return d;
     }
 

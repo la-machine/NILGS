@@ -4,7 +4,8 @@
 -- nothing else, the same for unknown and elsewhere; a refused deposit records nothing and locks nothing; a
 -- valid one carries its deed, follows the V21 lock and conflict rules, and records the account and capacity,
 -- never a receiving officer; duplicates are refused; a professional reads, adds to and withdraws only their
--- own deposits; the holder rule; suspension takes it all away; conservators still decide.
+-- own deposits; the holder rule; suspension takes it all away; conservators still decide. Since V27 (D17) a
+-- professional reads their deposit's real status: 28_professional_conflict_visibility tests what that shows.
 BEGIN;
 SET search_path = snigf, public, tap;
 SELECT plan(48);
@@ -206,10 +207,10 @@ SELECT throws_ok(format($$ UPDATE pending_transaction SET submitted_by_account =
     '23001', NULL, 'who deposited never changes');
 
 -- ---- 4. Their own deposits, and only theirs ------------------------------------------------------------------
-SELECT is(pg_temp.q('00000000-0000-0000-0000-0000000000f1', 'SELECT string_agg(status, '','') FROM snigf.professional_deposits(NULL, 50, 0)'), 'OPEN',
-    'a holding deposit reads OPEN to its notary');
+SELECT is(pg_temp.q('00000000-0000-0000-0000-0000000000f1', 'SELECT string_agg(status, '','') FROM snigf.professional_deposits(NULL, 50, 0)'), 'HOLDING',
+    'a holding deposit reads HOLDING to its notary (D17, V27; the details are in 28)');
 SELECT is(pg_temp.q('00000000-0000-0000-0000-0000000000f3', 'SELECT string_agg(id::text || status, '','') FROM snigf.professional_deposits(NULL, 50, 0)'),
-    pg_temp.c('b') || 'OPEN', 'a deposit in conflict reads OPEN too: the other deposit is not theirs to see');
+    pg_temp.c('b') || 'IN_CONFLICT', 'a deposit in conflict reads IN_CONFLICT to its notary, and only their own is listed');
 SELECT is(pg_temp.q('00000000-0000-0000-0000-0000000000f3', format('SELECT count(*)::text FROM snigf.professional_deposits(%L, 1, 0)', pg_temp.c('a'))), '0',
     'another notary''s deposit does not exist for them');
 SELECT is(pg_temp.q('00000000-0000-0000-0000-0000000000f3', format('SELECT count(*)::text FROM snigf.professional_deposit_documents(%L)', pg_temp.c('a'))), '0',

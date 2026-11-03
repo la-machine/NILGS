@@ -21,10 +21,10 @@ export const PDF = Buffer.from([
   'trailer << /Root 1 0 R >>', '%%EOF', '',
 ].join('\n'))
 
-const name = (who: string) => `DEMO ${who} ${RUN}`
+export const name = (who: string) => `DEMO ${who} ${RUN}`
 
 /** Picks the option of a labelled select by its visible text. */
-async function choose(scope: Locator, label: string, option: string) {
+export async function choose(scope: Locator, label: string, option: string) {
   await scope.getByLabel(label).selectOption({ label: option })
 }
 

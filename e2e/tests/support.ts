@@ -4,7 +4,7 @@
 // virtual security key (Chrome DevTools WebAuthn domain), sign-in through the real screens,
 // and API calls made from the page exactly as the interface makes them (cookies, CSRF).
 import { readFileSync } from 'node:fs'
-import { expect } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 import type { Browser, BrowserContext, CDPSession, Locator, Page } from '@playwright/test'
 
 function required(name: string): string {
@@ -36,6 +36,25 @@ export async function english(page: Page) {
   await expect(toEnglish.or(toFrench).first()).toBeVisible()
   if (await toEnglish.isVisible()) await toEnglish.click()
   await expect(toFrench.first()).toBeVisible()
+}
+
+/**
+ * A run attempts more than SNIGF_RATE_LOGIN_PER_MINUTE logins, key proofs and recovery codes from one
+ * address, and a fast machine gets there before the bucket refills (CI did, at the notary's sign-in).
+ * A 429 waits as the server's Retry-After says, then tries once more; a second 429 fails the test.
+ * The limit stays as configured; each wait is printed and noted in the report. No test expects a 429.
+ */
+async function throttled<T extends { status: number; retryAfter: string | null }>(who: Who, what: string, send: () => Promise<T>): Promise<T> {
+  const first = await send()
+  if (first.status !== 429) return first
+  const seconds = Number(first.retryAfter ?? '60')
+  const note = `${who}, ${what}: waited ${seconds} s (Retry-After)`
+  test.info().annotations.push({ type: 'throttled', description: note })
+  console.log(`throttled: ${note}`)
+  await new Promise((resolve) => setTimeout(resolve, (seconds + 1) * 1000))
+  const second = await send()
+  expect(second.status, `${what} still throttled after waiting for Retry-After`).not.toBe(429)
+  return second
 }
 
 /** The signed-in shell's mark: the dashboard greets the person. */
@@ -102,17 +121,26 @@ export class Person {
 
   /** The first factor only; returns the screen the server sends next. */
   async enterPassword(): Promise<'enrol' | 'verify' | 'session'> {
-    const page = this.page
     await this.home()
-    await page.getByLabel('E-mail address').fill(email(this.who))
-    await page.getByLabel('Password').fill(password())
-    await page.getByRole('button', { name: 'Sign in' }).click()
+    await this.submitPassword()
     const enrol = this.heading('Register your security keys')
     const verify = this.heading('Second factor')
     const session = this.heading(SIGNED_IN)
     await expect(enrol.or(verify).or(session)).toBeVisible()
     if (await enrol.isVisible()) return 'enrol'
     return (await verify.isVisible()) ? 'verify' : 'session'
+  }
+
+  private async submitPassword() {
+    const page = this.page
+    await throttled(this.who, 'POST /auth/login', async () => {
+      await page.getByLabel('E-mail address').fill(email(this.who))
+      await page.getByLabel('Password').fill(password())
+      const answer = page.waitForResponse((r) => r.url().endsWith('/api/v1/auth/login') && r.request().method() === 'POST')
+      await page.getByRole('button', { name: 'Sign in' }).click()
+      const response = await answer
+      return { status: response.status(), retryAfter: response.headers()['retry-after'] ?? null }
+    })
   }
 
   /** Enrolment: two different keys, then the ten recovery codes, kept by the person. */
@@ -152,7 +180,7 @@ export class Person {
 
   /** A call from the page, with the session cookie and the CSRF header, as the interface sends it. */
   async api(method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<{ status: number; body: any }> {
-    return this.page.evaluate(async ({ method, path, body, extra }) => {
+    const { status, body: answer } = await throttled(this.who, `${method} ${path}`, () => this.page.evaluate(async ({ method, path, body, extra }) => {
       const csrf = await (await fetch('/api/v1/auth/csrf')).json()
       const cookie = document.cookie.split(';').map((c) => c.trim().split('='))
         .find(([name]) => name === csrf.cookieName)
@@ -162,8 +190,9 @@ export class Person {
         method, headers, body: body === undefined ? undefined : JSON.stringify(body),
       })
       const text = await response.text()
-      return { status: response.status, body: text ? JSON.parse(text) : null }
-    }, { method, path, body, extra })
+      return { status: response.status, retryAfter: response.headers.get('Retry-After'), body: text ? JSON.parse(text) : null }
+    }, { method, path, body, extra }))
+    return { status, body: answer }
   }
 
   async session(): Promise<any> {

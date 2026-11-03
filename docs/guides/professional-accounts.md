@@ -39,9 +39,9 @@ Decision: [ADR-041](../adr/041-professional-accounts.md) (D11 to D16), built on
 | Account type and profile | `V23__professional_accounts.sql`; `identity`: `AccountType` (`requiresSecondFactor`), `AccountRegistration` |
 | Lifecycle, four eyes, offices, evidence | `V24__professional_lifecycle.sql`; module `professional`: `ProfessionalService`, `ProfessionalController`, `ProfessionalRateLimiter`, `JdbcProfessionalRepository` |
 | Permissions | `V25__professional_permissions.sql` (`holds_professional_at`, `professional_grants`); `Permission`, `BaselineRole` (NOTARY, SWORN_SURVEYOR); `AuthorizationService` |
-| Lookup and deposits | `V26__professional_deposits.sql`; `register`: `ProfessionalDepositService`, `ProfessionalDepositController` |
+| Lookup and deposits | `V26__professional_deposits.sql`, `V27__professional_conflict_visibility.sql`; `register`: `ProfessionalDepositService`, `ProfessionalDepositController` |
 | Screens | `frontend/src/features/professionals` (`#/professional-request`, `#/professional`, `#/professional/deposits/<id>`, `#/professionals`, `#/professionals/<userId>`); the channel on the title page, `features/register/TitlePage.tsx` |
-| Tests | pgTAP `24_professionals`, `25_professional_lifecycle`, `26_professional_permissions`, `27_professional_deposits`, the racing deposits in `db-test.sh`; `ProfessionalSignInIT`, `ProfessionalLifecycleIT`, `ProfessionalPermissionsIT`, `ProfessionalDepositIT`, `PermissionMatrixIT`; `professionals.test.tsx`; `e2e/tests/professionals.ts` |
+| Tests | pgTAP `24_professionals`, `25_professional_lifecycle`, `26_professional_permissions`, `27_professional_deposits`, `28_professional_conflict_visibility`, the racing deposits in `db-test.sh`; `ProfessionalSignInIT`, `ProfessionalLifecycleIT`, `ProfessionalPermissionsIT`, `ProfessionalDepositIT`, `PermissionMatrixIT`; `professionals.test.tsx`; `e2e/tests/professionals.ts` |
 | Synthetic data | `infra/scripts/dev-seed-professionals.sh` ([demo accounts](demo-accounts.md#professional-accounts)) |
 | Who may do what | [permission matrix](../permission-matrix.md) |
 
@@ -117,11 +117,19 @@ recorded as a party of the office, reused only when every field matches. More fi
 one per request; a file is replaced, never deleted. The notary can withdraw an open deposit, with a
 reason. They never refuse, register or decide anything.
 
+**A conflict (D17).** The notary reads their deposit's real status, `HOLDING` or `IN_CONFLICT`, and
+whether a conflict naming it is `UNDER_REVIEW` or `RESOLVED`. Both sides see it: the holding notary's
+transfer waits for the decision too. They never see the other deposit, its parties, documents or
+number. A conflict decision's reason is the conservators' and is not shown: the page says the deposit
+was refused by the conservation when deciding a conflict. A withdrawal while the conflict is under
+review is recorded with `withdrawnDuringConflict` in the audit trail, so deposits made only to learn
+whether a title is held can be found.
+
 ### Who sees what
 
 | Who | Sees |
 | --- | --- |
-| The notary | their status, offices and history; the lookup's four fields; their own deposits and their documents. An open deposit reads `OPEN`, never `HOLDING` or `IN_CONFLICT`. A file the conservation added shows as such, without its name |
+| The notary | their status, offices and history; the lookup's four fields; their own deposits and their documents. Each deposit's real status, whether a conflict naming it is under review or decided, the review date and the action required of them (none yet), never the other deposit (D17). A file the conservation added shows as such, without its name |
 | A sworn surveyor | their status, offices and history, and a note that they hold no operational permission yet |
 | Administrators | the queue of requests waiting for a second administrator, the accounts by status, one account's requests and history; the verification and its evidence for verifiers and approvers only |
 | Conservators | each deposit's channel; for a professional deposit, the account's name and capacity, and the real status |
@@ -176,6 +184,7 @@ more, the deposit with a deed, the conservator's registration and the notary see
 | A reset for a professional was refused by the database | `mfa_reset_request_insert` tested for staff, which the step 1 review missed | V24 reads professionals through `is_professional` and `professional_office_ids` |
 | `PermissionMatrixIT`'s staff loop failed on NOTARY and SWORN_SURVEYOR | the database refuses giving a professional role to staff | the staff loop skips the two professional roles; the professionals have their own cases |
 | An e2e run did not find the new account in the directory | the directory lists the oldest first, 50 a page, and earlier runs left theirs | the test opens the account by its id; the screen has Previous and Next |
+| A notary could read the conservators' reason for refusing their deposit in a conflict | `conflict_resolve` copies the decision's reason into the deposit's `closed_reason`, which step 4 showed to the professional (found while building D17) | V27 hides it when a conflict decision closed the deposit |
 | The seed leaves the notary verified | an activation needs two keys, and the script holds none | sign in as the notary, register two keys, run the seed again |
 | 429 `RATE_LIMITED` on a request | requests share `SNIGF_RATE_REGISTER_PER_HOUR` with registration, per address, in memory | wait; in development the seed restarts the app |
 

@@ -33,7 +33,7 @@ Decisions: [ADR-040](../adr/040-land-register.md) and
 | Use cases and endpoints | `register`: `RegisterService`, `OverdueLocks`, `RegisterController` |
 | Screens | `frontend/src/features/register` (`#/register`, `#/register/titles/<id>`) |
 | A deposit's documents | `V22__deposit_documents.sql`; `document`: `DocumentFiles`, `DocumentFileService`; `frontend/src/features/register/DepositDocuments.tsx` |
-| Tests | pgTAP `23_land_register`, `27_professional_deposits`, `bench/register_deposit*`, `OfficerSignatureIT`, `RegisterIT`, `ProfessionalDepositIT`, `InscriptionCanonicalTest`, `e2e/tests/register.ts` |
+| Tests | pgTAP `23_land_register`, `27_professional_deposits`, `28_professional_conflict_visibility`, `bench/register_deposit*`, `OfficerSignatureIT`, `RegisterIT`, `ProfessionalDepositIT`, `InscriptionCanonicalTest`, `e2e/tests/register.ts` |
 | Synthetic data | `infra/scripts/dev-seed-register.sh` |
 
 ## How it works

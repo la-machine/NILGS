@@ -143,9 +143,18 @@ public final class Register {
     public record DepositOutcome(UUID transactionId, UUID conflictId) {
     }
 
-    /** A professional's own deposit as they read it: an open one is {@code OPEN}, never HOLDING or IN_CONFLICT. */
-    public record ProfessionalDeposit(UUID id, UUID titleId, String titleNumber, String officeCode, String kind, String status, String depositorName,
-                                      String capacity, Instant depositedAt, Instant closedAt, String closedReason, long documents) {
+    /**
+     * A professional's own deposit as they read it (ADR-041 D17): its real status, whether a conflict naming it is
+     * {@code UNDER_REVIEW} or {@code RESOLVED} ({@code NONE} otherwise), and {@code actionRequired}, {@code NONE} today.
+     * Nothing of a competing deposit, and no conflict decision's reason.
+     */
+    public record ProfessionalDeposit(UUID id, UUID titleId, String titleNumber, String officeCode, String kind, String status, String conflict,
+                                      Instant reviewDueAt, String actionRequired, String depositorName, String capacity, Instant depositedAt,
+                                      Instant closedAt, String closedReason, long documents) {
+
+        public boolean conflictUnderReview() {
+            return "UNDER_REVIEW".equals(conflict);
+        }
     }
 
     /** A file of the professional's own deposit; who else uploaded is not theirs to see. */

@@ -16,7 +16,7 @@ import { depositsApi, professionalApi } from './api'
 import type { Deposit, Own, TitleLookup } from './api'
 import { DepositForm, LookupResult, TitleLookupForm } from './DepositForm'
 import { History } from './History'
-import { DEPOSIT_TONE, STATUS_TONE } from './tones'
+import { CONFLICT_TONE, DEPOSIT_TONE, STATUS_TONE } from './tones'
 
 export function OwnPage({ ctx }: { ctx: PageContext }) {
   const { texts, session, lang } = ctx
@@ -109,7 +109,10 @@ function DepositList({ texts, lang }: { texts: Texts; lang: Lang }) {
                 <td data-label={p.title}><a className="mono strong" href={href(['professional', 'deposits', d.id])}>{d.titleNumber}</a></td>
                 <td data-label={p.kind}>{(p.depositKinds as Record<string, string>)[d.kind] ?? d.kind}</td>
                 <td data-label={p.depositor}>{d.depositorName}</td>
-                <td data-label={p.status}><Badge tone={DEPOSIT_TONE[d.status]}>{p.depositStatuses[d.status]}</Badge></td>
+                <td data-label={p.status} data-conflict={d.conflict}>
+                  <Badge tone={DEPOSIT_TONE[d.status]}>{p.depositStatuses[d.status]}</Badge>
+                  {d.conflict === 'UNDER_REVIEW' && <> <Badge tone={CONFLICT_TONE[d.conflict]}>{p.conflictStates[d.conflict]}</Badge></>}
+                </td>
                 <td data-label={p.depositedAt} className="num">{new Date(d.depositedAt).toLocaleString(lang)}</td>
                 <td data-label={p.documents} className="num-col num">{d.documents}</td>
               </tr>

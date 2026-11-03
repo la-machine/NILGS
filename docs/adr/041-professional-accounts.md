@@ -4,7 +4,7 @@
 
 | Status | Date | Deciders |
 | --- | --- | --- |
-| **Accepted, revision 3, implemented for Slice 3** (decisions D11 to D16, and the sign-in and suspension answers, of 1 Nov 2026). Built in steps 1 to 6, documented in step 7 and verified locally in step 8 (2 Nov 2026); what differs from the decision is under "As built". CI runs once the branch is pushed. The questions left for review are listed under "Open questions". | 2026-11-02 | Project owner, Pythagore (FLYT) |
+| **Accepted, revision 4.** D11 to D16, and the sign-in and suspension answers, of 1 Nov 2026: built in steps 1 to 6, documented in step 7, verified locally in step 8 (2 Nov 2026); what differs from the decision is under "As built". **D17 to D21 of 2 Nov 2026** (conflict visibility, retention, document replacement, account order, dashboard counts): recorded in step 9; D17 built in step 10; the others to be built in steps 11 to 16 (see "Decisions of 2 Nov 2026" and the plan). | 2026-11-02 | Project owner, Pythagore (FLYT) |
 
 ## Context
 
@@ -132,7 +132,8 @@ Officer signatures (ADR-019) stay staff-only: a professional signs nothing in th
 - **The answer:** the number, its office, and whether it accepts a deposit (it exists and is not
   closed).
 - **Never in it:** holders, charges, restrictions, history, or whether a deposit or conflict is
-  pending. Exposing a pending deposit would tell a third party about a sale in progress.
+  pending. Exposing a pending deposit would tell a third party about a sale in progress. *(Unchanged
+  by D17, which concerns a professional's own deposits only.)*
 - **Unknown or elsewhere:** an unknown number, and a title at an office the professional does not
   serve, get the same answer, so the lookup cannot be used to find titles.
 - **Audit and limits:** each lookup is audited (`REGISTER_TITLE_LOOKED_UP`, with the capacity) and
@@ -171,6 +172,7 @@ Any fuller verification needs a separately authorised workflow.
 - **Documents.** Same validation, storage, retention and audit as counter deposits (ADR-040 §4.7).
   A professional reads and adds documents only on their own deposits, and never sees another
   deposit's documents, a conflicting one included. Conservators see all of the office's.
+  *Amended by D19 (2 Nov 2026): replacing a document needs a second person.*
 - **Conservators decide.** A professional's deposit is refused, registered or put in conflict by
   conservators, exactly like a counter deposit. Depositing registers nothing.
 - **Counter deposits remain**, unchanged, beside the professional channel.
@@ -184,7 +186,7 @@ Any fuller verification needs a separately authorised workflow.
   (`PROFESSIONAL_EVIDENCE_READ`).
 - **Retention.** No retention policy has been approved yet. Until one is, nothing is removed, as for
   deposit documents. Applying a policy will need its own migration, because the tables refuse
-  deletion.
+  deletion. *Completed by D18 (2 Nov 2026): retention metadata and legal holds, still no deletion.*
 
 ### 9. Audit
 
@@ -323,7 +325,8 @@ Migration V26; the professional channel lives in the register module (`Professio
   `OPEN`, never `HOLDING` or `IN_CONFLICT`: telling a notary that the title is already held would tell
   them a sale is in progress (§6). Conservators see the real status, the account and the capacity. A
   file a conservator added shows as not uploaded by the professional, without the name.
-  **For review:** whether a professional should see that their deposit is in conflict.
+  **For review:** whether a professional should see that their deposit is in conflict. *Decided by
+  D17 (2 Nov 2026): they do.*
 - **Withdrawal and documents.** `transaction_close` and `deposit_document_add` gain the professional's
   branch: their own deposit, while they hold the permission. They withdraw only, and never refuse.
   Every other rule is unchanged, the holder rule and the 100-document limit included. Conservators
@@ -445,17 +448,218 @@ Every suite CI runs, run locally on a rebuilt stack. No code or schema changed i
 The `AUDIT CHAIN VERIFICATION FAILED` lines in the backend log come from `AuditChainIT` and
 `AuditApiIT`, which break the chain on purpose and expect it to be detected.
 
+## Decisions of 2 Nov 2026 (D17 to D21)
+
+The five open questions left after step 8 were answered by the project owner on 2 Nov 2026. Each
+decision below gives the owner's words first, then how SNIGF applies it. Where SNIGF had to choose
+how to read it, the reading is marked **(reading)** and listed under "Open questions" for
+confirmation. Building it continues meanwhile, because each reading is the stricter option.
+
+| # | Question | Decision |
+| --- | --- | --- |
+| **D17** | Should a notary see that their deposit is in conflict? | Yes, for their own deposit: its status, whether review is pending, and any action required from them. Never the competing party's identity, documents or confidential information |
+| **D18** | Retention of verification evidence and deposit documents | No fixed period is invented. Retention follows an approved legal and administrative retention schedule. Until one is approved, nothing is deleted automatically. Retention metadata, restricted access, audit and legal holds are built now |
+| **D19** | Replacing a document | Formally submitted evidence is never silently overwritten or deleted. Replacing it needs a second authorised person's approval. The original file, its hash, uploader, time, reason and version history are kept. A draft may be corrected by its uploader before formal submission, with an audit trail |
+| **D20** | The administrators' directory order | Newest accounts first by default: creation time descending, with a deterministic tie-breaker; pagination, search and filters |
+| **D21** | Dashboard counts | Pending professional-account requests, verifications awaiting action and approvals awaiting action, as separate counts. Each links to its filtered work queue, is shown only to those allowed to act on it, and counts pending items, never completed ones |
+
+### D17: a notary sees their own deposit's conflict
+
+**What changes.** Step 4 showed an open deposit as `OPEN` to its professional. From now on,
+`professional_deposits` and `professional_deposit` show the professional the real status of
+**their own** deposit, with three more fields:
+
+| Field | Values | Source |
+| --- | --- | --- |
+| `status` | `HOLDING`, `IN_CONFLICT`, `REGISTERED`, `WITHDRAWN`, `REFUSED` | `pending_transaction.status` |
+| `conflict` | `NONE`; `UNDER_REVIEW` while a conflict naming this deposit is open; `RESOLVED` once each has been decided | `transaction_conflict`, holding or arriving side |
+| `reviewDueAt` | the date by which conservators review an open deposit | `review_due_at` |
+| `actionRequired` | `NONE` today | see below |
+
+- **Both sides of a conflict (reading).** A holding deposit that a later one conflicts with shows
+  `conflict = UNDER_REVIEW` as well: its transfer cannot be registered until the conflict is decided
+  (ADR-040), so its notary needs to know why it is waiting. Its status stays `HOLDING`.
+- **`actionRequired`.** No workflow asks a professional anything yet, so it is always `NONE`. It
+  exists so that a later step (for example a conservator asking for a document) adds a value, not a
+  new field. A pending document replacement (D19) is shown with the document, not here.
+- **Never shown to the professional**, whatever the status:
+  - the competing deposit: its id, kind, depositor, notary, account, channel, dates and documents;
+  - how many deposits compete;
+  - the resolution's reason, evidence and conservator;
+  - the conflict's id.
+
+  A resolved conflict shows only its effect on their own deposit: kept `HOLDING`, now `HOLDING`
+  (preferred), or `REFUSED`, with "refused by the conservation" and no reason text, because that text
+  is written for conservators and may name the other party.
+- **The lookup is unchanged.** §6 still never says whether a title is held or a deposit is pending. A
+  professional learns about a conflict only by making a valid, attributed, audited deposit with a
+  deed.
+- **Risk: probing by deposit.** A notary could deposit to find out whether a title is held, then
+  withdraw. That costs a valid deposit with a deed and a declared client, is audited and attributed,
+  and opens a conflict that conservators see at once. In addition, a withdrawal while
+  `conflict = UNDER_REVIEW` is audited with `"withdrawnDuringConflict": true`, so the pattern can be
+  found in the audit trail.
+- **Where.** V27 replaces the two functions. Their columns are listed explicitly, never `t.*`, so a
+  later column cannot leak.
+
+### D18: retention metadata and legal holds, no deletion
+
+**No period is set, and nothing is deleted.** SNIGF holds no approved retention schedule, so it
+stores none. The tables keep refusing `UPDATE` and `DELETE`, and no job removes these records or
+their files.
+
+- **Records covered:**
+  - verification evidence: `professional_verification_document`;
+  - deposit documents, of both channels: `deposit_document`;
+  - the pending replacement files of D19.
+- **Retention metadata.** A catalogue, `retention_class`: a code per kind of record, a description,
+  and the reference and approval date of a schedule. Both stay empty until a schedule is approved,
+  and a `CHECK` makes the class read **"no approved schedule: kept"** while they are. There is no
+  period column: when a schedule is approved, its period, its trigger event and the disposal
+  procedure need their own ADR and migration. Each record names its class (`NOT NULL`), set by the
+  database on insert, never by the caller.
+- **Legal holds.** `legal_hold`: the subject (one document, every document of a deposit, or every
+  piece of evidence of a professional), a reason, who placed it and when.
+  - One authorised person places a hold; releasing it is requested by one and approved by another,
+    as §3 does for every change that restores or ends something.
+  - A hold is never deleted. Its release is recorded beside it.
+  - `record_disposal_allowed(record)` is the one function a future disposal must call. It is false
+    while no approved schedule covers the class, and while any hold covers the record. Today it is
+    therefore always false, and pgTAP checks both reasons separately.
+- **Restricted access.** Three new permissions, never professional and never delegable:
+  `records.retention.read` (classes and holds), `records.hold.place` and `records.hold.release`.
+  **(reading)** SYSTEM_ADMIN holds the three, and AUDITOR holds `records.retention.read`. Reading
+  retention data does not open the documents: downloads keep their own permissions.
+- **Audit.** `RECORD_HOLD_PLACED`, `RECORD_HOLD_RELEASE_REQUESTED`, `RECORD_HOLD_RELEASED`,
+  `RECORD_HOLD_RELEASE_REJECTED` and `RECORD_RETENTION_READ`, with the subject. Refusals are
+  `RECORD_REFUSED`.
+- **Orphan cleanup.** `document_storage_keys_known` also returns the pending replacement files, so
+  the cleanup never removes a file that a record names (ADR-033).
+
+### D19: replacing a submitted document needs a second person
+
+**Which documents are formally submitted.**
+
+| Documents | Submitted when | Today | From D19 |
+| --- | --- | --- | --- |
+| Deposit documents, professional channel | with the deposit (one request, §7) | the notary replaces at once, with a reason | the replacement is a **request**; a conservator of the office approves it |
+| Deposit documents, counter channel | when a conservator adds them | a conservator replaces at once, with a reason | a request; **another** conservator of the office approves it |
+| Verification evidence | when added by the verifier | never replaced: only added | unchanged; pgTAP holds that no replacement path exists |
+| Application documents (ADR-033) | when the application is submitted | drafts: the owner adds versions. After submission: new versions only in the categories an intake officer asked for (ADR-034) | **(reading)** unchanged; see below |
+
+- **The request.** The new file passes the ADR-033 checks and is kept first, as today. A row of
+  `deposit_document_replacement` records:
+  - the document to replace and the new file's hash, size, type and name;
+  - who asked, when, and the reason (10 to 2,000 characters).
+- **The decision.** One database function, `deposit_document_replacement_decide`.
+  - It refuses the requester.
+  - It refuses a professional.
+  - It refuses anyone without `register.confirm` at the deposit's office.
+  - On approval, it adds the `deposit_document` row that names the original (`replaces_id`), with the
+    reason and the approver. The original is never changed.
+  - On rejection, it records the decision and a reason, and the file is kept (D18).
+  - The requester may withdraw a pending request.
+- **While it waits.** The original stays the current document. The deposit's transfer cannot be
+  registered while a replacement is pending (`REPLACEMENT_PENDING`, 409), so what a conservator signs
+  never changes underneath them. Approval takes the title's lock, as `deposit_document_add` does, so
+  an approval during a signature still makes that signature fail (ADR-040).
+- **History.** For each document, the API lists every version: the original, each approved
+  replacement, and each pending, rejected or withdrawn request. For each it gives the hash, uploader,
+  time, reason and decision.
+- **Adding a document** that replaces nothing is unchanged: it is not a replacement.
+- **Application documents (reading).** After submission, an applicant can add a version only in a
+  category that an intake officer asked for, and the officer reviews completeness again before
+  accepting. That is already a second authorised person deciding, and every earlier version is kept.
+  Before submission, the owner corrects their draft, and every upload is audited
+  (`DOCUMENT_UPLOADED`). A deleted draft is audited (`APPLICATION_DRAFT_DELETED`), and its files are
+  removed by the orphan cleanup. That matches "draft documents may be corrected by their uploader
+  before formal submission", and D18 does not cover application drafts. So no change, unless the
+  project owner wants the officer to approve each new version separately.
+
+### D20: newest accounts first, searchable
+
+`GET /api/v1/admin/professionals`:
+
+- **Order.** `requested_at DESC, user_id DESC`. The account is created with its request, so
+  `requested_at` is its creation time. The UUIDv7 id breaks ties deterministically.
+- **Pagination.** `page` and `size` (1 to 100, default 50). The answer adds the total, so the screen
+  shows "page x of y".
+- **Search.** `q` matches the e-mail, the display name, the chamber and the registration number,
+  ignoring case and accents. It needs 2 to 100 characters. The term is passed as a parameter and
+  escaped for `LIKE`, never concatenated.
+- **Filters.** `status`, `profession`, `office` (an office where the account is approved or proposed),
+  and `pending` (`VERIFICATION`, `ACTIVATION` or `CHANGE`, for D21's links). They combine with `AND`.
+- **Unchanged.** It still needs `admin.professional.read`, and it never shows evidence. The queue of
+  waiting requests stays oldest first: it is a work queue, not the directory.
+
+### D21: counts on the dashboard, one per queue
+
+`GET /api/v1/admin/professionals/counts`, counted exactly in the database rather than as the length
+of a first page.
+
+| Count | What it counts | Shown to | Link |
+| --- | --- | --- | --- |
+| **Account requests** | profiles `REQUESTED`, waiting for a verification | holders of `admin.professional.verify` | the directory, `pending=VERIFICATION` |
+| **Verifications awaiting a decision** | `VERIFIED` profiles whose activation request is pending, and that the viewer neither verified nor requested | holders of `admin.professional.approve` | `pending=ACTIVATION` |
+| **Approvals awaiting action** | pending reinstatement, revocation and office-change requests not made by the viewer | holders of `admin.professional.approve` | `pending=CHANGE` |
+
+- **Pending only.** Approved, rejected, expired and withdrawn requests, and active, suspended and
+  revoked accounts, are never counted.
+- **Four eyes on screen.** A request the viewer made, or a verification they recorded, is not counted
+  as waiting for them, since they may not decide it. It appears in a separate line, "waiting for
+  another administrator", which is informational and has no action.
+- **Permissions.** The server leaves out every count the viewer may not act on. It does not send a
+  zero, so the absence reveals nothing to the viewer and the screen shows nothing. A holder of
+  `admin.professional.read` only gets no count. A professional gets `403`. The linked queues check
+  their own permissions again.
+
+## As built in step 10 (2 Nov 2026): D17
+
+Migration V27 replaces `professional_deposits`, the one function behind the list and the detail. No
+table changed.
+
+- **What it returns.** The real status; `conflict` from every conflict naming the deposit, on the
+  holding or the arriving side (`UNDER_REVIEW` while any is open, `RESOLVED` once each is decided,
+  `NONE` otherwise); `review_due_at` while the deposit is open; `action_required`, always `NONE`. The
+  columns are listed one by one. pgTAP `28` and `ProfessionalDepositIT` compare them with an
+  allow-list, so a column added later fails both until it is reviewed.
+- **A gap closed.** `conflict_resolve` (V21) copies the conservators' reason into the refused
+  deposit's `closed_reason`, and step 4 showed that column to the professional. A conflict decision's
+  reason may name the other deposit, so V27 no longer shows it. That is the case when a resolved
+  conflict naming the deposit has the closing conservator and the same reason. The screen says
+  "refused by the conservation when deciding a conflict". A refusal outside a conflict decision keeps
+  its reason, as before: conservators write it for the depositor.
+- **A withdrawal after a conflict.** Withdrawing does not resolve the conflict (V21), so the deposit
+  reads `WITHDRAWN` with `conflict = UNDER_REVIEW` until a conservator decides it. The application
+  reads the deposit after the withdrawal, in the same transaction, and records
+  `"withdrawnDuringConflict": true` or `false` in `REGISTER_TRANSACTION_WITHDRAWN`.
+- **The screens.** The professional's list shows "Under review by the conservation" beside the status.
+  The deposit's page shows a warning while the conflict is under review, then the conflict's state,
+  the review date and "action required from you: none". It never names the other deposit.
+- **Unchanged.** The lookup (§6); the professional's documents, still their own deposit's only; the
+  conservators' screens; every rule of the register.
+- **Tests.**
+  - pgTAP `28` (29 assertions): the allow-list; holding and arriving sides; two conflicts on one
+    holding deposit; a resolution's reason hidden and still recorded for conservators; a plain refusal's
+    reason shown; preferring the arriving deposit; a withdrawal during a conflict; the lookup
+    unchanged; suspension. `27` now expects the real status.
+  - `ProfessionalDepositIT` (10 tests, 2 new): the field allow-list on the list and the detail; both
+    sides under review without the other's id or account; the resolution's reason withheld; the audit
+    flag, `true` during a conflict and `false` outside one.
+  - Vitest (18): the list with a conflict, the deposit under review, and a refusal by a conflict decision.
+  - e2e: a counter deposit conflicts with the notary's; the notary sees it under review and nothing of
+    the other deposit; a second conservator decides; the notary sees it resolved.
+
 ## Open questions
 
-Left for the project owner's review. None of them weakens a control as built.
+The readings marked above, to confirm. Each is the stricter option and is built as written unless
+the project owner decides otherwise.
 
-| Question | Today |
-| --- | --- |
-| Should a notary see that their deposit is in conflict? | No: an open deposit reads `OPEN` (step 4), because a conflict would tell them that the title is held |
-| Retention of verification evidence and deposit documents | Nothing is removed until a policy is approved (§8) |
-| Should replacing a deposit's document need a second person? | No: one person, with a reason; the original stays listed and downloadable (ADR-040 §4.7) |
-| The administrators' directory order | Oldest first, 50 a page, with Previous and Next; the queue shows every waiting request |
-| A dashboard count of professional requests waiting | Not built (step 5) |
+| # | Reading | If the answer differs |
+| --- | --- | --- |
+| 1 | D17: the holding side of a conflict also sees `UNDER_REVIEW` | Only the arriving side would; the holding notary would see a transfer waiting without a reason |
+| 2 | D18: SYSTEM_ADMIN places and releases holds (two people to release), AUDITOR reads retention data | A records or legal role would need its own baseline role in the catalogue |
+| 3 | D19: application documents keep ADR-034's flow, where the intake officer's request is the second person | Each new version after submission would wait for the officer's approval before it counts |
 
 ## Answers of the project owner (1 Nov 2026)
 
@@ -496,6 +700,23 @@ Left for the project owner's review. None of them weakens a control as built.
 | ADR-038 | Audit subjects | Professional deposits keep `LAND_TITLE` |
 | ADR-040 | §4.7 counter deposits "until slice 3"; §6 | Counter deposits **remain** beside the professional channel; §6 implemented as above |
 
+**Conflicts of D17 to D21 (2 Nov 2026).** Dated notes are to be added to each ADR below in step 15,
+when the behaviour is built. None of these decisions weakens a control.
+
+| ADR | Today | D17 to D21 | Resolution |
+| --- | --- | --- | --- |
+| ADR-041 §7, step 4 | an open deposit reads `OPEN` to its professional | **D17** shows `HOLDING` or `IN_CONFLICT` and the conflict's state | the professional's own deposit only; §6's lookup unchanged; the competing deposit never shown |
+| ADR-040 §4.7 | a conservator replaces a deposit document alone, with a reason | **D19** needs a second conservator | amended: a replacement request, approved by another conservator holding `register.confirm` |
+| ADR-041 §4, §7 | `register.deposit.document` lets a notary replace their own document | **D19**: a conservator approves it | the permission now lets the notary *ask* for a replacement; its catalogue description changes, the permission does not |
+| ADR-040 §4.7 (signature binding) | a transfer's bytes name every document | **D19** adds pending replacements | a transfer is refused while one is pending; the bytes are unchanged, so earlier signatures still verify |
+| ADR-040 §4.7, ADR-041 §8 | "no retention period; nothing removed; a rule needs its own decision" | **D18** confirms, and adds metadata and holds | consistent; any disposal still needs its own ADR and migration |
+| ADR-033 | the orphan cleanup deletes files no record names | **D18**: nothing deleted automatically | `document_storage_keys_known` also returns pending replacement files; application drafts are outside D18 |
+| ADR-033, ADR-034 | versions after submission only in categories an officer asked for | **D19** | read as already satisfying D19 (open question 3) |
+| ADR-025 | the permission catalogue | **D18**: three `records.*` permissions | added to the catalogue, the code and `PermissionCatalogueCheck`; never professional, never delegable |
+| ADR-026 | four eyes enforced by the database | **D18** (hold release) and **D19** (replacement) | the same pattern: the requester never decides, and the database refuses otherwise |
+| ADR-038 | audit subjects | **D18**, **D19** | deposit-document events keep `LAND_TITLE`; holds on evidence take none, like account events |
+| ADR-041 step 5 | the directory is oldest first; the dashboard counts lists of up to 50 | **D20**, **D21** | newest first; exact counts from a dedicated endpoint |
+
 ## Alternatives considered
 
 - **Professionals as staff with a restricted role.** Least new code, but one role change by an
@@ -525,6 +746,14 @@ Small steps; each ends with its tests green and is reported for review.
 | 6 | **Seed** | One active DEMO notary and one verified surveyor at YDE1, through the real workflow | idempotent |
 | 7 | **Docs** (done) | This ADR to Accepted; the amendments; guide `docs/guides/professional-accounts.md`; manual chapters 02, 03, 04, 05, 08, 10; permission matrix; CHANGELOG; README | `DocumentationSyncTest` |
 | 8 | **Full verification** (done locally; CI once pushed) | backend, pgTAP, frontend, stack rebuild, probes, e2e, secret scan; then CI | real results only |
+| 9 | **D17 to D21 recorded** (done) | This ADR (revision 4), its index, the CHANGELOG | `DocumentationSyncTest` |
+| 10 | **D17: conflict visibility** (done) | V27: `professional_deposits` and `professional_deposit` with the real status, `conflict`, `reviewDueAt`, `actionRequired`, explicit columns; the withdrawal's `withdrawnDuringConflict`; the notary's deposit page | pgTAP `28`: each status and conflict state, holding and arriving sides; no column of the competing deposit; a resolved conflict without its reason; another professional still sees nothing. `ProfessionalDepositIT`: the answer's exact field set (an allow-list, so a new field fails the test); the lookup unchanged. Vitest; the e2e journey with a second deposit |
+| 11 | **D20: the directory** | order, `size`, total, `q`, the filters; the screen's search, filters and "page x of y" | `ProfessionalLifecycleIT`: newest first, a tie on `requested_at` broken by id, each filter, the search (case, accents, `%` and `_` taken literally), bounds refused with `422`; a professional refused; Vitest |
+| 12 | **D21: the counts** | `GET /api/v1/admin/professionals/counts`; the dashboard's three tiles and the informational line, each linking to its filter | IT: each count per role (verifier, approver, reader only, professional `403`), one's own request and verification not counted, completed requests never counted, an absent count rather than zero; Vitest: tiles only for what is returned, the links' filters |
+| 13 | **D19: replacement with a second person** | V28: `deposit_document_replacement`, `_request`, `_decide`, `_withdraw`; both channels; `REPLACEMENT_PENDING` on registration; the version history in the API; the screens for the requester and the conservator | pgTAP `29`: the requester, a professional, or a conservator elsewhere cannot decide; the original stays current until approval; rejected and withdrawn files kept; no `UPDATE` or `DELETE`; approval under the title's lock; no replacement path for evidence. `RegisterIT`, `ProfessionalDepositIT`: both channels, the history, a transfer refused while pending; `PermissionMatrixIT`: the new endpoints; `db-test.sh`: an approval racing a signature; Vitest; e2e |
+| 14 | **D18: retention and holds** | V29: `retention_class` (no period, no schedule), the class on each covered record, `legal_hold` and its release request, `record_disposal_allowed`; the three permissions; the screens beside the evidence and the deposit's documents | pgTAP `30`: a class cannot claim a schedule without its reference and date; every covered record has its class, set by the database; a hold placed by one, released by two; `record_disposal_allowed` false without a schedule and false under a hold; no delete path, and the cleanup keeps pending files. IT: holds and retention reads audited; refused without the permission; `PermissionMatrixIT`, `PermissionCatalogueCheckTest` |
+| 15 | **Docs** | the guide, the manual chapters, the dated notes in ADR-025, 026, 033, 038 and 040, the permission matrix, the README | `DocumentationSyncTest` |
+| 16 | **Full verification** | backend, pgTAP, frontend, stack rebuild, probes, e2e, secret scan; then CI on the pushed branch | real results only |
 
 ### Risks
 
@@ -535,3 +764,11 @@ Small steps; each ends with its tests green and is reported for review.
   applies.
 - **Personal data.** Credentials and evidence are readable by the administrators concerned only, reads
   audited, and synthetic in the MVP.
+- **D17 leaks through a new field.** The functions list their columns explicitly, and the integration
+  test compares the answer with an allow-list, so a field added later fails the build until it is
+  reviewed.
+- **D19 blocks a transfer.** A replacement left pending holds the registration. The conservator who
+  would sign also sees it, and either decides it or asks another conservator to; the requester may
+  withdraw it. A pending replacement never expires on its own, as deposits do not (D11).
+- **D18 and storage growth.** Nothing is deleted, by decision. Storage is monitored as for the other
+  documents (P-01). It is not a reason to delete.

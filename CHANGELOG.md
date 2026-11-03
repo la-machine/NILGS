@@ -9,6 +9,67 @@ Each entry names the decision record (ADR) and the guide (`docs/guides/`) that e
 
 ## [Unreleased]
 
+### Fixed: the end-to-end run failed in CI at the notary's sign-in
+
+- **Cause:** the run's sign-ins, key proofs and recovery codes all come from one address and count
+  against the login limit (`SNIGF_RATE_LOGIN_PER_MINUTE=20`). The notary's login is the 22nd attempt.
+  CI's runner got there before the bucket refilled, a minute after the first attempt, so it was
+  refused with 429. Slower machines crossed the minute and passed.
+- **A weak assertion found on the way:** the 21st attempt, the check that an old recovery code is dead
+  after a reset, was also refused, and passed because it only asserted "not 200". It now expects
+  exactly 403 `MFA_NOT_ALLOWED`.
+- **Fix, in the tests only:** after a 429, a sign-in or a `Person.api` call waits for the server's
+  `Retry-After`, then tries once more. A second refusal fails the test. Each wait prints
+  `throttled: ...` in the run's output. The limit is unchanged.
+- **Verified:**
+  - at 12 per minute, the officer's login was refused, waited 35 s and the run passed;
+  - at 20 on a fresh bucket, the old-code check was refused as on CI, waited 27 s, got its 403, and
+    the run passed (38 passed, 1 skipped).
+- **Docs:** a pitfall row in the end-to-end testing guide.
+
+### Professional accounts, step 10: a notary sees their deposit's conflict (Slice 3, D17)
+
+[ADR-041](docs/adr/041-professional-accounts.md) D17, migration V27.
+
+- **What the notary sees** of their own deposit:
+  - its real status, `HOLDING` or `IN_CONFLICT`, instead of `OPEN`;
+  - whether a conflict naming it is under review or decided, on either side;
+  - the review date;
+  - the action required of them, none yet.
+
+  They never see the other deposit, its parties, documents or number. The title lookup is unchanged.
+- **Fixed:** a deposit refused by a conflict decision showed the notary the conservators' reason,
+  which may name the other party. It is no longer shown. A refusal outside a conflict keeps its reason.
+- **Audit:** a withdrawal records `withdrawnDuringConflict`, so a deposit made only to learn whether a
+  title is held can be found.
+- **Tests:**
+  - pgTAP `28`, and `27` updated;
+  - `ProfessionalDepositIT`, with the answer's fields checked against an allow-list;
+  - Vitest;
+  - the e2e journey, now with a conflicting counter deposit decided by a second conservator.
+- **Docs:** ADR-041 "As built in step 10", a dated note in ADR-040, the professional accounts and
+  land register guides, chapters 4, 7 and 10.
+
+### Professional accounts, step 9: decisions D17 to D21 recorded (Slice 3, docs only)
+
+[ADR-041](docs/adr/041-professional-accounts.md) revision 4. It records the project owner's answers
+of 2 Nov 2026 to the five open questions. No code yet: steps 10 to 16 build them.
+
+- **D17:** a notary sees their own deposit's real status, whether a conflict is under review, and any
+  action required of them. They never see the competing deposit, its party or its documents. The
+  title lookup is unchanged.
+- **D18:** no retention period is invented and nothing is deleted. Retention classes carry no
+  schedule until one is approved. Legal holds are placed by one person and released by two. Access to
+  retention data is restricted and audited.
+- **D19:** replacing a submitted deposit document becomes a request, approved by a second conservator.
+  The original and every version are kept. Verification evidence is never replaced.
+- **D20:** the administrators' directory is newest first, with a deterministic order, pagination,
+  search and filters.
+- **D21:** three separate dashboard counts, of pending items only, each shown only to those who may act
+  on it and linked to its filtered queue.
+- **Conflicts** with ADR-025, 026, 033, 034, 038 and 040 are listed in the ADR, with their resolution.
+  It also lists three readings for the project owner to confirm.
+
 ### Professional accounts, step 8: full verification (Slice 3)
 
 [ADR-041](docs/adr/041-professional-accounts.md), step 8 of 8. No code or schema change; every suite

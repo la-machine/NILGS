@@ -16,7 +16,8 @@
 //   - parcels and map views (parcels.ts), with the same people;
 //   - the DEMO land register (register.ts), with two conservators;
 //   - professional accounts (professionals.ts): a notary requests, two administrators verify and
-//     approve, the notary deposits on the register's title, a conservator registers the transfer.
+//     approve, the notary deposits on the register's title, sees a counter deposit's conflict under
+//     review until a second conservator decides it, and a conservator registers the transfer.
 import { expect, test } from '@playwright/test'
 import type { Browser } from '@playwright/test'
 import { applicationJourneys } from './applications'
@@ -280,8 +281,11 @@ test('when every key and code is lost, an administrator asks and the supervisor 
   await expect(confirmations.getByText('Reset done: the person registers new keys at their next sign-in.')).toBeVisible()
 
   expect(await officer.enterPassword()).toBe('enrol')
+  // Nothing to prove after the reset, so no recovery code is accepted, the old one included. Exact,
+  // so a 429 from the login limit can never pass for it.
   const dead = await officer.api('POST', '/auth/mfa/recovery', { code: oldCode })
-  expect(dead.status, 'an old recovery code is dead after the reset').not.toBe(200)
+  expect(dead.status, 'an old recovery code is dead after the reset').toBe(403)
+  expect(dead.body.code).toBe('MFA_NOT_ALLOWED')
   await officer.enrolTwoKeys()
   expect(officer.recoveryCodes).toHaveLength(10)
   expect(officer.recoveryCodes).not.toContain(oldCode)
@@ -309,6 +313,6 @@ applicationJourneys(() => ({ applicant, intake, reviewer, decider, surveyor, adm
 const journeyTitle = registerJourneys(() => ({ first: officer, second: surveyor }), parcelReference)
 
 // The officer is a conservator: they register the notary's deposit on the register's title.
-professionalJourneys(() => browserRef, () => ({ verifier: admin1, approver: admin2, conservator: officer }), journeyTitle)
+professionalJourneys(() => browserRef, () => ({ verifier: admin1, approver: admin2, conservator: officer, secondConservator: surveyor }), journeyTitle)
 
 designTour(() => ({ cadastral: officer, admin: admin1, auditor, reference: parcelReference }))

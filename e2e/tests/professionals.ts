@@ -4,11 +4,13 @@
 // keys: a notary requests an account on the public form and enrols two keys; one administrator
 // verifies the credential and proposes the office; the verifier cannot approve, a second
 // administrator does; the notary looks up the journey's title, learns nothing more than its number
-// and office, and deposits a sale with a deed; a conservator sees the deposit's channel and the
-// notary, and registers the transfer; the notary sees their deposit registered. Everything is synthetic.
+// and office, and deposits a sale with a deed; a counter deposit conflicts with it, and the notary
+// sees the conflict under review without anything of the other deposit (D17) until a second
+// conservator decides it; a conservator sees the deposit's channel and the notary, and registers the
+// transfer; the notary sees their deposit registered. Everything is synthetic.
 import { expect, test } from '@playwright/test'
 import type { Browser } from '@playwright/test'
-import { PDF } from './register'
+import { PDF, choose, name as partyName } from './register'
 import type { JourneyTitle } from './register'
 import { OFFICE, Person, RUN, SIGNED_IN, email, english, password } from './support'
 
@@ -16,6 +18,8 @@ export interface ProfessionalPeople {
   verifier: Person
   approver: Person
   conservator: Person
+  /** A second conservator of the office, who decides a conflict on a deposit the first received. */
+  secondConservator: Person
 }
 
 const notaryName = `DEMO Notary ${RUN}`
@@ -26,13 +30,14 @@ export function professionalJourneys(browser: () => Browser, people: () => Profe
   let verifier: Person
   let approver: Person
   let conservator: Person
+  let secondConservator: Person
 
   test.afterAll(async () => {
     await notary?.context.close()
   })
 
   test('a notary requests a professional account, enrols two keys and sees only their status', async () => {
-    ({ verifier, approver, conservator } = people())
+    ({ verifier, approver, conservator, secondConservator } = people())
     notary = await Person.open(browser(), 'notary')
     const page = notary.page
     await page.goto('/')
@@ -114,8 +119,43 @@ export function professionalJourneys(browser: () => Browser, people: () => Profe
     await form.getByRole('button', { name: 'Deposit', exact: true }).click()
     await notary.respond(true)
     const deposit = notary.page.locator('[data-own-deposit]')
-    await expect(deposit).toHaveAttribute('data-status', 'OPEN')
+    await expect(deposit).toHaveAttribute('data-status', 'HOLDING')
     await expect(deposit.getByRole('link', { name: 'deed.pdf' })).toBeVisible()
+  })
+
+  test('a counter deposit conflicts: the notary sees it under review, nothing of the other, until a second conservator decides', async () => {
+    await conservator.home()
+    await conservator.page.goto(title().href)
+    const main = conservator.page.locator('main')
+    const form = main.locator('[data-deposit-form]')
+    await choose(form, 'Depositor', partyName('Rival'))
+    await form.getByLabel('Evidence references').fill(`DEMO-DEED-R-${RUN}`)
+    await form.getByRole('button', { name: 'Record the deposit' }).click()
+    await expect(main.locator('[data-transaction][data-status="IN_CONFLICT"]')).toBeVisible()
+
+    const status = await notary.open('My professional account')
+    const row = status.locator('[data-deposit]').filter({ hasText: title().number })
+    await expect(row).toHaveAttribute('data-status', 'HOLDING')
+    await expect(row).toContainText('Under review by the conservation')
+    await row.getByRole('link').click()
+    const own = notary.page.locator('[data-own-deposit]')
+    await expect(own).toHaveAttribute('data-conflict', 'UNDER_REVIEW')
+    await expect(notary.page.getByText('A conflict is under review')).toBeVisible()
+    await expect(notary.page.getByText(partyName('Rival'))).toHaveCount(0)
+    await expect(notary.page.getByText(`DEMO-DEED-R-${RUN}`)).toHaveCount(0)
+
+    // The first conservator received the counter deposit; the second decides that the notary's stands.
+    const register = await secondConservator.open('Land register (DEMO)')
+    const conflict = register.locator('[data-conflict]').filter({ hasText: partyName('Rival') })
+    await conflict.getByLabel('Evidence references').fill(`DEMO-DECISION-N-${RUN}`)
+    await conflict.getByRole('button', { name: 'Record the decision' }).click()
+    await secondConservator.respond('The notary deposited first, with a deed')
+    await expect(register.locator('[data-conflict]').filter({ hasText: partyName('Rival') })).toHaveCount(0)
+
+    await notary.page.reload()
+    await expect(own).toHaveAttribute('data-conflict', 'RESOLVED')
+    await expect(own).toHaveAttribute('data-status', 'HOLDING')
+    await expect(notary.page.getByText('The notary deposited first, with a deed')).toHaveCount(0)
   })
 
   test('a conservator sees who deposited and registers the transfer; the notary sees it registered', async () => {

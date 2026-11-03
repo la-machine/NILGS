@@ -27,8 +27,8 @@ const profile = (over: Partial<Profile> = {}): Profile => ({
   jurisdiction: 'DEMO Centre', status: 'ACTIVE', requestedAt: '2026-11-01T08:00:00Z', statusChangedAt: '2026-11-01T09:00:00Z', offices: ['YDE1'], ...over,
 })
 const deposit = (over: Partial<Deposit> = {}): Deposit => ({
-  id: 'd1', titleId: 't1', titleNumber: 'DEMO-TF-YDE1-000001-A', officeCode: 'YDE1', kind: 'SALE', status: 'OPEN', depositorName: 'DEMO Client',
-  capacity: 'NOTARY', depositedAt: '2026-11-01T10:00:00Z', closedAt: null, closedReason: null, documents: 1, ...over,
+  id: 'd1', titleId: 't1', titleNumber: 'DEMO-TF-YDE1-000001-A', officeCode: 'YDE1', kind: 'SALE', status: 'HOLDING', conflict: 'NONE',
+  reviewDueAt: '2026-12-01T10:00:00Z', actionRequired: 'NONE', depositorName: 'DEMO Client', capacity: 'NOTARY', depositedAt: '2026-11-01T10:00:00Z', closedAt: null, closedReason: null, documents: 1, ...over,
 })
 const request = (over: Partial<ChangeRequest> = {}): ChangeRequest => ({
   id: 'r1', userId: 'p1', professionalName: 'DEMO Notary', kind: 'ACTIVATION', officesAdd: ['YDE1'], officesRemove: [], reason: 'Checked with the DEMO chamber',
@@ -165,14 +165,18 @@ describe('the professional\'s own page', () => {
     expect(document.querySelector('[data-professional-deposit-form]')).toBeNull()
   })
 
-  it('lists the notary\'s own deposits, an open one reading open', async () => {
+  it('lists the notary\'s own deposits with their real status, and a conflict under review (D17)', async () => {
     vi.spyOn(professionalApi, 'me').mockResolvedValue(own(profile()))
-    vi.spyOn(depositsApi, 'list').mockResolvedValue([deposit(), deposit({ id: 'd2', status: 'REGISTERED' })])
+    vi.spyOn(depositsApi, 'list').mockResolvedValue([deposit(), deposit({ id: 'd2', status: 'IN_CONFLICT', conflict: 'UNDER_REVIEW' }),
+      deposit({ id: 'd3', status: 'REGISTERED', conflict: 'RESOLVED', reviewDueAt: null })])
     wrap(<OwnPage ctx={ctx(session(NOTARY))} />)
-    const rows = await waitFor(() => { const r = document.querySelectorAll('[data-deposit]'); expect(r).toHaveLength(2); return r })
-    expect(rows[0].textContent).toContain('Open')
-    expect(rows[1].textContent).toContain('Registered (DEMO)')
-    expect(screen.queryByText('Holding the lock')).toBeNull()
+    const rows = await waitFor(() => { const r = document.querySelectorAll('[data-deposit]'); expect(r).toHaveLength(3); return r })
+    expect(rows[0].textContent).toContain('Holding the title')
+    expect(rows[0].textContent).not.toContain('Under review')
+    expect(rows[1].textContent).toContain('In conflict')
+    expect(rows[1].textContent).toContain('Under review by the conservation')
+    expect(rows[2].textContent).toContain('Registered (DEMO)')
+    expect(rows[2].textContent).not.toContain('Decided')
   })
 })
 
@@ -200,6 +204,31 @@ describe('one of the notary\'s deposits', () => {
     expect(await screen.findByText('Withdrawn')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Withdraw the deposit' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Add the document' })).toBeNull()
+  })
+
+  it('in conflict: says the conservation reviews it, the review date and that nothing is asked, never the other deposit', async () => {
+    vi.spyOn(depositsApi, 'one').mockResolvedValue(deposit({ status: 'IN_CONFLICT', conflict: 'UNDER_REVIEW' }))
+    vi.spyOn(depositsApi, 'documents').mockResolvedValue([doc()])
+    wrap(<DepositPage ctx={ctx(session(NOTARY))} id="d1" />)
+    const page = await found('[data-own-deposit="d1"]')
+    expect(page.dataset.conflict).toBe('UNDER_REVIEW')
+    expect(screen.getByText('A conflict is under review')).toBeTruthy()
+    expect(screen.getByText('Under review by the conservation')).toBeTruthy()
+    expect(screen.getByText('Review due by')).toBeTruthy()
+    expect(screen.getByText('Action required from you').nextElementSibling?.textContent).toBe('None')
+    expect(screen.getByRole('button', { name: 'Withdraw the deposit' })).toBeTruthy()
+  })
+
+  it('refused by a conflict decision: says so, without the conservators\' reason', async () => {
+    vi.spyOn(depositsApi, 'one').mockResolvedValue(deposit({ status: 'REFUSED', conflict: 'RESOLVED', reviewDueAt: null, closedAt: '2026-11-02T10:00:00Z' }))
+    vi.spyOn(depositsApi, 'documents').mockResolvedValue([doc()])
+    wrap(<DepositPage ctx={ctx(session(NOTARY))} id="d1" />)
+    expect(await screen.findByText('Refused by the conservation when deciding a conflict.')).toBeTruthy()
+    expect(screen.getByText('Decided')).toBeTruthy()
+    expect(screen.queryByText('A conflict is under review')).toBeNull()
+    expect(screen.queryByText('Review due by')).toBeNull()
+    expect(screen.queryByText('Action required from you')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Withdraw the deposit' })).toBeNull()
   })
 
   it('answers another deposit\'s id as not found', async () => {

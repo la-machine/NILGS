@@ -47,11 +47,20 @@ export interface NewChange { kind: ChangeKind; officesAdd?: string[]; officesRem
 
 /** The whole answer of the lookup (D16): never holders, charges, history or pending deposits. */
 export interface TitleLookup { id: string; number: string; officeCode: string; acceptsDeposit: boolean }
-/** An open deposit reads OPEN: the professional is not told whether the title is held. */
+/**
+ * One's own deposit (ADR-041 D17): its real status, whether a conflict naming it is under review or resolved, and
+ * what is asked of the professional (nothing yet). Never anything of the competing deposit; a conflict decision's
+ * reason is the conservators' and is not sent.
+ */
 export interface Deposit {
-  id: string; titleId: string; titleNumber: string; officeCode: string; kind: string; status: 'OPEN' | 'REGISTERED' | 'WITHDRAWN' | 'REFUSED'
+  id: string; titleId: string; titleNumber: string; officeCode: string; kind: string
+  status: 'HOLDING' | 'IN_CONFLICT' | 'REGISTERED' | 'WITHDRAWN' | 'REFUSED'
+  conflict: 'NONE' | 'UNDER_REVIEW' | 'RESOLVED'; reviewDueAt: string | null; actionRequired: 'NONE'
   depositorName: string; capacity: string; depositedAt: string; closedAt: string | null; closedReason: string | null; documents: number
 }
+
+/** Open: not yet registered or refused by conservators, nor withdrawn. */
+export const isOpen = (d: Pick<Deposit, 'status'>) => d.status === 'HOLDING' || d.status === 'IN_CONFLICT'
 /** A file of one's own deposit; who else added one is not shown. */
 export interface OwnDocument {
   id: string; transactionId: string; category: string; sha256: string; sizeBytes: number; mediaType: string; originalName: string; uploadedBySelf: boolean

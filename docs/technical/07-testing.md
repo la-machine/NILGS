@@ -61,7 +61,9 @@ Professional accounts (ADR-041, [guide](../guides/professional-accounts.md)):
   - `24`: the account type and profile, and every staff function false for a professional;
   - `25`: every lifecycle transition and its four-eyes rule, two keys before an activation, expiry;
   - `26`: every forbidden permission and special grant refused for a professional;
-  - `27`: deposits under the V21 rules, no lock from a refused deposit, the holder rule and offices.
+  - `27`: deposits under the V21 rules, no lock from a refused deposit, the holder rule and offices;
+  - `28`: what a notary sees of their deposit's conflict (D17): an allow-list of columns, both sides,
+    nothing of the other deposit, no conflict decision's reason.
 - **`db-test.sh`:** conservators and a notary's account race deposits on one title, leaving exactly
   one holding.
 - **Integration tests:**
@@ -69,7 +71,8 @@ Professional accounts (ADR-041, [guide](../guides/professional-accounts.md)):
   - `ProfessionalLifecycleIT`: the transitions and refusals, and the evidence audited;
   - `ProfessionalPermissionsIT`: the computed roles, and a suspension effective at the next request;
   - `ProfessionalDepositIT`: the lookup and its throttling, valid and refused deposits, retries and
-    duplicates, isolation, withdrawal.
+    duplicates, isolation, withdrawal; the fields of one's own deposit against an allow-list, a
+    conflict seen from both sides, and `withdrawnDuringConflict` in the audit trail.
 - **`PermissionMatrixIT`:** the professionals are refused on every staff endpoint, and the notary
   reaches exactly its own.
 - **Browser:** `professionals.test.tsx` (Vitest), and the acceptance journey in

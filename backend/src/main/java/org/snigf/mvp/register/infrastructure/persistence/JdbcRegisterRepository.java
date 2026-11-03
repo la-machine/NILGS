@@ -515,6 +515,7 @@ class JdbcRegisterRepository implements RegisterRepository {
                 .param("id", id).param("limit", limit).param("offset", offset)
                 .query((rs, n) -> new Register.ProfessionalDeposit(rs.getObject("id", UUID.class), rs.getObject("title_id", UUID.class),
                         rs.getString("title_number"), rs.getString("office_code"), rs.getString("kind"), rs.getString("status"),
+                        rs.getString("conflict"), instant(rs, "review_due_at"), rs.getString("action_required"),
                         rs.getString("depositor_name"), rs.getString("capacity"), instant(rs, "deposited_at"), instant(rs, "closed_at"),
                         rs.getString("closed_reason"), rs.getLong("documents")))
                 .list();
