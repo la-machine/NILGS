@@ -13,6 +13,13 @@ export type ChangeKind = 'REINSTATEMENT' | 'REVOCATION' | 'OFFICE_CHANGE'
 
 export const PROFESSIONS: Profession[] = ['NOTARY', 'SWORN_SURVEYOR']
 export const STATUSES: ProfessionalStatus[] = ['REQUESTED', 'VERIFIED', 'ACTIVE', 'SUSPENDED', 'REVOKED']
+/** A waiting step of the lifecycle: the directory's filter, and the dashboard's links (D20, D21). */
+export type PendingStep = 'VERIFICATION' | 'ACTIVATION' | 'CHANGE'
+export const PENDING_STEPS: PendingStep[] = ['VERIFICATION', 'ACTIVATION', 'CHANGE']
+/** The server's bounds for the directory (ProfessionalService): a page of 1 to 100, a search of 2 to 100 characters. */
+export const DIRECTORY_SIZE = 50
+export const SEARCH_MIN = 2
+export const SEARCH_MAX = 100
 export const DEPOSIT_KINDS = ['SALE', 'GIFT', 'INHERITANCE'] as const
 export const DEPOSITOR_KINDS = ['NATURAL_PERSON', 'LEGAL_PERSON'] as const
 export const IDENTITY_KINDS = ['NATIONAL_ID', 'PASSPORT', 'COMPANY_REGISTRATION'] as const
@@ -26,6 +33,16 @@ export interface Profile {
   userId: string; email: string; displayName: string; profession: Profession; chamber: string; registrationNumber: string; jurisdiction: string
   status: ProfessionalStatus; requestedAt: string; statusChangedAt: string; offices: string[]
 }
+/** The directory's filters (D20); empty means any. They combine with AND. */
+export interface DirectoryFilter { q: string; status: '' | ProfessionalStatus; profession: '' | Profession; office: string; pending: '' | PendingStep }
+export const NO_FILTER: DirectoryFilter = { q: '', status: '', profession: '', office: '', pending: '' }
+/** One page of the directory, newest account first, and how many accounts match in all. */
+export interface DirectoryPage { items: Profile[]; total: number; page: number; size: number }
+/**
+ * What waits for this administrator (D21), pending items only. The server leaves out a count they may not act on; one's
+ * own requests and verifications are in waitingForOthers, since another administrator decides them.
+ */
+export interface ProfessionalCounts { requests?: number; activations?: number; changes?: number; waitingForOthers?: number }
 export interface ChangeRequest {
   id: string; userId: string; professionalName: string; kind: 'ACTIVATION' | ChangeKind; officesAdd: string[]; officesRemove: string[]; reason: string | null
   requestedBy: string; requestedByName: string; requestedAt: string; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED'; decidedByName: string | null
@@ -87,7 +104,8 @@ export const professionalApi = {
   /** Public, throttled; the same answer whether or not the address was new. */
   request: (body: NewRequest) => call<void>('POST', '/professional-requests', body),
   me: () => call<Own>('GET', '/professional/me'),
-  profiles: (status = '', page = 0) => call<Profile[]>('GET', `${ADMIN}?${status ? `status=${encodeURIComponent(status)}&` : ''}page=${page}`),
+  directory: (filter: DirectoryFilter, page = 0, size = DIRECTORY_SIZE) => call<DirectoryPage>('GET', `${ADMIN}?${directoryQuery(filter, page, size)}`),
+  counts: () => call<ProfessionalCounts>('GET', `${ADMIN}/counts`),
   detail: (userId: string) => call<Detail>('GET', `${ADMIN}/${one(userId)}`),
   verify: (userId: string, body: NewVerification) => call<{ id: string }>('POST', `${ADMIN}/${one(userId)}/verification`, body),
   addEvidence: (userId: string, file: File) => call<{ id: string }>('POST', `${ADMIN}/${one(userId)}/verification/documents`, withFile(file), idempotent()),
@@ -139,6 +157,34 @@ export function depositProblems(d: Pick<NewDeposit, 'depositor' | 'files'>): ('D
     problems.push('DEPOSITOR_INVALID')
   }
   return problems
+}
+
+/** The directory's query string: only the filters set, each encoded, the search trimmed. */
+export function directoryQuery(filter: DirectoryFilter, page: number, size: number): string {
+  const params = new URLSearchParams()
+  const q = filter.q.trim()
+  if (q) params.set('q', q)
+  if (filter.status) params.set('status', filter.status)
+  if (filter.profession) params.set('profession', filter.profession)
+  const office = filter.office.trim().toUpperCase()
+  if (office) params.set('office', office)
+  if (filter.pending) params.set('pending', filter.pending)
+  params.set('page', String(page))
+  params.set('size', String(size))
+  // URLSearchParams writes a space as '+'; %20 reads the same everywhere.
+  return params.toString().replace(/\+/g, '%20')
+}
+
+/** The filters read from the address; a value the screen does not offer is dropped, and the server checks all again. */
+export function directoryFilterFrom(params: URLSearchParams): { filter: DirectoryFilter; page: number } {
+  const pick = <T extends string>(name: string, allowed: readonly T[]): T | '' => allowed.find((v) => v === params.get(name)) ?? ''
+  return {
+    filter: {
+      q: (params.get('q') ?? '').slice(0, SEARCH_MAX), status: pick('status', STATUSES), profession: pick('profession', PROFESSIONS),
+      office: (params.get('office') ?? '').toUpperCase(), pending: pick('pending', PENDING_STEPS),
+    },
+    page: Math.max(Number(params.get('page') ?? 0) || 0, 0),
+  }
 }
 
 /** Office codes typed as a list, one per comma or line, upper-cased. */

@@ -10,7 +10,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -114,9 +116,31 @@ class ProfessionalController {
 
     @GetMapping("/api/v1/admin/professionals")
     @PreAuthorize("@access.can(authentication, 'admin.professional.read')")
-    List<Professional.Profile> profiles(@AuthenticationPrincipal AuthenticatedUser admin, @RequestParam(required = false) String status,
-                                        @RequestParam(defaultValue = "0") int page) {
-        return professionals.profiles(admin, status, page);
+    Professional.DirectoryPage profiles(@AuthenticationPrincipal AuthenticatedUser admin, @RequestParam(required = false) String status,
+                                        @RequestParam(required = false) String profession, @RequestParam(required = false) String office,
+                                        @RequestParam(required = false) String pending, @RequestParam(required = false) String q,
+                                        @RequestParam(defaultValue = "0") int page,
+                                        @RequestParam(defaultValue = "" + ProfessionalService.DIRECTORY_SIZE) int size) {
+        return professionals.directory(admin, new Professional.DirectoryFilter(status, profession, office, pending, q), page, size);
+    }
+
+    /** The dashboard's counts (D21): a count the administrator may not act on is left out, not sent as zero. */
+    @GetMapping("/api/v1/admin/professionals/counts")
+    @PreAuthorize("@access.can(authentication, 'admin.professional.read')")
+    Map<String, Long> counts(@AuthenticationPrincipal AuthenticatedUser admin) {
+        Professional.Counts c = professionals.counts(admin);
+        Map<String, Long> shown = new LinkedHashMap<>();
+        putIfPresent(shown, "requests", c.requests());
+        putIfPresent(shown, "activations", c.activations());
+        putIfPresent(shown, "changes", c.changes());
+        putIfPresent(shown, "waitingForOthers", c.waitingForOthers());
+        return shown;
+    }
+
+    private static void putIfPresent(Map<String, Long> map, String key, Long value) {
+        if (value != null) {
+            map.put(key, value);
+        }
     }
 
     @GetMapping("/api/v1/admin/professionals/{id}")

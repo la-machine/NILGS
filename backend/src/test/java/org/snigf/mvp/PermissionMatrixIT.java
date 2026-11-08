@@ -98,6 +98,7 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
             new Endpoint("POST /admin/grants/{id}/revoke", Permission.ADMIN_GRANT_REVOKE, () -> post("/api/v1/admin/grants/" + SOMEONE + "/revoke")
                     .contentType(JSON).content(DECISION)),
             new Endpoint("GET /admin/professionals", Permission.ADMIN_PROFESSIONAL_READ, () -> get("/api/v1/admin/professionals")),
+            new Endpoint("GET /admin/professionals/counts", Permission.ADMIN_PROFESSIONAL_READ, () -> get("/api/v1/admin/professionals/counts")),
             new Endpoint("GET /admin/professionals/{unknown}", Permission.ADMIN_PROFESSIONAL_READ, () -> get("/api/v1/admin/professionals/" + SOMEONE)),
             new Endpoint("GET /admin/professional-requests", Permission.ADMIN_PROFESSIONAL_READ, () -> get("/api/v1/admin/professional-requests")),
             new Endpoint("POST /admin/professionals/{unknown}/verification", Permission.ADMIN_PROFESSIONAL_VERIFY, () -> post("/api/v1/admin/professionals/" + SOMEONE + "/verification")

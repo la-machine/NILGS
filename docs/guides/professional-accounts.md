@@ -39,9 +39,9 @@ Decision: [ADR-041](../adr/041-professional-accounts.md) (D11 to D16), built on
 | Account type and profile | `V23__professional_accounts.sql`; `identity`: `AccountType` (`requiresSecondFactor`), `AccountRegistration` |
 | Lifecycle, four eyes, offices, evidence | `V24__professional_lifecycle.sql`; module `professional`: `ProfessionalService`, `ProfessionalController`, `ProfessionalRateLimiter`, `JdbcProfessionalRepository` |
 | Permissions | `V25__professional_permissions.sql` (`holds_professional_at`, `professional_grants`); `Permission`, `BaselineRole` (NOTARY, SWORN_SURVEYOR); `AuthorizationService` |
-| Lookup and deposits | `V26__professional_deposits.sql`, `V27__professional_conflict_visibility.sql`; `register`: `ProfessionalDepositService`, `ProfessionalDepositController` |
+| Lookup and deposits | `V26__professional_deposits.sql`, `V27__professional_conflict_visibility.sql`, `V28__search_fold.sql` (the directory's search); `register`: `ProfessionalDepositService`, `ProfessionalDepositController` |
 | Screens | `frontend/src/features/professionals` (`#/professional-request`, `#/professional`, `#/professional/deposits/<id>`, `#/professionals`, `#/professionals/<userId>`); the channel on the title page, `features/register/TitlePage.tsx` |
-| Tests | pgTAP `24_professionals`, `25_professional_lifecycle`, `26_professional_permissions`, `27_professional_deposits`, `28_professional_conflict_visibility`, the racing deposits in `db-test.sh`; `ProfessionalSignInIT`, `ProfessionalLifecycleIT`, `ProfessionalPermissionsIT`, `ProfessionalDepositIT`, `PermissionMatrixIT`; `professionals.test.tsx`; `e2e/tests/professionals.ts` |
+| Tests | pgTAP `24_professionals`, `25_professional_lifecycle`, `26_professional_permissions`, `27_professional_deposits`, `28_professional_conflict_visibility`, `29_search_fold`, the racing deposits in `db-test.sh`; `ProfessionalSignInIT`, `ProfessionalLifecycleIT`, `ProfessionalPermissionsIT`, `ProfessionalDepositIT`, `PermissionMatrixIT`; `professionals.test.tsx`; `e2e/tests/professionals.ts` |
 | Synthetic data | `infra/scripts/dev-seed-professionals.sh` ([demo accounts](demo-accounts.md#professional-accounts)) |
 | Who may do what | [permission matrix](../permission-matrix.md) |
 
@@ -67,6 +67,17 @@ Decision: [ADR-041](../adr/041-professional-accounts.md) (D11 to D16), built on
 - **One open request per account**, so two contradictory changes never wait at once.
 - **Requests expire** after `SNIGF_ADMIN_REQUEST_TTL`. An expired activation sends the account back to
   `REQUESTED`, to be verified again.
+- **The directory** (`GET /api/v1/admin/professionals`, D20) lists the newest account first, with
+  the id breaking a tie, 50 a page (`size` 1 to 100) and the total. `q` (2 to 100 characters) searches
+  the e-mail, name, chamber and registration number, ignoring case and accents; `%` and `_` are
+  ordinary characters. `status`, `profession`, `office` and `pending` (`VERIFICATION`, `ACTIVATION`,
+  `CHANGE`) filter it. A value out of bounds is refused with `422`. The screen keeps the filters in
+  the address: `#/professionals?pending=ACTIVATION`.
+- **The dashboard's counts** (`GET /api/v1/admin/professionals/counts`, D21): account requests to
+  verify, verified accounts awaiting a decision, and changes awaiting a decision, each a tile opening
+  the directory on that step. Pending items only. Each is sent only to those who may act on it, never
+  as zero; one's own requests and verifications are not counted, but shown on a line "waiting for
+  another administrator".
 - **Every write is one `SECURITY DEFINER` function** that checks the actor's permission, the four eyes,
   the status and the reason itself. Its refusals are SQLSTATE `PR001` with a code; the service turns
   them into a precise answer and an audit event (`PROFESSIONAL_REFUSED`).
@@ -183,7 +194,8 @@ more, the deposit with a deed, the conservator's registration and the notary see
 | After the approval, the notary's page still said "Requested" next to the deposit form | choosing the current place in the menu does not reload the page, so the status was stale while the permissions were new (found by the e2e run) | the page reads its status again whenever the session's permissions change |
 | A reset for a professional was refused by the database | `mfa_reset_request_insert` tested for staff, which the step 1 review missed | V24 reads professionals through `is_professional` and `professional_office_ids` |
 | `PermissionMatrixIT`'s staff loop failed on NOTARY and SWORN_SURVEYOR | the database refuses giving a professional role to staff | the staff loop skips the two professional roles; the professionals have their own cases |
-| An e2e run did not find the new account in the directory | the directory lists the oldest first, 50 a page, and earlier runs left theirs | the test opens the account by its id; the screen has Previous and Next |
+| An e2e run did not find the new account in the directory | the directory listed the oldest first, 50 a page, and earlier runs left theirs | D20: newest first, and a search; the test now finds the account both ways |
+| A directory test passed for the wrong reason: `%20` and `%25` arrived literally | MockMvc's `get(String)` treats the address as a template and encodes `%` again | the test sends a `URI`; it also checks that a `LIKE` version of the query fails it |
 | A notary could read the conservators' reason for refusing their deposit in a conflict | `conflict_resolve` copies the decision's reason into the deposit's `closed_reason`, which step 4 showed to the professional (found while building D17) | V27 hides it when a conflict decision closed the deposit |
 | The seed leaves the notary verified | an activation needs two keys, and the script holds none | sign in as the notary, register two keys, run the seed again |
 | 429 `RATE_LIMITED` on a request | requests share `SNIGF_RATE_REGISTER_PER_HOUR` with registration, per address, in memory | wait; in development the seed restarts the app |
@@ -203,5 +215,7 @@ Not production-ready, by design:
 - **Sworn surveyors** hold no operational permission until slice 4; professionals do not take part in
   applications yet.
 - **Throttling** of requests and lookups is in memory, for one application instance.
-- **Open for review:** whether a notary should see that their deposit is in conflict; whether
-  replacing a deposit's document needs a second person; the directory's order (oldest first today).
+- **Being built (ADR-041 D18, D19):** replacing a submitted document needs a second person;
+  retention metadata and legal holds.
+- **The directory's search** reads every profile matching the filters; past tens of thousands of
+  accounts it would need an index on the folded columns.

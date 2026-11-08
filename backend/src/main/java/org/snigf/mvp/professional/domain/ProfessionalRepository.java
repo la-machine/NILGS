@@ -17,7 +17,16 @@ public interface ProfessionalRepository {
 
     Optional<Professional.Profile> profile(UUID userId);
 
-    List<Professional.Profile> profiles(String status, int limit, int offset);
+    /**
+     * The directory (D20): newest account first, {@code requested_at} then the id, both descending. A pending request
+     * older than {@code requestTtl} counts as expired, as the queue would close it.
+     */
+    List<Professional.Profile> directory(Professional.DirectoryFilter filter, Duration requestTtl, int limit, int offset);
+
+    long directoryCount(Professional.DirectoryFilter filter, Duration requestTtl);
+
+    /** The dashboard's counts for the bound actor (D21), each decided by the actor's permissions in the database. */
+    Professional.Counts counts(Duration requestTtl);
 
     List<Professional.Request> requests(UUID userId);
 

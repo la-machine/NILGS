@@ -32,6 +32,34 @@ public final class Professional {
                           String jurisdiction, String status, Instant requestedAt, Instant statusChangedAt, List<String> offices) {
     }
 
+    /** What the administrators' directory filters on (D20); each is optional, and they combine with AND. */
+    public static final Set<String> STATUSES = Set.of("REQUESTED", "VERIFIED", "ACTIVE", "SUSPENDED", "REVOKED");
+
+    /** A waiting step of the lifecycle, for the directory's filter and the dashboard's links (D20, D21). */
+    public static final Set<String> PENDING_STEPS = Set.of("VERIFICATION", "ACTIVATION", "CHANGE");
+
+    /**
+     * The directory's filters (D20), each checked by the service before it reaches the database. {@code office} is an
+     * office where the account is approved or proposed; {@code text} is searched in the e-mail, the display name, the
+     * chamber and the registration number, ignoring case and accents.
+     */
+    public record DirectoryFilter(String status, String profession, String office, String pending, String text) {
+    }
+
+    /** One page of the directory, newest account first, and how many accounts match in all. */
+    public record DirectoryPage(List<Profile> items, long total, int page, int size) {
+    }
+
+    /**
+     * What waits on the dashboard (D21), pending items only. A count is null when the viewer may not act on it, so it is
+     * left out rather than sent as zero. {@code requests}: accounts waiting for a verification; {@code activations}: pending
+     * activations the viewer neither verified nor requested; {@code changes}: pending reinstatements, revocations and
+     * office changes the viewer did not request; {@code waitingForOthers}: the viewer's own pending requests, which only
+     * another administrator may decide.
+     */
+    public record Counts(Long requests, Long activations, Long changes, Long waitingForOthers) {
+    }
+
     public record Request(UUID id, UUID userId, String professionalName, String kind, List<String> officesAdd, List<String> officesRemove,
                           String reason, UUID requestedBy, String requestedByName, Instant requestedAt, String status, String decidedByName,
                           Instant decidedAt, String decisionReason) {

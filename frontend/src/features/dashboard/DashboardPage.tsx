@@ -53,6 +53,9 @@ export function DashboardPage({ ctx }: { ctx: PageContext }) {
     resets: can(session, 'admin.mfa.reset'),
     confirmations: canSomewhere(session, 'identity.reset.confirm'),
     reconciles: can(session, 'payment.reconcile'),
+    // Professional accounts (D21): asked for only by those who verify, approve or request changes; a reader only gets no count.
+    professionals: can(session, 'admin.professional.read')
+      && ['admin.professional.verify', 'admin.professional.approve', 'admin.professional.suspend'].some((p) => can(session, p)),
   }
   // Open alerts are counted at the offices where the person reviews them (the first page of each).
   const alertOffices = reach(session, 'alert.review').offices
@@ -180,20 +183,30 @@ function PendingList({ texts, counts }: { texts: Texts; counts: PendingCounts })
     { n: counts.cases, label: d.casesWaiting, to: href(['cases']), icon: 'file' },
     { n: counts.overdue, label: d.overdueCases, to: href(['workload'], { overdue: '1' }), icon: 'clock' },
     { n: counts.paymentExceptions, label: d.openPaymentExceptions, to: href(['payments']), icon: 'card' },
+    // Each opens the directory filtered on its step (D20); the directory checks its own permission again.
+    { n: counts.professionals?.requests, label: d.pendingProfessionalRequests, to: href(['professionals'], { pending: 'VERIFICATION' }), icon: 'userCheck' },
+    { n: counts.professionals?.activations, label: d.pendingProfessionalActivations, to: href(['professionals'], { pending: 'ACTIVATION' }), icon: 'userCheck' },
+    { n: counts.professionals?.changes, label: d.pendingProfessionalChanges, to: href(['professionals'], { pending: 'CHANGE' }), icon: 'userCheck' },
   ]
   const shown = items.filter((i) => i.n !== undefined)
-  if (shown.every((i) => i.n === 0)) return <p className="all-clear"><Icon name="checkCircle" />{d.nothingWaiting}</p>
+  // One's own requests and verifications: for information, since another administrator decides them.
+  const others = counts.professionals?.waitingForOthers ?? 0
+  const waiting = others > 0 && <p className="small muted" data-waiting-for-others={others}>{fill(d.professionalsWaitingForOthers, { n: others })}</p>
+  if (shown.every((i) => i.n === 0)) return <><p className="all-clear"><Icon name="checkCircle" />{d.nothingWaiting}</p>{waiting}</>
   return (
-    <ul className="pending-tiles">
-      {shown.map((i) => (
-        <li key={i.label}>
-          <a href={i.to} className={i.n ? 'pending-tile active' : 'pending-tile'}>
-            <span className="pending-count num">{i.n}</span>
-            <span className="pending-label"><Icon name={i.icon} size={16} />{i.label}</span>
-          </a>
-        </li>
-      ))}
-    </ul>
+    <>
+      <ul className="pending-tiles">
+        {shown.map((i) => (
+          <li key={i.label}>
+            <a href={i.to} className={i.n ? 'pending-tile active' : 'pending-tile'}>
+              <span className="pending-count num">{i.n}</span>
+              <span className="pending-label"><Icon name={i.icon} size={16} />{i.label}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+      {waiting}
+    </>
   )
 }
 

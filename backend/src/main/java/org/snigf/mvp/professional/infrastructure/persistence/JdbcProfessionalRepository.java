@@ -59,11 +59,78 @@ class JdbcProfessionalRepository implements ProfessionalRepository {
         return jdbc.sql(PROFILE + " WHERE p.user_id = :user").param("user", userId).query((rs, n) -> profile(rs)).optional();
     }
 
+    /**
+     * The directory's conditions (D20). Every value is a parameter. The search uses position() on search_fold (V28), so
+     * case and accents are ignored and '%' or '_' match only themselves. Read under row-level security, as before.
+     */
+    private static final String DIRECTORY = """
+             WHERE (CAST(:status AS text) IS NULL OR p.status = :status)
+               AND (CAST(:profession AS text) IS NULL OR p.profession = :profession)
+               AND (CAST(:office AS text) IS NULL
+                    OR EXISTS (SELECT 1 FROM professional_office x JOIN office o ON o.id = x.office_id
+                                WHERE x.user_id = p.user_id AND x.removed_at IS NULL AND o.code = :office)
+                    OR EXISTS (SELECT 1 FROM professional_request r JOIN office o ON o.id = ANY (r.offices_add)
+                                WHERE r.user_id = p.user_id AND r.status = 'PENDING' AND r.requested_at > now() - CAST(:ttl AS interval) AND o.code = :office))
+               AND (CAST(:pending AS text) IS NULL
+                    OR (:pending = 'VERIFICATION' AND p.status = 'REQUESTED')
+                    OR (:pending IN ('ACTIVATION', 'CHANGE')
+                        AND EXISTS (SELECT 1 FROM professional_request r
+                                     WHERE r.user_id = p.user_id AND r.status = 'PENDING' AND r.requested_at > now() - CAST(:ttl AS interval)
+                                       AND (r.kind = 'ACTIVATION') = (:pending = 'ACTIVATION'))))
+               AND (CAST(:text AS text) IS NULL
+                    OR position(search_fold(:text) IN search_fold(u.email)) > 0
+                    OR position(search_fold(:text) IN search_fold(u.display_name)) > 0
+                    OR position(search_fold(:text) IN search_fold(p.chamber)) > 0
+                    OR position(search_fold(:text) IN search_fold(p.registration_number)) > 0)
+            """;
+
     @Override
-    public List<Professional.Profile> profiles(String status, int limit, int offset) {
-        return jdbc.sql(PROFILE + " WHERE (CAST(:status AS text) IS NULL OR p.status = :status) ORDER BY p.requested_at, p.user_id LIMIT :limit OFFSET :offset")
-                .param("status", status).param("limit", limit).param("offset", offset)
+    public List<Professional.Profile> directory(Professional.DirectoryFilter filter, Duration requestTtl, int limit, int offset) {
+        return directoryParams(jdbc.sql(PROFILE + DIRECTORY + " ORDER BY p.requested_at DESC, p.user_id DESC LIMIT :limit OFFSET :offset"), filter,
+                requestTtl)
+                .param("limit", limit).param("offset", offset)
                 .query((rs, n) -> profile(rs)).list();
+    }
+
+    @Override
+    public long directoryCount(Professional.DirectoryFilter filter, Duration requestTtl) {
+        return directoryParams(jdbc.sql("SELECT count(*) FROM professional_profile p JOIN app_user u ON u.id = p.user_id" + DIRECTORY), filter, requestTtl)
+                .query(Long.class).single();
+    }
+
+    /**
+     * The dashboard's counts (D21), exact, for the bound actor. A count the actor may not act on is NULL, never zero; the
+     * actor's own requests and verifications are not waiting for them (four eyes). A request past its time to live is no
+     * longer pending, as in the directory.
+     */
+    @Override
+    public Professional.Counts counts(Duration requestTtl) {
+        return jdbc.sql("""
+                        WITH me AS (SELECT current_actor() AS id,
+                                           holds_permission(current_actor(), 'admin.professional.verify') AS verifies,
+                                           holds_permission(current_actor(), 'admin.professional.approve') AS approves,
+                                           holds_permission(current_actor(), 'admin.professional.suspend') AS suspends),
+                             waiting AS (SELECT r.* FROM professional_request r
+                                          WHERE r.status = 'PENDING' AND r.requested_at > now() - CAST(:ttl AS interval))
+                        SELECT CASE WHEN me.verifies THEN (SELECT count(*) FROM professional_profile p WHERE p.status = 'REQUESTED') END AS requests,
+                               CASE WHEN me.approves THEN (SELECT count(*) FROM waiting r
+                                                             JOIN professional_profile p ON p.user_id = r.user_id AND p.status = 'VERIFIED'
+                                                             LEFT JOIN professional_verification v ON v.id = r.verification_id
+                                                            WHERE r.kind = 'ACTIVATION' AND r.requested_by <> me.id
+                                                              AND v.verified_by IS DISTINCT FROM me.id) END AS activations,
+                               CASE WHEN me.approves THEN (SELECT count(*) FROM waiting r
+                                                            WHERE r.kind <> 'ACTIVATION' AND r.requested_by <> me.id) END AS changes,
+                               CASE WHEN me.verifies OR me.suspends THEN (SELECT count(*) FROM waiting r WHERE r.requested_by = me.id) END AS mine
+                          FROM me""")
+                .param("ttl", requestTtl.toSeconds() + " seconds")
+                .query((rs, n) -> new Professional.Counts(rs.getObject("requests", Long.class), rs.getObject("activations", Long.class),
+                        rs.getObject("changes", Long.class), rs.getObject("mine", Long.class)))
+                .single();
+    }
+
+    private static JdbcClient.StatementSpec directoryParams(JdbcClient.StatementSpec sql, Professional.DirectoryFilter f, Duration requestTtl) {
+        return sql.param("status", f.status()).param("profession", f.profession()).param("office", f.office()).param("pending", f.pending())
+                .param("text", f.text()).param("ttl", requestTtl.toSeconds() + " seconds");
     }
 
     private static Professional.Profile profile(ResultSet rs) throws SQLException {

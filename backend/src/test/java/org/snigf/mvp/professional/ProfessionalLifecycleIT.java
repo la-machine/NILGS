@@ -45,22 +45,38 @@ class ProfessionalLifecycleIT extends IdentityIntegrationTest {
     }
 
     private MockHttpServletResponse publicRequest(Browser browser, String email, String registration) throws Exception {
+        return publicRequest(browser, email, "DEMO Notary", "NOTARY", registration);
+    }
+
+    private MockHttpServletResponse publicRequest(Browser browser, String email, String name, String profession, String registration) throws Exception {
         browser.csrf();
-        return browser.send(json(post("/api/v1/professional-requests"), body("email", email, "displayName", "DEMO Notary", "password", PASSWORD,
-                "preferredLanguage", "fr", "profession", "NOTARY", "chamber", "DEMO Chamber", "registrationNumber", registration,
+        return browser.send(json(post("/api/v1/professional-requests"), body("email", email, "displayName", name, "password", PASSWORD,
+                "preferredLanguage", "fr", "profession", profession, "chamber", "DEMO Chamber", "registrationNumber", registration,
                 "jurisdiction", "DEMO Yaounde")));
+    }
+
+    /** An account requested on the public form, without keys: enough for the directory. */
+    private UUID requested(String name, String profession, String registration) throws Exception {
+        String email = email();
+        assertThat(publicRequest(new Browser(), email, name, profession, registration).getStatus()).isEqualTo(201);
+        return userId(email);
+    }
+
+    /**
+     * The directory's answer for a query string, sent exactly as written (a URI, not a template that would encode '%'
+     * again); the run's own accounts are found by a token in their number.
+     */
+    private JsonNode directory(SignedIn admin, String query) throws Exception {
+        return ok(admin.browser().send(get(java.net.URI.create(ADMIN + "?" + query))), 200);
+    }
+
+    private static List<String> ids(JsonNode page) {
+        return page.path("items").findValuesAsString("userId");
     }
 
     /** A professional who requested an account and enrolled two keys. */
     private Notary requestedNotary() throws Exception {
-        String email = email();
-        Browser browser = new Browser();
-        assertThat(publicRequest(browser, email, "DEMO-N-" + UUID.randomUUID().toString().substring(0, 8)).getStatus()).isEqualTo(201);
-        browser.login(email, PASSWORD);
-        register(browser, new Authenticator(), "Office key");
-        register(browser, new Authenticator(), "Backup key");
-        browser.csrf();
-        return new Notary(userId(email), email, browser);
+        return requestedNotaryNumbered("DEMO-N-" + UUID.randomUUID().toString().substring(0, 8));
     }
 
     private JsonNode ok(MockHttpServletResponse response, int status) throws Exception {
@@ -274,6 +290,248 @@ class ProfessionalLifecycleIT extends IdentityIntegrationTest {
                 body("identityCheck", "In person, DEMO professional card checked"));
         assertThat(confirmed.getStatus()).as(confirmed.getContentAsString()).isEqualTo(204);
         assertThat(jdbc.queryForObject("SELECT mfa_enrolled_at IS NULL FROM app_user WHERE id = ?", Boolean.class, notary.id())).isTrue();
+    }
+
+    // --- The directory (D20) ----------------------------------------------------------------------------
+
+    @Test
+    void theDirectoryListsTheNewestAccountFirstAndBreaksATieByTheId() throws Exception {
+        String token = "DEMO-ORD-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID oldest = requested("DEMO Oldest", "NOTARY", token + "-1");
+        UUID tiedA = requested("DEMO Tied A", "NOTARY", token + "-2");
+        UUID tiedB = requested("DEMO Tied B", "NOTARY", token + "-3");
+        try (Connection su = PostgisDatabase.shared().superuserConnection(); Statement st = su.createStatement()) {
+            st.execute("SET LOCAL session_replication_role = replica");
+            st.execute("UPDATE professional_profile SET requested_at = now() - interval '2 days' WHERE user_id = '" + oldest + "'");
+            st.execute("UPDATE professional_profile SET requested_at = now() - interval '1 day' WHERE user_id IN ('" + tiedA + "', '" + tiedB + "')");
+            su.commit();
+        }
+        // Equal creation times: the larger id first, every time.
+        List<String> tied = java.util.stream.Stream.of(tiedA, tiedB).sorted(java.util.Comparator.reverseOrder()).map(UUID::toString).toList();
+        SignedIn admin = signedIn("SYSTEM_ADMIN");
+
+        JsonNode all = directory(admin, "q=" + token);
+        assertThat(ids(all)).containsExactly(tied.get(0), tied.get(1), oldest.toString());
+        assertThat(all.path("total").asLong()).isEqualTo(3);
+        assertThat(all.path("size").asInt()).as("the default").isEqualTo(50);
+        assertThat(ids(directory(admin, "q=" + token))).as("deterministic").isEqualTo(ids(all));
+
+        JsonNode first = directory(admin, "q=" + token + "&size=2&page=0");
+        JsonNode second = directory(admin, "q=" + token + "&size=2&page=1");
+        assertThat(ids(first)).containsExactly(tied.get(0), tied.get(1));
+        assertThat(ids(second)).containsExactly(oldest.toString());
+        assertThat(second.path("total").asLong()).as("the total on every page").isEqualTo(3);
+        assertThat(ids(directory(admin, "q=" + token + "&size=2&page=2"))).as("past the end: empty, not an error").isEmpty();
+
+        // The newest account of all comes first without any filter.
+        UUID newest = requested("DEMO Newest", "NOTARY", token + "-4");
+        assertThat(ids(directory(admin, "size=1"))).containsExactly(newest.toString());
+    }
+
+    @Test
+    void theDirectoryFiltersByStatusProfessionOfficeAndWaitingStep() throws Exception {
+        String token = "DEMO-FLT-" + UUID.randomUUID().toString().substring(0, 8);
+        SignedIn first = signedIn("SYSTEM_ADMIN");
+        SignedIn second = signedIn("SYSTEM_ADMIN");
+        UUID requestedOnly = requested("DEMO Requested", "NOTARY", token + "-R");
+        UUID surveyor = requested("DEMO Surveyor", "SWORN_SURVEYOR", token + "-S");
+        Notary verified = requestedNotaryNumbered(token + "-V");
+        ok(verify(first, verified.id(), List.of("DEMOIT")), 201);
+        insertOffice("DEMOIT3");
+        Notary active = requestedNotaryNumbered(token + "-A");
+        String activation = ok(verify(first, active.id(), List.of("DEMOIT3")), 201).path("id").asString("");
+        ok(decide(second, activation, true, null), 200);
+        ok(sendJson(first.browser(), post(ADMIN + "/" + active.id() + "/suspension"), body("reason", "Deposits reported as abusive")), 204);
+        ok(change(first, active.id(), "REINSTATEMENT", List.of(), List.of(), "The report was unfounded"), 201);
+
+        String q = "q=" + token;
+        assertThat(ids(directory(first, q + "&status=REQUESTED"))).containsExactlyInAnyOrder(requestedOnly.toString(), surveyor.toString());
+        assertThat(ids(directory(first, q + "&status=SUSPENDED"))).containsExactly(active.id().toString());
+        assertThat(ids(directory(first, q + "&profession=SWORN_SURVEYOR"))).containsExactly(surveyor.toString());
+        assertThat(ids(directory(first, q + "&profession=NOTARY&status=REQUESTED"))).as("filters combine with AND")
+                .containsExactly(requestedOnly.toString());
+        assertThat(ids(directory(first, q + "&office=DEMOIT"))).as("an office proposed by the verification").containsExactly(verified.id().toString());
+        assertThat(ids(directory(first, q + "&office=DEMOIT3"))).as("an approved office").containsExactly(active.id().toString());
+        assertThat(ids(directory(first, q + "&office=NOWHERE"))).isEmpty();
+        assertThat(ids(directory(first, q + "&pending=VERIFICATION"))).containsExactlyInAnyOrder(requestedOnly.toString(), surveyor.toString());
+        assertThat(ids(directory(first, q + "&pending=ACTIVATION"))).containsExactly(verified.id().toString());
+        assertThat(ids(directory(first, q + "&pending=CHANGE"))).containsExactly(active.id().toString());
+        assertThat(directory(first, q + "&pending=CHANGE").path("total").asLong()).isEqualTo(1);
+
+        // A request past its time to live is no longer waiting, though the queue has not closed it yet.
+        try (Connection su = PostgisDatabase.shared().superuserConnection(); Statement st = su.createStatement()) {
+            st.execute("SET LOCAL session_replication_role = replica");
+            st.execute("UPDATE professional_request SET requested_at = now() - interval '8 days' WHERE user_id = '" + verified.id()
+                    + "' AND status = 'PENDING'");
+            su.commit();
+        }
+        assertThat(ids(directory(first, q + "&pending=ACTIVATION"))).isEmpty();
+        assertThat(ids(directory(first, q + "&office=DEMOIT"))).as("a proposal that expired").isEmpty();
+    }
+
+    @Test
+    void theDirectorySearchIgnoresCaseAndAccentsAndTakesWildcardsLiterally() throws Exception {
+        String token = "DEMO-SRCH-" + UUID.randomUUID().toString().substring(0, 8);
+        UUID helene = requested("DEMO Hélène Ngô Œuvray", "NOTARY", token + "-1");
+        UUID other = requested("DEMO Paul Mbarga", "NOTARY", token + "-2");
+        SignedIn admin = signedIn("SYSTEM_ADMIN");
+        String q = "&q=";
+
+        assertThat(ids(directory(admin, "q=" + token))).containsExactlyInAnyOrder(helene.toString(), other.toString());
+        assertThat(ids(directory(admin, "q=" + token.toLowerCase()))).as("the registration number, any case").hasSize(2);
+        for (String term : List.of("HELENE NGO", "hélène", "Ngo Oeuvray", "OEUVRAY")) {
+            // Encoded as the screen does (encodeURIComponent): a space is %20.
+            String encoded = java.net.URLEncoder.encode(term, java.nio.charset.StandardCharsets.UTF_8).replace("+", "%20");
+            assertThat(ids(directory(admin, "status=REQUESTED" + q + encoded)))
+                    .as(term).contains(helene.toString()).doesNotContain(other.toString());
+        }
+        String email = jdbc.queryForObject("SELECT email FROM app_user WHERE id = ?", String.class, helene);
+        assertThat(ids(directory(admin, "q=" + email.toUpperCase()))).as("the e-mail").containsExactly(helene.toString());
+        assertThat(directory(admin, "q=demo%20CHAMBER&size=1").path("total").asLong()).as("the chamber").isGreaterThanOrEqualTo(2);
+
+        // '%' and '_' are ordinary characters: as LIKE patterns, both would match the two accounts.
+        assertThat(ids(directory(admin, "q=" + token + "%25"))).isEmpty();
+        assertThat(ids(directory(admin, "q=" + token.substring(0, token.length() - 1) + "_"))).isEmpty();
+        assertThat(ids(directory(admin, "q=" + token.substring(0, 5) + "_" + token.substring(6)))).isEmpty();
+        assertThat(ids(directory(admin, "q=%20%20" + token + "%20"))).as("the term is trimmed").hasSize(2);
+    }
+
+    @Test
+    void theDirectoryRefusesWhatIsOutOfBoundsAndStaysForAdministrators() throws Exception {
+        SignedIn admin = signedIn("SYSTEM_ADMIN");
+        Map<String, String> refused = new java.util.LinkedHashMap<>();
+        refused.put("size=0", "SIZE_OUT_OF_RANGE");
+        refused.put("size=101", "SIZE_OUT_OF_RANGE");
+        refused.put("page=-1", "PAGE_OUT_OF_RANGE");
+        refused.put("page=10001", "PAGE_OUT_OF_RANGE");
+        refused.put("q=a", "SEARCH_INVALID");
+        refused.put("q=" + "a".repeat(101), "SEARCH_INVALID");
+        refused.put("status=GONE", "STATUS_INVALID");
+        refused.put("profession=ARCHITECT", "PROFESSION_INVALID");
+        refused.put("pending=SOON", "PENDING_INVALID");
+        refused.put("office=YDE1%27%20OR%201%3D1", "OFFICE_INVALID");
+        for (Map.Entry<String, String> e : refused.entrySet()) {
+            MockHttpServletResponse answer = admin.browser().send(get(java.net.URI.create(ADMIN + "?" + e.getKey())));
+            assertThat(answer.getStatus()).as(e.getKey()).isEqualTo(422);
+            assertThat(code(answer)).as(e.getKey()).isEqualTo(e.getValue());
+        }
+        assertThat(directory(admin, "size=100&q=" + "a".repeat(100)).path("size").asInt()).as("the bounds themselves").isEqualTo(100);
+        assertThat(directory(admin, "q=%20").path("size").asInt()).as("a blank term is no search").isEqualTo(50);
+
+        Notary notary = requestedNotary();
+        for (Browser outsider : List.of(notary.browser(), signedIn("AUDITOR").browser(), signedIn("INTAKE_OFFICER").browser())) {
+            assertThat(outsider.send(get(java.net.URI.create(ADMIN + "?q=DEMO&status=ACTIVE&pending=CHANGE"))).getStatus()).isEqualTo(403);
+        }
+    }
+
+    // --- The dashboard's counts (D21) ----------------------------------------------------------------------
+
+    @Test
+    void theDashboardCountsOnlyWhatEachAdministratorMayActOnAndNeverTheirOwn() throws Exception {
+        customRole("DEMO_PRO_READER", "admin.professional.read");
+        customRole("DEMO_PRO_VERIFIER", "admin.professional.read", "admin.professional.verify");
+        customRole("DEMO_PRO_APPROVER", "admin.professional.read", "admin.professional.approve");
+        SignedIn first = signedIn("SYSTEM_ADMIN");
+        SignedIn second = signedIn("SYSTEM_ADMIN");
+        SignedIn verifier = signedIn("DEMO_PRO_VERIFIER");
+        SignedIn approver = signedIn("DEMO_PRO_APPROVER");
+        SignedIn reader = signedIn("DEMO_PRO_READER");
+
+        // Only what each may act on: a count they may not act on is left out, never sent as zero.
+        assertThat(fields(counts(first))).containsExactly("requests", "activations", "changes", "waitingForOthers");
+        assertThat(fields(counts(verifier))).containsExactly("requests", "waitingForOthers");
+        assertThat(fields(counts(approver))).containsExactly("activations", "changes");
+        assertThat(fields(counts(reader))).as("a reader only gets no count").isEmpty();
+
+        JsonNode first0 = counts(first);
+        JsonNode second0 = counts(second);
+        JsonNode verifier0 = counts(verifier);
+        JsonNode approver0 = counts(approver);
+
+        // An account requested on the public form waits for a verification.
+        requested("DEMO Counted", "NOTARY", "DEMO-CNT-" + UUID.randomUUID().toString().substring(0, 8));
+        assertThat(n(counts(verifier), "requests")).isEqualTo(n(verifier0, "requests") + 1);
+        assertThat(n(counts(second), "requests")).isEqualTo(n(second0, "requests") + 1);
+
+        // A verification waits for another administrator, never for the one who recorded it.
+        Notary notary = requestedNotary();
+        String activation = ok(verify(first, notary.id(), List.of("DEMOIT")), 201).path("id").asString("");
+        JsonNode mine = counts(first);
+        assertThat(n(mine, "requests")).as("the verified account no longer waits for a verification").isEqualTo(n(first0, "requests") + 1);
+        assertThat(n(mine, "activations")).as("not one's own verification").isEqualTo(n(first0, "activations"));
+        assertThat(n(mine, "waitingForOthers")).isEqualTo(n(first0, "waitingForOthers") + 1);
+        assertThat(n(counts(second), "activations")).isEqualTo(n(second0, "activations") + 1);
+        assertThat(n(counts(approver), "activations")).isEqualTo(n(approver0, "activations") + 1);
+
+        // A decided request is never counted again.
+        ok(decide(second, activation, true, null), 200);
+        assertThat(n(counts(approver), "activations")).isEqualTo(n(approver0, "activations"));
+        assertThat(n(counts(first), "waitingForOthers")).isEqualTo(n(first0, "waitingForOthers"));
+
+        // A reinstatement, office change or revocation waits for an administrator who did not ask for it.
+        ok(sendJson(first.browser(), post(ADMIN + "/" + notary.id() + "/suspension"), body("reason", "Deposits reported as abusive")), 204);
+        String back = ok(change(first, notary.id(), "REINSTATEMENT", List.of(), List.of(), "The report was unfounded"), 201).path("id").asString("");
+        mine = counts(first);
+        assertThat(n(mine, "changes")).as("not one's own request").isEqualTo(n(first0, "changes"));
+        assertThat(n(mine, "waitingForOthers")).isEqualTo(n(first0, "waitingForOthers") + 1);
+        assertThat(n(counts(second), "changes")).isEqualTo(n(second0, "changes") + 1);
+        assertThat(n(counts(approver), "changes")).isEqualTo(n(approver0, "changes") + 1);
+        ok(decide(second, back, false, "The report was confirmed by the chamber"), 200);
+        assertThat(n(counts(approver), "changes")).as("a rejected request").isEqualTo(n(approver0, "changes"));
+
+        // A request past its time to live is no longer pending, though nothing has closed it yet.
+        ok(change(first, notary.id(), "REINSTATEMENT", List.of(), List.of(), "New evidence from the chamber"), 201);
+        assertThat(n(counts(approver), "changes")).isEqualTo(n(approver0, "changes") + 1);
+        try (Connection su = PostgisDatabase.shared().superuserConnection(); Statement st = su.createStatement()) {
+            st.execute("SET LOCAL session_replication_role = replica");
+            st.execute("UPDATE professional_request SET requested_at = now() - interval '8 days' WHERE user_id = '" + notary.id()
+                    + "' AND status = 'PENDING'");
+            su.commit();
+        }
+        assertThat(n(counts(approver), "changes")).isEqualTo(n(approver0, "changes"));
+        assertThat(n(counts(first), "waitingForOthers")).isEqualTo(n(first0, "waitingForOthers"));
+
+        for (Browser outsider : List.of(notary.browser(), signedIn("AUDITOR").browser(), signedIn("INTAKE_OFFICER").browser())) {
+            assertThat(outsider.send(get(ADMIN + "/counts")).getStatus()).isEqualTo(403);
+        }
+    }
+
+    private JsonNode counts(SignedIn admin) throws Exception {
+        return ok(admin.browser().send(get(ADMIN + "/counts")), 200);
+    }
+
+    private static long n(JsonNode counts, String name) {
+        assertThat(counts.has(name)).as(name).isTrue();
+        return counts.path(name).asLong();
+    }
+
+    private static List<String> fields(JsonNode node) {
+        return node.properties().stream().map(Map.Entry::getKey).toList();
+    }
+
+    /** A custom role with exactly these permissions, everywhere; written past the role workflow's guards, as a test may. */
+    private void customRole(String code, String... permissions) throws Exception {
+        try (Connection su = PostgisDatabase.shared().superuserConnection(); Statement st = su.createStatement()) {
+            st.execute("SET LOCAL session_replication_role = replica");
+            st.execute("INSERT INTO role_definition (code, name_fr, name_en) VALUES ('" + code + "', 'Rôle de test', 'Test role') ON CONFLICT (code) DO NOTHING");
+            for (String permission : permissions) {
+                st.execute("INSERT INTO role_permission (role_code, permission, scope) VALUES ('" + code + "', '" + permission + "', 'ANY')"
+                        + " ON CONFLICT DO NOTHING");
+            }
+            su.commit();
+        }
+    }
+
+    /** A requested notary with two keys, whose registration number carries the test's token. */
+    private Notary requestedNotaryNumbered(String registration) throws Exception {
+        String email = email();
+        Browser browser = new Browser();
+        assertThat(publicRequest(browser, email, registration).getStatus()).isEqualTo(201);
+        browser.login(email, PASSWORD);
+        register(browser, new Authenticator(), "Office key");
+        register(browser, new Authenticator(), "Backup key");
+        browser.csrf();
+        return new Notary(userId(email), email, browser);
     }
 
     /** One number, read past row-level security, as a test may. */

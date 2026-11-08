@@ -4,8 +4,9 @@
 // session may call: pending decisions, the latest parcels of the person's offices, the map
 // data status and the person's own security keys. A count is the length of a list (open alerts:
 // the first page, up to 50, of each office; cases in completeness review: the first page of each
-// office), except overdue cases, which the supervisor's workload report counts (MVP-06), and DEMO
-// payment exceptions, which the finance summary counts (MVP-08).
+// office), except overdue cases, which the supervisor's workload report counts (MVP-06), DEMO
+// payment exceptions, which the finance summary counts (MVP-08), and professional accounts, which
+// their own endpoint counts exactly (ADR-041 D21).
 import { accountsApi } from '../accounts'
 import { authApi } from '../auth'
 import { casesApi } from '../cases'
@@ -15,6 +16,8 @@ import { mapsApi } from '../maps'
 import type { Background } from '../maps'
 import { parcelsApi } from '../parcels'
 import { paymentsApi } from '../payments'
+import { professionalApi } from '../professionals'
+import type { ProfessionalCounts } from '../professionals'
 import type { ParcelSummary } from '../parcels'
 import { recoveryApi } from '../recovery'
 import { reportsApi } from '../reports'
@@ -34,14 +37,16 @@ export interface PendingCounts {
   overdue?: number
   /** DEMO payment exceptions waiting for the finance officer (MVP-08). */
   paymentExceptions?: number
+  /** Professional accounts (ADR-041 D21), counted exactly by the server, which leaves out what this person may not act on. */
+  professionals?: ProfessionalCounts
 }
 
 export const dashboardApi = {
   /** Only the lists the session may read are asked for; the others stay undefined. */
   pending: async (may: { assignments: boolean; roleChanges: boolean; grants: boolean; resets: boolean; confirmations: boolean;
-    reconciles?: boolean },
+    reconciles?: boolean; professionals?: boolean },
     alertOffices: string[] = [], intakeOffices: string[] = [], workloadOffices: string[] = []) => {
-    const [assignments, roleChanges, grants, resetsWaiting, confirmations, alerts, cases, overdue, paymentExceptions] = await Promise.all([
+    const [assignments, roleChanges, grants, resetsWaiting, confirmations, alerts, cases, overdue, paymentExceptions, professionals] = await Promise.all([
       may.assignments ? accountsApi.assignmentRequests('PENDING').then((l) => l.length) : undefined,
       may.roleChanges ? rolesApi.requests('PENDING').then((l) => l.length) : undefined,
       may.grants ? grantsApi.list('PENDING').then((l) => l.length) : undefined,
@@ -59,8 +64,9 @@ export const dashboardApi = {
           .then((reports) => reports.reduce((n, r) => n + r.open.reduce((m, s) => m + s.overdue, 0), 0))
         : undefined,
       may.reconciles ? paymentsApi.summary().then((s) => s.openExceptions) : undefined,
+      may.professionals ? professionalApi.counts() : undefined,
     ])
-    return { assignments, roleChanges, grants, resetsWaiting, confirmations, alerts, cases, overdue, paymentExceptions } satisfies PendingCounts
+    return { assignments, roleChanges, grants, resetsWaiting, confirmations, alerts, cases, overdue, paymentExceptions, professionals } satisfies PendingCounts
   },
   latestParcels: (office: string): Promise<ParcelSummary[]> => parcelsApi.search(office, '', 0),
   backgrounds: (): Promise<Background[]> => mapsApi.backgrounds(),

@@ -9,6 +9,44 @@ Each entry names the decision record (ADR) and the guide (`docs/guides/`) that e
 
 ## [Unreleased]
 
+### Professional accounts, step 12: the dashboard's counts (Slice 3, D21)
+
+[ADR-041](docs/adr/041-professional-accounts.md) D21. No migration.
+
+- **Counts:** account requests to verify, verified accounts awaiting a decision, and reinstatements,
+  revocations and office changes awaiting a decision, from `GET /api/v1/admin/professionals/counts`,
+  counted exactly in the database.
+- **Each a tile** on the dashboard, opening the directory filtered on its step
+  (`#/professionals?pending=...`).
+- **Only what the viewer may act on:** a count is left out, never sent as zero, without the
+  permission; a reader only gets none; a professional gets `403`.
+- **Four eyes:** one's own requests and verifications are not counted, but shown on a line "waiting
+  for another administrator", with no action.
+- **Pending only:** approved, rejected and expired requests are never counted, nor a pending one past
+  its time to live.
+- **Unchanged:** every permission, row-level security and the audit trail.
+- **Tests:** `ProfessionalLifecycleIT` (1 new), `PermissionMatrixIT`, Vitest `dashboard.test.tsx` (4
+  new), the e2e journey opening the activations from the approver's tile.
+- **Docs:** ADR-041 rev. 6 and its index, the professional accounts guide, chapters 7 and 10.
+
+### Professional accounts, step 11: the directory newest first, searched and filtered (Slice 3, D20)
+
+[ADR-041](docs/adr/041-professional-accounts.md) D20, migration V28.
+
+- **Order:** newest account first, by creation time, with the id breaking a tie.
+- **Pages:** `size` 1 to 100 (50 by default) and the total, so the screen shows "page x of y".
+- **Search:** the e-mail, name, chamber or registration number, ignoring case and accents (V28
+  `search_fold`). `%` and `_` are ordinary characters, and the term is always a bound parameter.
+- **Filters:** status, profession, office and the waiting step (`VERIFICATION`, `ACTIVATION`,
+  `CHANGE`), combined. The screen keeps them in the address, for D21's links.
+- **Refused:** every value out of bounds, with `422` and its own code.
+- **Unchanged:** the permission and row-level security; the waiting requests still oldest first.
+- **Decisions:** the three readings of D17 to D19 confirmed by the project owner on 3 Nov 2026. D19's
+  safeguards for application documents are added to step 13.
+- **Tests:** `ProfessionalLifecycleIT` (4 new), pgTAP `29`, Vitest (4 new), the e2e journey finding
+  the notary in the directory.
+- **Docs:** ADR-041 rev. 5 and its index, the professional accounts guide, chapters 4, 7 and 10.
+
 ### Fixed: the end-to-end run failed in CI at the notary's sign-in
 
 - **Cause:** the run's sign-ins, key proofs and recovery codes all come from one address and count

@@ -18,5 +18,5 @@ export function ProfessionalRoutes({ ctx, route }: { ctx: PageContext; route: Ro
 
 export function ProfessionalsAdminRoutes({ ctx, route }: { ctx: PageContext; route: Route }) {
   if (route.segments[1]) return <AdminDetailPage key={route.segments[1]} ctx={ctx} userId={route.segments[1]} />
-  return <AdminPage ctx={ctx} />
+  return <AdminPage ctx={ctx} params={route.params} />
 }

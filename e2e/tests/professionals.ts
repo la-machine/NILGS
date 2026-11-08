@@ -66,9 +66,14 @@ export function professionalJourneys(browser: () => Browser, people: () => Profe
   })
 
   test('one administrator verifies and proposes the office; only another approves', async () => {
-    // Straight to the account: the directory lists the oldest first, and earlier runs left theirs.
-    await verifier.open('Professionals')
-    await verifier.page.goto(`/#/professionals/${(await notary.session()).userId}`)
+    // The directory lists the newest account first (D20): the notary's request heads it, then a search finds it.
+    const directory = await verifier.open('Professionals')
+    await expect(directory.locator('[data-professional]').first()).toHaveAttribute('data-professional', email('notary'))
+    const filters = directory.locator('[data-directory-filters]')
+    await filters.getByLabel('Search: address, name, chamber or registration number').fill(`DEMO-N-${RUN}`)
+    await filters.getByRole('button', { name: 'Search', exact: true }).click()
+    await expect(directory.locator('[data-directory-total]')).toHaveAttribute('data-directory-total', '1')
+    await directory.locator(`[data-professional="${email('notary')}"]`).getByRole('link').click()
     await expect(verifier.page.locator(`[data-professional-detail="${email('notary')}"]`)).toBeVisible()
     const form = verifier.page.locator('[data-verify-form]')
     await form.getByLabel('Professional body').fill('DEMO Chamber of notaries')
@@ -84,6 +89,14 @@ export function professionalJourneys(browser: () => Browser, people: () => Profe
     const own = await verifier.api('POST', `/admin/professional-requests/${id}/approval`)
     expect(own.status, 'the verifier cannot approve').toBe(403)
     expect((await notary.session()).permissions).toEqual([])
+
+    // The dashboard counts what waits for each (D21): the verifier's own verification waits for another
+    // administrator; the approver opens the activations from their tile, the directory filtered on that step.
+    await verifier.home()
+    await expect(verifier.page.locator('[data-waiting-for-others]')).toBeVisible()
+    await approver.home()
+    await approver.page.getByRole('link', { name: /verified professional account\(s\) awaiting a decision/ }).click()
+    await expect(approver.page.locator(`[data-professional="${email('notary')}"]`)).toBeVisible()
 
     const main = await approver.open('Professionals')
     await main.locator(`[data-request="${id}"]`).getByRole('button', { name: 'Approve' }).click()

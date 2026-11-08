@@ -63,19 +63,25 @@ Professional accounts (ADR-041, [guide](../guides/professional-accounts.md)):
   - `26`: every forbidden permission and special grant refused for a professional;
   - `27`: deposits under the V21 rules, no lock from a refused deposit, the holder rule and offices;
   - `28`: what a notary sees of their deposit's conflict (D17): an allow-list of columns, both sides,
-    nothing of the other deposit, no conflict decision's reason.
+    nothing of the other deposit, no conflict decision's reason;
+  - `29`: the directory's search folding (D20): case, accents and ligatures, wildcards kept.
 - **`db-test.sh`:** conservators and a notary's account race deposits on one title, leaving exactly
   one holding.
 - **Integration tests:**
   - `ProfessionalSignInIT`: two keys like staff, and applicants still password-only;
-  - `ProfessionalLifecycleIT`: the transitions and refusals, and the evidence audited;
+  - `ProfessionalLifecycleIT`: the transitions and refusals, and the evidence audited; the directory
+    (D20): newest first with a tie broken by the id, pages and the total, each filter, the search
+    (case, accents, `%` and `_` literal), every bound refused with `422`, outsiders refused. Its
+    directory requests are sent as a `URI`, because MockMvc's `get(String)` would encode `%` again;
+    the dashboard's counts (D21): the fields per role, one's own requests not counted, decided and
+    expired requests never counted, outsiders refused;
   - `ProfessionalPermissionsIT`: the computed roles, and a suspension effective at the next request;
   - `ProfessionalDepositIT`: the lookup and its throttling, valid and refused deposits, retries and
     duplicates, isolation, withdrawal; the fields of one's own deposit against an allow-list, a
     conflict seen from both sides, and `withdrawnDuringConflict` in the audit trail.
 - **`PermissionMatrixIT`:** the professionals are refused on every staff endpoint, and the notary
   reaches exactly its own.
-- **Browser:** `professionals.test.tsx` (Vitest), and the acceptance journey in
+- **Browser:** `professionals.test.tsx` and `dashboard/dashboard.test.tsx` (Vitest), and the acceptance journey in
   `e2e/tests/professionals.ts`.
 
 ## Continuous integration

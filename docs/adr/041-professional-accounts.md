@@ -4,7 +4,7 @@
 
 | Status | Date | Deciders |
 | --- | --- | --- |
-| **Accepted, revision 4.** D11 to D16, and the sign-in and suspension answers, of 1 Nov 2026: built in steps 1 to 6, documented in step 7, verified locally in step 8 (2 Nov 2026); what differs from the decision is under "As built". **D17 to D21 of 2 Nov 2026** (conflict visibility, retention, document replacement, account order, dashboard counts): recorded in step 9; D17 built in step 10; the others to be built in steps 11 to 16 (see "Decisions of 2 Nov 2026" and the plan). | 2026-11-02 | Project owner, Pythagore (FLYT) |
+| **Accepted, revision 6.** D11 to D16, and the sign-in and suspension answers, of 1 Nov 2026: built in steps 1 to 6, documented in step 7, verified locally in step 8 (2 Nov 2026); what differs from the decision is under "As built". **D17 to D21 of 2 Nov 2026** (conflict visibility, retention, document replacement, account order, dashboard counts): recorded in step 9; D17 built in step 10, D20 in step 11, D21 in step 12; the three readings confirmed on 3 Nov 2026; D18 and D19 to be built in steps 13 to 16 (see "Decisions of 2 Nov 2026" and the plan). | 2026-11-04 | Project owner, Pythagore (FLYT) |
 
 ## Context
 
@@ -452,8 +452,8 @@ The `AUDIT CHAIN VERIFICATION FAILED` lines in the backend log come from `AuditC
 
 The five open questions left after step 8 were answered by the project owner on 2 Nov 2026. Each
 decision below gives the owner's words first, then how SNIGF applies it. Where SNIGF had to choose
-how to read it, the reading is marked **(reading)** and listed under "Open questions" for
-confirmation. Building it continues meanwhile, because each reading is the stricter option.
+how to read it, the reading is marked **(reading)**. The project owner confirmed the three readings
+on 3 Nov 2026, with safeguards for D19 (see "Readings confirmed").
 
 | # | Question | Decision |
 | --- | --- | --- |
@@ -650,16 +650,109 @@ table changed.
   - e2e: a counter deposit conflicts with the notary's; the notary sees it under review and nothing of
     the other deposit; a second conservator decides; the notary sees it resolved.
 
-## Open questions
+## As built in step 11 (3 Nov 2026): D20
 
-The readings marked above, to confirm. Each is the stricter option and is built as written unless
-the project owner decides otherwise.
+`GET /api/v1/admin/professionals` now answers a page: `items`, `total`, `page` and `size`.
 
-| # | Reading | If the answer differs |
+- **Order.** `requested_at DESC, user_id DESC`. The account and its profile are created in one
+  transaction, so `requested_at` is the account's creation time. The UUIDv7 id breaks a tie the same
+  way every time.
+- **Pagination.** `page` (0 to 10,000) and `size` (1 to 100, default 50). The total is counted with
+  the same conditions, so the screen shows "page x of y". A page past the end is empty, not an error.
+- **Search.** `q`, 2 to 100 characters once trimmed; a blank `q` is no search. It matches the e-mail,
+  the display name, the chamber or the registration number. Migration V28 adds `search_fold`, an
+  immutable function that lower-cases and maps accented Latin letters to their base letter (and `œ`,
+  `æ`, `ß` to two letters), applied to the term and to each column. The match uses `position()`, not
+  `LIKE`, so `%` and `_` match only themselves. The term is a bound parameter.
+- **Filters.** `status`, `profession`, `office` (approved, or proposed by a pending request) and
+  `pending` (`VERIFICATION`: a `REQUESTED` account; `ACTIVATION`: a pending activation; `CHANGE`: a
+  pending reinstatement, revocation or office change). They combine with `AND`. A pending request
+  older than `SNIGF_ADMIN_REQUEST_TTL` counts as expired here, as the queue would close it.
+- **Refusals.** Each value outside its bounds or its list is refused with `422` and its own code
+  (`SIZE_OUT_OF_RANGE`, `PAGE_OUT_OF_RANGE`, `SEARCH_INVALID`, `STATUS_INVALID`, `PROFESSION_INVALID`,
+  `OFFICE_INVALID`, `PENDING_INVALID`), never widened or ignored.
+- **Unchanged.** `admin.professional.read` and row-level security (V24) as before; no evidence in the
+  answer; the queue of waiting requests still oldest first, since it is a work queue.
+- **The screen.** A search, the office code, and status, profession and "waiting for" filters, kept in
+  the address (`#/professionals?q=...&pending=ACTIVATION`), so a reload and D21's links keep them; the
+  total, "page x of y", Previous and Next. A search shorter than two characters is not sent.
+- **Tests.**
+  - `ProfessionalLifecycleIT` (4 new): newest first, a tie on `requested_at` broken by the id, pages
+    with the total; each filter, combined, and an expired request no longer pending; the search across
+    case, accents, ligatures, the e-mail and the chamber, with `%` and `_` taken literally (checked
+    against a `LIKE` version of the query, which the test rejects); every bound refused with `422` and
+    its code; a professional, an auditor and an intake officer refused with `403`.
+  - pgTAP `29_search_fold` (11 assertions): the folding, wildcards kept, immutable, callable by the
+    application only.
+  - Vitest (4 new): the query string, values from the address checked, the total and the page of
+    pages, a short search not sent, filters written to the address.
+  - e2e: the notary's request heads the directory, and a search finds it.
+
+## As built in step 12 (4 Nov 2026): D21
+
+`GET /api/v1/admin/professionals/counts` answers the counts for the signed-in administrator, counted
+exactly in the database (one query, under row-level security). No table, function or permission
+changed, so there is no migration.
+
+| Field | What it counts | Sent when the viewer holds | Tile links to |
+| --- | --- | --- | --- |
+| `requests` | profiles `REQUESTED` | `admin.professional.verify` | `#/professionals?pending=VERIFICATION` |
+| `activations` | pending activations of `VERIFIED` profiles, neither requested nor verified by the viewer | `admin.professional.approve` | `?pending=ACTIVATION` |
+| `changes` | pending reinstatements, revocations and office changes not requested by the viewer | `admin.professional.approve` | `?pending=CHANGE` |
+| `waitingForOthers` | the viewer's own pending requests and verifications | `admin.professional.verify` or `admin.professional.suspend` | none: a line for information |
+
+- **Permissions.** The endpoint needs `admin.professional.read`, like the directory its tiles open.
+  Each count is decided by `holds_permission` in the database, as `professional_decide` decides. A
+  count the viewer may not act on is left out of the answer, not sent as zero. A reader only gets
+  `{}`, and the screen does not ask. A professional, an auditor or an intake officer gets `403`. The
+  administration permissions cannot be delegated by special grant, so a count never uses one.
+- **Pending only.** Approved, rejected and expired requests are never counted. A request older than
+  `SNIGF_ADMIN_REQUEST_TTL` is not counted either, though nothing has closed it yet, as in the
+  directory's `pending` filter.
+- **The links.** Each tile opens the directory filtered on its step (D20). The directory lists every
+  account at that step, including those the viewer may not decide; its queue still refuses their
+  decision (`FOUR_EYES`).
+- **Unchanged.** Reading the counts is not audited, like reading the directory; every decision is
+  audited as before.
+- **Tests.**
+  - `ProfessionalLifecycleIT` (1 new): the fields per role (a full administrator, a verifier, an
+    approver, a reader only with `{}`); a public request counted; one's own verification and change
+    request not counted but in `waitingForOthers`, and counted for another administrator; an approved
+    and a rejected request no longer counted; an expired request not counted; outsiders refused with
+    `403`. Checked against a version of the query that counts one's own requests, which the test
+    rejects.
+  - `PermissionMatrixIT`: the new endpoint.
+  - Vitest `dashboard.test.tsx` (4): a tile for each count returned and its link; nothing for a count
+    left out; "nothing waiting" with one's own line; nothing asked for a reader only.
+  - e2e: the verifier sees their verification waiting for another administrator; the approver opens
+    the activations from the tile and finds the notary.
+
+## Readings confirmed (3 Nov 2026)
+
+The project owner confirmed the three readings.
+
+| # | Reading | Decision |
 | --- | --- | --- |
-| 1 | D17: the holding side of a conflict also sees `UNDER_REVIEW` | Only the arriving side would; the holding notary would see a transfer waiting without a reason |
-| 2 | D18: SYSTEM_ADMIN places and releases holds (two people to release), AUDITOR reads retention data | A records or legal role would need its own baseline role in the catalogue |
-| 3 | D19: application documents keep ADR-034's flow, where the intake officer's request is the second person | Each new version after submission would wait for the officer's approval before it counts |
+| 1 | D17: the holding side of a conflict also sees `UNDER_REVIEW` | **Confirmed.** Neither side sees the competing party's identity, documents or confidential information (built in step 10) |
+| 2 | D18: SYSTEM_ADMIN places and releases holds, AUDITOR reads retention data | **Confirmed.** A system administrator places a hold; releasing it needs two distinct authorised people; auditors read retention records and the hold and release history, read-only; every action audited (step 14) |
+| 3 | D19: for application documents, the intake officer's information request is the second person | **Confirmed with safeguards**, below (step 13) |
+
+**The D19 safeguards for application documents**, in the owner's words: a formal information
+request from an authorised intake officer, different from the original uploader, can count as the
+second-person control for replacing an application document. The request must identify the document
+and the reason, and the replacement must be linked to it. The original document, its hash, uploader,
+timestamps and complete replacement history are kept, with no silent overwrite or deletion.
+
+Today an ADR-034 information request names categories, not a document, and a new version is not
+linked to the request that allowed it. Step 13 therefore also covers application documents:
+
+- the request names each document it asks to be replaced, with the reason;
+- the database refuses a replacement version unless an open request names that document, and refuses
+  the request when its officer uploaded the document;
+- the new version records the request that allowed it;
+- the version history lists each version with its hash, uploader, times, reason and request.
+
+Versions added in a category without replacing a document stay as ADR-034 has them.
 
 ## Answers of the project owner (1 Nov 2026)
 
@@ -748,10 +841,10 @@ Small steps; each ends with its tests green and is reported for review.
 | 8 | **Full verification** (done locally; CI once pushed) | backend, pgTAP, frontend, stack rebuild, probes, e2e, secret scan; then CI | real results only |
 | 9 | **D17 to D21 recorded** (done) | This ADR (revision 4), its index, the CHANGELOG | `DocumentationSyncTest` |
 | 10 | **D17: conflict visibility** (done) | V27: `professional_deposits` and `professional_deposit` with the real status, `conflict`, `reviewDueAt`, `actionRequired`, explicit columns; the withdrawal's `withdrawnDuringConflict`; the notary's deposit page | pgTAP `28`: each status and conflict state, holding and arriving sides; no column of the competing deposit; a resolved conflict without its reason; another professional still sees nothing. `ProfessionalDepositIT`: the answer's exact field set (an allow-list, so a new field fails the test); the lookup unchanged. Vitest; the e2e journey with a second deposit |
-| 11 | **D20: the directory** | order, `size`, total, `q`, the filters; the screen's search, filters and "page x of y" | `ProfessionalLifecycleIT`: newest first, a tie on `requested_at` broken by id, each filter, the search (case, accents, `%` and `_` taken literally), bounds refused with `422`; a professional refused; Vitest |
-| 12 | **D21: the counts** | `GET /api/v1/admin/professionals/counts`; the dashboard's three tiles and the informational line, each linking to its filter | IT: each count per role (verifier, approver, reader only, professional `403`), one's own request and verification not counted, completed requests never counted, an absent count rather than zero; Vitest: tiles only for what is returned, the links' filters |
-| 13 | **D19: replacement with a second person** | V28: `deposit_document_replacement`, `_request`, `_decide`, `_withdraw`; both channels; `REPLACEMENT_PENDING` on registration; the version history in the API; the screens for the requester and the conservator | pgTAP `29`: the requester, a professional, or a conservator elsewhere cannot decide; the original stays current until approval; rejected and withdrawn files kept; no `UPDATE` or `DELETE`; approval under the title's lock; no replacement path for evidence. `RegisterIT`, `ProfessionalDepositIT`: both channels, the history, a transfer refused while pending; `PermissionMatrixIT`: the new endpoints; `db-test.sh`: an approval racing a signature; Vitest; e2e |
-| 14 | **D18: retention and holds** | V29: `retention_class` (no period, no schedule), the class on each covered record, `legal_hold` and its release request, `record_disposal_allowed`; the three permissions; the screens beside the evidence and the deposit's documents | pgTAP `30`: a class cannot claim a schedule without its reference and date; every covered record has its class, set by the database; a hold placed by one, released by two; `record_disposal_allowed` false without a schedule and false under a hold; no delete path, and the cleanup keeps pending files. IT: holds and retention reads audited; refused without the permission; `PermissionMatrixIT`, `PermissionCatalogueCheckTest` |
+| 11 | **D20: the directory** (done) | V28 `search_fold`; order, `size`, total, `q`, the filters; the screen's search, filters and "page x of y" | `ProfessionalLifecycleIT`: newest first, a tie on `requested_at` broken by id, each filter, the search (case, accents, `%` and `_` taken literally), bounds refused with `422`; a professional refused; pgTAP `29`; Vitest; e2e |
+| 12 | **D21: the counts** (done) | `GET /api/v1/admin/professionals/counts`; the dashboard's three tiles and the informational line, each linking to its filter | IT: each count per role (verifier, approver, reader only, professional `403`), one's own request and verification not counted, completed requests never counted, an absent count rather than zero; Vitest: tiles only for what is returned, the links' filters |
+| 13 | **D19: replacement with a second person** | V29: `deposit_document_replacement`, `_request`, `_decide`, `_withdraw`; both channels; `REPLACEMENT_PENDING` on registration; the version history in the API; application documents: the information request names the document and the reason, the replacement is linked to it, its officer never the uploader (confirmed reading 3); the screens for the requester and the conservator | pgTAP `30`: the requester, a professional, or a conservator elsewhere cannot decide; the original stays current until approval; rejected and withdrawn files kept; no `UPDATE` or `DELETE`; approval under the title's lock; no replacement path for evidence. `RegisterIT`, `ProfessionalDepositIT`: both channels, the history, a transfer refused while pending; `PermissionMatrixIT`: the new endpoints; `db-test.sh`: an approval racing a signature; Vitest; e2e |
+| 14 | **D18: retention and holds** | V30: `retention_class` (no period, no schedule), the class on each covered record, `legal_hold` and its release request, `record_disposal_allowed`; the three permissions; the screens beside the evidence and the deposit's documents | pgTAP `31`: a class cannot claim a schedule without its reference and date; every covered record has its class, set by the database; a hold placed by one, released by two; `record_disposal_allowed` false without a schedule and false under a hold; no delete path, and the cleanup keeps pending files. IT: holds and retention reads audited; refused without the permission; `PermissionMatrixIT`, `PermissionCatalogueCheckTest` |
 | 15 | **Docs** | the guide, the manual chapters, the dated notes in ADR-025, 026, 033, 038 and 040, the permission matrix, the README | `DocumentationSyncTest` |
 | 16 | **Full verification** | backend, pgTAP, frontend, stack rebuild, probes, e2e, secret scan; then CI on the pushed branch | real results only |
 

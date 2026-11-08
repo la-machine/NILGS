@@ -46,6 +46,12 @@ public class ProfessionalService {
     private static final String EVIDENCE_ENDPOINT = "POST /api/v1/admin/professionals/{id}/verification/documents";
     private static final Pattern REASON = Pattern.compile(": ([A-Z][A-Z0-9_]{2,63})\\b");
     private static final int PAGE_SIZE = 50;
+    /** The directory's page size (D20): 1 to 100, 50 unless asked. */
+    public static final int DIRECTORY_SIZE = 50;
+    static final int MAX_DIRECTORY_SIZE = 100;
+    static final int SEARCH_MIN = 2;
+    static final int SEARCH_MAX = 100;
+    private static final Pattern OFFICE_CODE = Pattern.compile("[A-Z0-9_-]{2,32}");
 
     /** What an administrator reads of one professional; {@code verification} only for verifiers and approvers. */
     public record Detail(Professional.Profile profile, List<Professional.Request> requests, Optional<Professional.Verification> verification,
@@ -124,10 +130,60 @@ public class ProfessionalService {
 
     // --- Administrators: reading --------------------------------------------------------------------------
 
+    /**
+     * The directory (ADR-041 D20): newest account first, with a deterministic tie-breaker, filtered and searched. Every
+     * filter is checked here; anything outside its bounds is refused, never widened or ignored.
+     */
     @Transactional(readOnly = true)
-    public List<Professional.Profile> profiles(AuthenticatedUser admin, String status, int page) {
+    public Professional.DirectoryPage directory(AuthenticatedUser admin, Professional.DirectoryFilter filter, int page, int size) {
+        if (size < 1 || size > MAX_DIRECTORY_SIZE) {
+            throw new ProfessionalRefused(ProfessionalRefused.Kind.INVALID, "SIZE_OUT_OF_RANGE");
+        }
+        if (page < 0 || page > 10_000) {
+            throw new ProfessionalRefused(ProfessionalRefused.Kind.INVALID, "PAGE_OUT_OF_RANGE");
+        }
+        Professional.DirectoryFilter checked = checked(filter);
         actor.bind(admin.userId());
-        return professionals.profiles(status, PAGE_SIZE, offset(page));
+        return new Professional.DirectoryPage(professionals.directory(checked, properties.requestTtl(), size, page * size),
+                professionals.directoryCount(checked, properties.requestTtl()), page, size);
+    }
+
+    /**
+     * The dashboard's counts (ADR-041 D21): only those the administrator may act on, pending items only, and never their
+     * own request or verification, which another administrator decides. Counted in the database, under row-level security.
+     */
+    @Transactional(readOnly = true)
+    public Professional.Counts counts(AuthenticatedUser admin) {
+        actor.bind(admin.userId());
+        return professionals.counts(properties.requestTtl());
+    }
+
+    private static Professional.DirectoryFilter checked(Professional.DirectoryFilter f) {
+        String status = blankToNull(f.status());
+        String profession = blankToNull(f.profession());
+        String office = blankToNull(f.office());
+        String pending = blankToNull(f.pending());
+        String text = blankToNull(f.text());
+        if (status != null && !Professional.STATUSES.contains(status)) {
+            throw new ProfessionalRefused(ProfessionalRefused.Kind.INVALID, "STATUS_INVALID");
+        }
+        if (profession != null && !Professional.PROFESSIONS.contains(profession)) {
+            throw new ProfessionalRefused(ProfessionalRefused.Kind.INVALID, "PROFESSION_INVALID");
+        }
+        if (office != null && !OFFICE_CODE.matcher(office).matches()) {
+            throw new ProfessionalRefused(ProfessionalRefused.Kind.INVALID, "OFFICE_INVALID");
+        }
+        if (pending != null && !Professional.PENDING_STEPS.contains(pending)) {
+            throw new ProfessionalRefused(ProfessionalRefused.Kind.INVALID, "PENDING_INVALID");
+        }
+        if (text != null && (text.codePointCount(0, text.length()) < SEARCH_MIN || text.codePointCount(0, text.length()) > SEARCH_MAX)) {
+            throw new ProfessionalRefused(ProfessionalRefused.Kind.INVALID, "SEARCH_INVALID");
+        }
+        return new Professional.DirectoryFilter(status, profession, office, pending, text);
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.strip();
     }
 
     /** Pending requests; those past their time to live are closed as expired first, and audited. */

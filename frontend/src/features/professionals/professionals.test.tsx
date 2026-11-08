@@ -8,8 +8,8 @@ import type { PageContext, Session } from '../../shared/session/types'
 import { DialogProvider } from '../../shared/ui/Dialog'
 import { AdminDetailPage } from './AdminDetailPage'
 import { AdminPage } from './AdminPage'
-import { depositProblems, depositsApi, officeCodes, professionalApi } from './api'
-import type { ChangeRequest, Deposit, Detail, Own, OwnDocument, Profile } from './api'
+import { depositProblems, depositsApi, directoryFilterFrom, directoryQuery, NO_FILTER, officeCodes, professionalApi } from './api'
+import type { ChangeRequest, Deposit, Detail, DirectoryPage, Own, OwnDocument, Profile } from './api'
 import { DepositPage } from './DepositPage'
 import { OwnPage } from './OwnPage'
 import { RequestScreen } from './RequestScreen'
@@ -36,6 +36,7 @@ const request = (over: Partial<ChangeRequest> = {}): ChangeRequest => ({
   decisionReason: null, ...over,
 })
 const pdf = (name: string) => new File(['%PDF-1.4'], name, { type: 'application/pdf' })
+const directoryPage = (items: Profile[], total = items.length, page = 0, size = 50): DirectoryPage => ({ items, total, page, size })
 /** Waits until the element is there. */
 const found = (selector: string) => waitFor(() => {
   const element = document.querySelector(selector)
@@ -48,6 +49,20 @@ const confirmDialog = async () => {
 }
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
+
+describe('the directory\'s address and query (D20)', () => {
+  it('sends only the filters set, the search trimmed and encoded, wildcards as characters', () => {
+    expect(directoryQuery(NO_FILTER, 0, 50)).toBe('page=0&size=50')
+    expect(directoryQuery({ ...NO_FILTER, q: '  Hélène Ngô ', office: ' yde1 ', pending: 'ACTIVATION' }, 2, 10))
+      .toBe('q=H%C3%A9l%C3%A8ne%20Ng%C3%B4&office=YDE1&pending=ACTIVATION&page=2&size=10')
+    expect(directoryQuery({ ...NO_FILTER, q: 'a%_b+c&status=X' }, 0, 50)).toBe('q=a%25_b%2Bc%26status%3DX&page=0&size=50')
+  })
+
+  it('drops from the address every value the screen does not offer', () => {
+    expect(directoryFilterFrom(new URLSearchParams('status=GONE&profession=ARCHITECT&pending=SOON&page=-3'))).toEqual({ filter: NO_FILTER, page: 0 })
+    expect(directoryFilterFrom(new URLSearchParams(`q=${'x'.repeat(150)}`)).filter.q).toHaveLength(100)
+  })
+})
 
 describe('the rules the deposit form applies before sending', () => {
   it('asks for a deed, at most twenty files, and a DEMO client', () => {
@@ -244,7 +259,7 @@ describe('the administrators\' pages', () => {
 
   it('never offers the requester a decision on their own request', async () => {
     vi.spyOn(professionalApi, 'pending').mockResolvedValue([request()])
-    vi.spyOn(professionalApi, 'profiles').mockResolvedValue([profile({ status: 'VERIFIED' })])
+    vi.spyOn(professionalApi, 'directory').mockResolvedValue(directoryPage([profile({ status: 'VERIFIED' })]))
     wrap(<AdminPage ctx={ctx(admin('admin-a'))} />)
     const item = await found('[data-request="r1"]')
     expect(within(item).getByText('your request: another administrator decides')).toBeTruthy()
@@ -253,7 +268,7 @@ describe('the administrators\' pages', () => {
 
   it('lets a second administrator approve, after confirmation', async () => {
     vi.spyOn(professionalApi, 'pending').mockResolvedValueOnce([request()]).mockResolvedValue([])
-    vi.spyOn(professionalApi, 'profiles').mockResolvedValue([])
+    vi.spyOn(professionalApi, 'directory').mockResolvedValue(directoryPage([]))
     const approve = vi.spyOn(professionalApi, 'approve').mockResolvedValue(request({ status: 'APPROVED' }))
     wrap(<AdminPage ctx={ctx(admin('admin-b'))} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Approve' }))
@@ -261,6 +276,42 @@ describe('the administrators\' pages', () => {
     await confirmDialog()
     await waitFor(() => expect(approve).toHaveBeenCalledWith('r1'))
     expect(await screen.findByText('Decision recorded.')).toBeTruthy()
+  })
+
+  it('the directory reads its filters from the address and shows the total and the page of pages (D20)', async () => {
+    vi.spyOn(professionalApi, 'pending').mockResolvedValue([])
+    const directory = vi.spyOn(professionalApi, 'directory').mockResolvedValue(
+      directoryPage([profile({ userId: 'p2', email: 'b@demo.invalid' }), profile({ userId: 'p1' })], 120, 1))
+    wrap(<AdminPage ctx={ctx(admin('admin-a'))} params={new URLSearchParams('q=Hélène&status=ACTIVE&pending=CHANGE&office=yde1&page=1')} />)
+    const rows = await waitFor(() => { const r = document.querySelectorAll('[data-professional]'); expect(r).toHaveLength(2); return r })
+    expect(directory).toHaveBeenCalledWith({ q: 'Hélène', status: 'ACTIVE', profession: '', office: 'YDE1', pending: 'CHANGE' }, 1)
+    expect(rows[0].getAttribute('data-professional')).toBe('b@demo.invalid')
+    expect(screen.getByText('120 account(s)')).toBeTruthy()
+    expect(screen.getByText('Page 2 of 3')).toBeTruthy()
+    expect(screen.getByText('Newest account first.')).toBeTruthy()
+    expect((screen.getByLabelText('Search: address, name, chamber or registration number') as HTMLInputElement).value).toBe('Hélène')
+    expect(screen.getByRole('button', { name: 'Clear the filters' })).toBeTruthy()
+  })
+
+  it('the directory sends no search shorter than two characters, and a filter goes to the address', async () => {
+    vi.spyOn(professionalApi, 'pending').mockResolvedValue([])
+    const directory = vi.spyOn(professionalApi, 'directory').mockResolvedValue(directoryPage([]))
+    wrap(<AdminPage ctx={ctx(admin('admin-a'))} />)
+    await waitFor(() => expect(directory).toHaveBeenCalledWith(NO_FILTER, 0))
+    expect(await screen.findByText('No professional account.')).toBeTruthy()
+    expect(screen.queryByText(/^Page /)).toBeNull()
+    fireEvent.change(screen.getByLabelText('Search: address, name, chamber or registration number'), { target: { value: ' a ' } })
+    expect(screen.getByText('At least 2 characters.')).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Search' }) as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.submit(document.querySelector('[data-directory-filters]') as HTMLFormElement)
+    expect(window.location.hash).not.toContain('q=')
+    fireEvent.change(screen.getByLabelText('Search: address, name, chamber or registration number'), { target: { value: ' Ngo ' } })
+    fireEvent.change(screen.getByLabelText('Office code'), { target: { value: 'dla1' } })
+    fireEvent.submit(document.querySelector('[data-directory-filters]') as HTMLFormElement)
+    expect(window.location.hash).toBe('#/professionals?q=Ngo&office=DLA1')
+    fireEvent.change(screen.getByLabelText('Waiting for'), { target: { value: 'ACTIVATION' } })
+    expect(window.location.hash).toBe('#/professionals?pending=ACTIVATION')
+    expect(directory).toHaveBeenCalledTimes(1)
   })
 
   it('verifies a requested account with the offices proposed', async () => {
