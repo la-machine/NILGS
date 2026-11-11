@@ -275,11 +275,15 @@ class RegisterController {
         return stored(staff, id, category, file, null, null, key);
     }
 
-    /** A correction: the file named keeps its place in the record, and this one is shown as replacing it. */
+    /**
+     * Asks for a document to be replaced (ADR-041 D19). The new file is kept with the request; the original stays
+     * the current document until another conservator of the office approves. {@code category}, when given, must be
+     * the original's.
+     */
     @PostMapping(path = "/api/v1/register/transactions/{id}/documents/{documentId}/replacement", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("@access.canAt(authentication, 'register.propose', @registerOffices.transaction(#id))")
     ResponseEntity<Created> replaceDocument(@AuthenticationPrincipal AuthenticatedUser staff, @PathVariable UUID id, @PathVariable UUID documentId,
-                                            @RequestParam String category, @RequestParam String reason,
+                                            @RequestParam(required = false) String category, @RequestParam String reason,
                                             @RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key,
                                             @RequestPart("file") org.springframework.web.multipart.MultipartFile file) {
         return stored(staff, id, category, file, documentId, reason, key);
@@ -289,7 +293,8 @@ class RegisterController {
                                            UUID replaces, String reason, String key) {
         try (java.io.InputStream content = file.getInputStream()) {
             UUID created = register.addDocument(staff, id, category, file.getOriginalFilename(), content, replaces, reason, key);
-            return ResponseEntity.created(URI.create("/api/v1/register/transactions/" + id + "/documents/" + created + "/content")).body(new Created(created));
+            String location = "/api/v1/register/transactions/" + id + (replaces == null ? "/documents/" : "/replacements/") + created + "/content";
+            return ResponseEntity.created(URI.create(location)).body(new Created(created));
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException(e);
         }
@@ -303,6 +308,53 @@ class RegisterController {
         RegisterService.DocumentDownload download = register.downloadDocument(staff, id, documentId);
         Register.DepositDocument d = download.document();
         return ResponseEntity.ok().headers(DocumentHeaders.attachment(d.mediaType(), d.sizeBytes(), d.originalName(), d.sha256()))
+                .body(new org.springframework.core.io.InputStreamResource(download.content()));
+    }
+
+    // --- Replacement requests (ADR-041 D19): one asks, another conservator of the office decides ------------
+
+    /** Never the storage key. The requester and the decider are named to the office's staff. */
+    record ReplacementResponse(UUID id, UUID documentId, UUID transactionId, String sha256, long sizeBytes, String mediaType, String originalName,
+                               String reason, UUID requestedBy, String requestedByName, String requestedAs, java.time.Instant requestedAt, String status,
+                               UUID decidedBy, String decidedByName, java.time.Instant decidedAt, String decisionReason, UUID resultDocumentId) {
+
+        static ReplacementResponse of(Register.DocumentReplacement r) {
+            return new ReplacementResponse(r.id(), r.documentId(), r.transactionId(), r.sha256(), r.sizeBytes(), r.mediaType(), r.originalName(),
+                    r.reason(), r.requestedBy(), r.requestedByName(), r.requestedAs(), r.requestedAt(), r.status(), r.decidedBy(), r.decidedByName(),
+                    r.decidedAt(), r.decisionReason(), r.resultDocumentId());
+        }
+    }
+
+    record DecisionBody(@Size(max = 20) String outcome, @Size(max = 2000) String reason) {
+    }
+
+    @GetMapping("/api/v1/register/transactions/{id}/replacements")
+    @PreAuthorize("@access.canAt(authentication, 'register.read', @registerOffices.transaction(#id))")
+    List<ReplacementResponse> replacements(@AuthenticationPrincipal AuthenticatedUser staff, @PathVariable UUID id) {
+        return register.replacements(staff, id).stream().map(ReplacementResponse::of).toList();
+    }
+
+    @PostMapping("/api/v1/register/transactions/{id}/replacements/{replacementId}/decision")
+    @PreAuthorize("@access.canAt(authentication, 'register.confirm', @registerOffices.transaction(#id))")
+    ReplacementResponse decideReplacement(@AuthenticationPrincipal AuthenticatedUser staff, @PathVariable UUID id, @PathVariable UUID replacementId,
+                                          @Valid @RequestBody DecisionBody body) {
+        return ReplacementResponse.of(register.decideReplacement(staff, id, replacementId, body.outcome(), body.reason()));
+    }
+
+    @PostMapping("/api/v1/register/transactions/{id}/replacements/{replacementId}/withdrawal")
+    @PreAuthorize("@access.canAt(authentication, 'register.propose', @registerOffices.transaction(#id))")
+    ReplacementResponse withdrawReplacement(@AuthenticationPrincipal AuthenticatedUser staff, @PathVariable UUID id, @PathVariable UUID replacementId,
+                                            @Valid @RequestBody ReasonBody body) {
+        return ReplacementResponse.of(register.withdrawReplacement(staff, id, replacementId, body.reason()));
+    }
+
+    @GetMapping("/api/v1/register/transactions/{id}/replacements/{replacementId}/content")
+    @PreAuthorize("@access.canAt(authentication, 'register.read', @registerOffices.transaction(#id))")
+    ResponseEntity<org.springframework.core.io.InputStreamResource> replacementContent(@AuthenticationPrincipal AuthenticatedUser staff,
+                                                                                       @PathVariable UUID id, @PathVariable UUID replacementId) {
+        RegisterService.ReplacementDownload download = register.downloadReplacement(staff, id, replacementId);
+        Register.DocumentReplacement r = download.replacement();
+        return ResponseEntity.ok().headers(DocumentHeaders.attachment(r.mediaType(), r.sizeBytes(), r.originalName(), r.sha256()))
                 .body(new org.springframework.core.io.InputStreamResource(download.content()));
     }
 

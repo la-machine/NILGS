@@ -217,15 +217,64 @@ public class ProfessionalDepositService {
         return register.professionalDocuments(transactionId);
     }
 
-    /** Adds or replaces a file on the professional's own open deposit, as a conservator would (ADR-040 §4.7). */
+    /** Adds a file to the professional's own open deposit, or asks for one to be replaced (ADR-041 D19). */
     @Transactional
     public UUID addDocument(AuthenticatedUser professional, UUID transactionId, String category, String givenName, InputStream content, UUID replaces,
                             String reason, String idempotencyKey) {
         actor.bind(professional.userId());
         RegisterWrites.requireKey(idempotencyKey);
         Register.ProfessionalDeposit d = own(transactionId);
-        return documents.store(professional.userId(), new DepositDocuments.Target(transactionId, d.titleNumber(), d.officeCode()), category, givenName,
+        String kept = category;
+        if (replaces != null) {
+            // D19: only a request; a conservator of the office approves it. The original's category is kept.
+            Register.ProfessionalDocument original = register.professionalDocuments(transactionId).stream().filter(x -> x.id().equals(replaces))
+                    .findFirst().orElseThrow(() -> RegisterRefused.of("DOCUMENT_NOT_FOUND"));
+            if (category != null && !category.equals(original.category())) {
+                throw writes.refusedIndependently(ENTITY_TRANSACTION, transactionId, new RegisterRefused(RegisterRefused.Kind.INVALID, "CATEGORY_INVALID"));
+            }
+            kept = original.category();
+        }
+        return documents.store(professional.userId(), new DepositDocuments.Target(transactionId, d.titleNumber(), d.officeCode()), kept, givenName,
                 content, replaces, reason, idempotencyKey);
+    }
+
+    /** A replacement request's file, as the professional sent it. */
+    public record ReplacementDownload(Register.ReplacementFile file, InputStream content) {
+    }
+
+    /** The requests on their own deposit: pending, approved, rejected and withdrawn. No conservator is named. */
+    @Transactional(readOnly = true)
+    public List<Register.ProfessionalReplacement> replacements(AuthenticatedUser professional, UUID transactionId) {
+        actor.bind(professional.userId());
+        own(transactionId);
+        return register.professionalReplacements(transactionId);
+    }
+
+    /** Takes back their own pending request; its file is kept. */
+    @Transactional
+    public Register.ProfessionalReplacement withdrawReplacement(AuthenticatedUser professional, UUID transactionId, UUID replacementId, String reason) {
+        actor.bind(professional.userId());
+        Register.ProfessionalDeposit d = own(transactionId);
+        Register.ProfessionalReplacement r = ownReplacement(transactionId, replacementId);
+        documents.close(new DepositDocuments.Target(transactionId, d.titleNumber(), d.officeCode()),
+                new Register.DocumentReplacement(r.id(), r.documentId(), transactionId, null, r.sha256(), r.sizeBytes(), r.mediaType(), r.originalName(),
+                        r.reason(), professional.userId(), null, "PROFESSIONAL", r.requestedAt(), r.status(), null, null, r.decidedAt(), r.decisionReason(),
+                        r.resultDocumentId()),
+                "WITHDRAWN", reason);
+        return ownReplacement(transactionId, replacementId);
+    }
+
+    @Transactional
+    public ReplacementDownload downloadReplacement(AuthenticatedUser professional, UUID transactionId, UUID replacementId) {
+        actor.bind(professional.userId());
+        Register.ProfessionalReplacement r = ownReplacement(transactionId, replacementId);
+        Register.ReplacementFile f = register.professionalReplacementFile(replacementId).orElseThrow(() -> RegisterRefused.of("REPLACEMENT_NOT_FOUND"));
+        return new ReplacementDownload(f, documents.openReplacement(transactionId, r.documentId(), f.id(), f.storageKey(), f.sha256(), f.sizeBytes()));
+    }
+
+    private Register.ProfessionalReplacement ownReplacement(UUID transactionId, UUID replacementId) {
+        return register.professionalReplacements(transactionId).stream().filter(x -> x.id().equals(replacementId)).findFirst()
+                .orElseThrow(() -> RegisterRefused.of("REPLACEMENT_NOT_FOUND"));
     }
 
     @Transactional

@@ -125,8 +125,8 @@ name, identity), and the files with a category each, with an `Idempotency-Key`.
 The deposit records the account, the capacity and the notary's own party, and no receiving officer: a
 `CHECK` ties `received_by` to the counter and the account to the professional channel. The client is
 recorded as a party of the office, reused only when every field matches. More files are added later,
-one per request; a file is replaced, never deleted. The notary can withdraw an open deposit, with a
-reason. They never refuse, register or decide anything.
+one per request; nothing is ever deleted. The notary can withdraw an open deposit, with a reason.
+They never refuse, register or decide anything.
 
 **A conflict (D17).** The notary reads their deposit's real status, `HOLDING` or `IN_CONFLICT`, and
 whether a conflict naming it is `UNDER_REVIEW` or `RESOLVED`. Both sides see it: the holding notary's
@@ -136,14 +136,61 @@ was refused by the conservation when deciding a conflict. A withdrawal while the
 review is recorded with `withdrawnDuringConflict` in the audit trail, so deposits made only to learn
 whether a title is held can be found.
 
+### Replacing a document (D19)
+
+A submitted document is never overwritten. Replacing one is a **request**, decided by a second person:
+
+| Who asks | Who decides |
+| --- | --- |
+| The depositing notary, on their own open deposit | a conservator of the office (`register.confirm`) |
+| A conservator of the office | **another** conservator of the office (`register.confirm`) |
+
+1. The new file passes the ADR-033 checks and is kept with the request, with a reason of 10 to 2,000
+   characters. One request per document may wait at a time.
+2. Until a decision, the original is the current document, and the deposit's transfer cannot be
+   registered (`REPLACEMENT_PENDING`).
+3. On approval, the new file becomes a document that names the original, the request and the
+   approver. The original stays, marked as replaced. A signature started before the approval no longer
+   matches the deposit's documents and is made again.
+4. A rejection needs a reason; the requester may withdraw a pending request. Either way the file is
+   kept, and the request stays listed.
+
+The requester never decides (`REQUESTER_CANNOT_DECIDE`), a professional never decides, and the
+database refuses both. The notary sees each request's status and the decision's reason, never who
+decided.
+
+**Application documents** follow the same rule through the information request (ADR-034): when the
+intake officer asks again for a category that already has a file, they say why that document must be
+replaced. The applicant may then send one new version of it, which records the request. The officer's
+request is the second person; every earlier version is kept.
+
+### Retention and legal holds (D18)
+
+SNIGF holds no approved retention schedule, so **nothing is ever deleted or disposed of**.
+
+- **Classes.** Each piece of verification evidence, deposit document and replacement file names its
+  retention class, set by the database: `PROFESSIONAL_EVIDENCE`, `DEPOSIT_DOCUMENT`,
+  `DEPOSIT_DOCUMENT_REPLACEMENT`. Every class reads "no approved schedule: kept", and none has a period.
+  A schedule needs its own ADR and migration.
+- **Holds.** A system administrator places a legal hold on one document or file, on every document of
+  a deposit, or on every piece of evidence of a professional, with a reason. Releasing it is asked by
+  one system administrator and approved or rejected by another. A hold is never deleted; its release is
+  recorded beside it.
+- **Disposal.** `record_disposal_allowed` is the check a future disposal must make: false while no
+  schedule is approved, and false under a hold. Today it is always false.
+- **Who reads.** Auditors and system administrators (`records.retention.read`), on **Retention and
+  holds** and on a professional's administration page. Every read is audited. Reading retention data
+  opens no document.
+
 ### Who sees what
 
 | Who | Sees |
 | --- | --- |
-| The notary | their status, offices and history; the lookup's four fields; their own deposits and their documents. Each deposit's real status, whether a conflict naming it is under review or decided, the review date and the action required of them (none yet), never the other deposit (D17). A file the conservation added shows as such, without its name |
+| The notary | their status, offices and history; the lookup's four fields; their own deposits, their documents and replacement requests (status and decision, never the conservator). Each deposit's real status, whether a conflict naming it is under review or decided, the review date and the action required of them (none yet), never the other deposit (D17). A file the conservation added shows as such, without its name |
 | A sworn surveyor | their status, offices and history, and a note that they hold no operational permission yet |
 | Administrators | the queue of requests waiting for a second administrator, the accounts by status, one account's requests and history; the verification and its evidence for verifiers and approvers only |
-| Conservators | each deposit's channel; for a professional deposit, the account's name and capacity, and the real status |
+| Conservators | each deposit's channel; for a professional deposit, the account's name and capacity, and the real status; each replacement request, who asked and who decided |
+| Auditors | retention classes, legal holds and their release history, read-only; no document |
 
 ## How to do it again
 
@@ -164,6 +211,12 @@ bash infra/scripts/dev-seed-professionals.sh   # notary.yde and sworn-surveyor.y
 5. As the notary, the deposit now reads "Registered".
 6. As `admin2`, open **Professionals** and approve or reject `sworn-surveyor.yde`. As `admin1`, the
    same request offers no button: they verified it.
+7. **Replacement (D19).** As the notary, on an open deposit, choose a new file under "Ask to replace
+   deed.pdf". It waits. As a conservator, open the title: approve or reject it under the document. The
+   conservator who asked for one sees no approval button on their own request.
+8. **Hold (D18).** As `admin1`, open the notary on **Professionals**: under "Retention and legal holds",
+   place a hold, then ask for its release. As `admin2`, approve it. **Retention and holds** lists both
+   steps.
 
 By hand, without the seed: request an account at `#/professional-request`, then use the account's
 page on **Professionals** as one administrator to verify, and as another to approve.
@@ -177,15 +230,17 @@ staff role: the triggers refuse it, by design.
 ## Verify
 
 ```sh
-docker compose --profile test run --rm --build dbtest   # pgTAP 24 to 27 and the racing deposits
+docker compose --profile test run --rm --build dbtest   # pgTAP 24 to 31, the racing deposits, the approval racing a signature
 cd backend && ./mvnw verify -Dtest=NONE -Dsurefire.failIfNoSpecifiedTests=false \
-  -Dit.test='Professional*IT,PermissionMatrixIT'
+  -Dit.test='Professional*IT,RegisterIT,CompletenessIT,RetentionIT,PermissionMatrixIT'
 bash infra/scripts/e2e.sh                               # the journey in e2e/tests/professionals.ts
 ```
 
 Expected: every suite green. The e2e journey covers the request, the two keys, the verification, the
 verifier refused as approver (on screen and by the API), the approval, the lookup that reveals nothing
-more, the deposit with a deed, the conservator's registration and the notary seeing it registered.
+more, the deposit with a deed, the conservator's registration and the notary seeing it registered,
+a hold placed by one administrator and released by the other; the register journey covers a
+replacement asked by one conservator and approved by another.
 
 ## Pitfalls we hit
 
@@ -198,6 +253,8 @@ more, the deposit with a deed, the conservator's registration and the notary see
 | A directory test passed for the wrong reason: `%20` and `%25` arrived literally | MockMvc's `get(String)` treats the address as a template and encodes `%` again | the test sends a `URI`; it also checks that a `LIKE` version of the query fails it |
 | A notary could read the conservators' reason for refusing their deposit in a conflict | `conflict_resolve` copies the decision's reason into the deposit's `closed_reason`, which step 4 showed to the professional (found while building D17) | V27 hides it when a conflict decision closed the deposit |
 | The seed leaves the notary verified | an activation needs two keys, and the script holds none | sign in as the notary, register two keys, run the seed again |
+| A test counted four kept files for three replacement requests | an approved request's file is also the new document's, so `document_storage_keys_known` returns its key twice | count distinct keys |
+| The auditor could not be given the retention reader | a permission of the `AUDIT` family on SYSTEM_ADMIN, or `ADMINISTRATION` on AUDITOR, mixes duties (ADR-025) | `records.retention.read` is `BUSINESS`; placing and releasing holds are `ADMINISTRATION` |
 | 429 `RATE_LIMITED` on a request | requests share `SNIGF_RATE_REGISTER_PER_HOUR` with registration, per address, in memory | wait; in development the seed restarts the app |
 
 Other answers are in the [error catalogue](../technical/08-operations-and-troubleshooting.md#requests).
@@ -210,12 +267,13 @@ Not production-ready, by design:
   checking with a real professional body, and real professionals' data, need their own decision.
 - **One person, two accounts.** Someone who is both an applicant and a professional holds two accounts;
   a unified identity with capacities needs its own ADR (ADR-041 §2, D14).
-- **No retention policy** for verification evidence and deposit documents: nothing is removed, and
-  applying one will need a migration, because the tables refuse deletion.
+- **No retention schedule** for verification evidence and deposit documents (D18): every class reads
+  "no approved schedule: kept", nothing is removed, and applying a schedule will need its own ADR and
+  migration, because the tables refuse deletion.
 - **Sworn surveyors** hold no operational permission until slice 4; professionals do not take part in
   applications yet.
 - **Throttling** of requests and lookups is in memory, for one application instance.
-- **Being built (ADR-041 D18, D19):** replacing a submitted document needs a second person;
-  retention metadata and legal holds.
+- **Holds are named by identifier** on the retention page: the conservators' and notaries' screens do
+  not show holds, since their readers hold no retention permission.
 - **The directory's search** reads every profile matching the filters; past tens of thousands of
   accounts it would need an index on the folded columns.

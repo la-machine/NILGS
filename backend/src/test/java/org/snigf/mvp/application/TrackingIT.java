@@ -45,7 +45,8 @@ class TrackingIT extends CaseFlowIntegrationTest {
         SignedIn intake = signedIn("INTAKE_OFFICER");
         long version = json.readTree(intake.browser().send(get("/api/v1/cases/" + id)).getContentAsString()).path("version").asLong();
         assertThat(sendJson(intake.browser(), post("/api/v1/cases/" + id + "/information-request"), json.writeValueAsString(
-                Map.of("expectedVersion", version, "categories", List.of("DEMO_IDENTITY"), "message", REQUEST))).getStatus()).isEqualTo(200);
+                Map.of("expectedVersion", version, "categories", List.of("DEMO_IDENTITY"), "message", REQUEST,
+                        "replacements", List.of(Map.of("category", "DEMO_IDENTITY", "reason", REQUEST))))).getStatus()).isEqualTo(200);
         mine = mine(applicant, id);
         assertThat(mine.path("waitingOn").asString("")).isEqualTo("APPLICANT");
         assertThat(mine.path("pendingRequest").path("categories").get(0).asString("")).isEqualTo("DEMO_IDENTITY");

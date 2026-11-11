@@ -291,6 +291,66 @@ class ProfessionalDepositIT extends CaseFlowIntegrationTest {
         assertThat(scalar("SELECT count(*) FROM pending_transaction WHERE id = '" + arriving + "' AND status = 'IN_CONFLICT'")).isEqualTo(1);
     }
 
+    /** ADR-041 D19: the notary only asks; a conservator of the office approves; the notary sees the outcome, never who decided. */
+    @Test
+    void aNotaryAsksForAReplacementAndAConservatorOfTheOfficeDecides() throws Exception {
+        Officer officer = conservator();
+        String title = title(officer);
+        SignedIn notary = activeProfessional("NOTARY", OFFICE);
+        SignedIn other = activeProfessional("NOTARY", OFFICE);
+        String holding = deposited(notary, title, deed("DEMO first"));
+        String deed = ok(notary.browser().send(get(PRO + "/deposits/" + holding + "/documents")), 200).get(0).path("id").asString("");
+        byte[] clearer = DocumentFixtures.pdf("/Title (DEMO clearer)");
+
+        notary.browser().csrf();
+        MockHttpServletResponse asked = notary.browser().send(multipart(PRO + "/deposits/" + holding + "/documents/" + deed + "/replacement")
+                .file(new MockMultipartFile("file", "deed-clear.pdf", "application/pdf", clearer)).param("reason", "The first scan is unreadable")
+                .header("Idempotency-Key", key()));
+        String request = ok(asked, 201).path("id").asString("");
+        assertThat(ok(notary.browser().send(get(PRO + "/deposits/" + holding + "/documents")), 200)).as("the original stays the current document").hasSize(1);
+        JsonNode mine = ok(notary.browser().send(get(PRO + "/deposits/" + holding + "/replacements")), 200);
+        assertThat(mine).hasSize(1);
+        assertThat(mine.get(0).path("status").asString("")).isEqualTo("PENDING");
+        assertThat(mine.get(0).path("requestedBySelf").asBoolean()).isTrue();
+        assertThat(fields(mine.get(0))).as("no conservator is named, no storage key").doesNotContain("decidedBy", "decidedByName", "requestedBy",
+                "requestedByName", "storageKey");
+        assertThat(notary.browser().send(get(PRO + "/deposits/" + holding + "/replacements/" + request + "/content")).getContentAsByteArray()).isEqualTo(clearer);
+        assertThat(other.browser().send(get(PRO + "/deposits/" + holding + "/replacements")).getStatus()).isEqualTo(404);
+        assertThat(other.browser().send(get(PRO + "/deposits/" + holding + "/replacements/" + request + "/content")).getStatus()).isEqualTo(404);
+
+        // The notary cannot decide: the staff endpoint is not theirs.
+        assertThat(sendJson(notary.browser(), post("/api/v1/register/transactions/" + holding + "/replacements/" + request + "/decision"),
+                body("outcome", "APPROVED")).getStatus()).isEqualTo(403);
+        JsonNode staffView = ok(officer.browser().send(get("/api/v1/register/transactions/" + holding + "/replacements")), 200).get(0);
+        assertThat(staffView.path("requestedAs").asString("")).isEqualTo("PROFESSIONAL");
+        JsonNode approved = ok(sendJson(officer.browser(), post("/api/v1/register/transactions/" + holding + "/replacements/" + request + "/decision"),
+                body("outcome", "APPROVED")), 200);
+        String result = approved.path("resultDocumentId").asString("");
+
+        JsonNode after = ok(notary.browser().send(get(PRO + "/deposits/" + holding + "/replacements")), 200).get(0);
+        assertThat(after.path("status").asString("")).isEqualTo("APPROVED");
+        assertThat(after.path("resultDocumentId").asString("")).isEqualTo(result);
+        JsonNode documents = ok(notary.browser().send(get(PRO + "/deposits/" + holding + "/documents")), 200);
+        assertThat(documents).hasSize(2);
+        assertThat(documents.get(1).path("replacesId").asString("")).isEqualTo(deed);
+        assertThat(documents.get(1).path("uploadedBySelf").asBoolean()).as("the notary uploaded the replacement").isTrue();
+
+        // A second request on the replacement, withdrawn by the notary.
+        notary.browser().csrf();
+        String again = ok(notary.browser().send(multipart(PRO + "/deposits/" + holding + "/documents/" + result + "/replacement")
+                .file(new MockMultipartFile("file", "deed-3.pdf", "application/pdf", DocumentFixtures.pdf("/Title (DEMO third)")))
+                .param("category", "DEED").param("reason", "A page is missing from the copy").header("Idempotency-Key", key())), 201).path("id").asString("");
+        assertThat(sendJson(other.browser(), post(PRO + "/deposits/" + holding + "/replacements/" + again + "/withdrawal"), body("reason", "Not mine to withdraw"))
+                .getStatus()).isEqualTo(404);
+        assertThat(ok(sendJson(notary.browser(), post(PRO + "/deposits/" + holding + "/replacements/" + again + "/withdrawal"), body()), 200)
+                .path("status").asString("")).isEqualTo("WITHDRAWN");
+        notary.browser().csrf();
+        assertThat(code(notary.browser().send(multipart(PRO + "/deposits/" + holding + "/documents/" + result + "/replacement")
+                .file(new MockMultipartFile("file", "deed-4.pdf", "application/pdf", DocumentFixtures.pdf("/Title (DEMO fourth)")))
+                .param("category", "IDENTITY").param("reason", "Another category for the same file").header("Idempotency-Key", key()))))
+                .as("the original's category is kept").isEqualTo("CATEGORY_INVALID");
+    }
+
     @Test
     void bothNotariesSeeTheConflictUnderReviewAndNeitherSeesTheOther() throws Exception {
         Officer officer = conservator();

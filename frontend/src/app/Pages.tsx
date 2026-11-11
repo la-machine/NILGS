@@ -28,6 +28,7 @@ const WorkloadPage = lazy(() => import('../features/reports').then((m) => ({ def
 const FinancePage = lazy(() => import('../features/payments').then((m) => ({ default: m.FinancePage })))
 const IssuedDocumentsPage = lazy(() => import('../features/issuance').then((m) => ({ default: m.IssuedDocumentsPage })))
 export const VerifyPage = lazy(() => import('../features/issuance').then((m) => ({ default: m.VerifyPage })))
+const RetentionPage = lazy(() => import('../features/retention').then((m) => ({ default: m.RetentionPage })))
 const ConfirmationsPage = lazy(() => import('../features/recovery').then((m) => ({ default: m.ConfirmationsPage })))
 const AuditPage = lazy(() => import('../features/audit').then((m) => ({ default: m.AuditPage })))
 const AuditTimelinePage = lazy(() => import('../features/audit').then((m) => ({ default: m.AuditTimelinePage })))
@@ -81,6 +82,7 @@ export function Pages({ route, place, allowed, ctx, onAddKey }: {
       {place === 'workload' && <WorkloadPage ctx={ctx} params={route.params} />}
       {place === 'payments' && <FinancePage ctx={ctx} params={route.params} />}
       {place === 'issued-documents' && <IssuedDocumentsPage ctx={ctx} />}
+      {place === 'records' && <RetentionPage ctx={ctx} />}
       {place === 'confirmations' && <ConfirmationsPage ctx={ctx} />}
       {place === 'audit' && route.segments[1] !== 'timeline' && <AuditPage ctx={ctx} />}
       {place === 'audit' && route.segments[1] === 'timeline' && <AuditTimelinePage ctx={ctx} params={route.params} />}

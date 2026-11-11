@@ -6,3 +6,7 @@ import type { Inscription } from './api'
 export const STATUS_TONE: Record<Inscription['status'], Tone> = {
   PROPOSED: 'info', CONFIRMATION_PENDING: 'warning', REGISTERED: 'success', REJECTED: 'neutral', WITHDRAWN: 'neutral',
 }
+
+export const REPLACEMENT_TONE: Record<'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN', Tone> = {
+  PENDING: 'warning', APPROVED: 'success', REJECTED: 'danger', WITHDRAWN: 'neutral',
+}

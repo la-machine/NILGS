@@ -70,8 +70,29 @@ describe('a case in completeness review', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Request this information' }))
     fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Request this information' }))
     await waitFor(() => expect(request).toHaveBeenCalledWith('c1',
-      { expectedVersion: 3, categories: ['DEMO_PROOF_OF_RIGHT'], message: 'The deed is missing from the file' }))
+      { expectedVersion: 3, categories: ['DEMO_PROOF_OF_RIGHT'], message: 'The deed is missing from the file', replacements: [] }))
     expect(await screen.findByText('Information requested: the case waits for the applicant\'s response.')).toBeTruthy()
+  })
+
+  it('asks why a document that already has a file must be replaced, and sends the reason with the request', async () => {
+    vi.spyOn(casesApi, 'read').mockResolvedValue(found)
+    vi.spyOn(documentsApi, 'list').mockResolvedValue({ acceptsDocuments: false, openCategories: [], maxBytes: 1, allowedTypes: [], missingRequired: [],
+      categories: [{ code: 'DEMO_IDENTITY', required: true, labelFr: 'Pièce', labelEn: 'Identity document (DEMO)', versions: [{ id: 'v1', versionNo: 1,
+        status: 'STORED', originalName: 'id.pdf', sizeBytes: 10, type: 'application/pdf', sha256: 'a'.repeat(64), uploadedAt: '2026-11-01T10:00:00Z' }] }] })
+    const request = vi.spyOn(casesApi, 'requestInformation').mockResolvedValue({ ...found, state: 'INFO_REQUESTED', version: 4 })
+    render(<DialogProvider><CaseDetailPage ctx={context(intake)} id="c1" /></DialogProvider>)
+    const identity = await screen.findByRole('checkbox', { name: /Identity document \(DEMO\)/ })
+    expect(await screen.findAllByText(/a file was sent: asking again replaces it/)).toBeTruthy()
+    fireEvent.click(identity)
+    fireEvent.change(screen.getByLabelText(/^Message to the applicant/), { target: { value: 'Please send clearer copies of your file' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Request this information' }))
+    expect(await screen.findByText('The reason needs 10 to 2000 characters.')).toBeTruthy()
+    expect(request).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText(/^Why must "Identity document \(DEMO\)" be replaced\?/), { target: { value: 'The scan is unreadable' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Request this information' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Request this information' }))
+    await waitFor(() => expect(request).toHaveBeenCalledWith('c1', expect.objectContaining({
+      replacements: [{ category: 'DEMO_IDENTITY', reason: 'The scan is unreadable' }] })))
   })
 
   it('holds the acceptance of a complete case until the DEMO fee is paid', async () => {

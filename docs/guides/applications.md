@@ -96,11 +96,14 @@ Decision: [ADR-034](../adr/034-completeness-review.md).
      anything required is missing; the case goes to `UNDER_REVIEW`;
    - **request information** (`POST /cases/{id}/information-request`): the document
      categories wanted and a message (10 to 2000 characters); the case goes to
-     `INFO_REQUESTED`.
-4. **The applicant** sees the request, adds files only in the categories asked for (each a
-   new version; the form stays frozen), and responds (`POST /applications/{id}/response`,
+     `INFO_REQUESTED`. A category that already has a file is a replacement (ADR-041 D19):
+     `replacements: [{category, reason}]` names it with a reason of 10 to 2000 characters,
+     and the database refuses the request if its officer uploaded that document.
+4. **The applicant** sees the request, adds files only in the categories asked for (the form
+   stays frozen), and responds (`POST /applications/{id}/response`,
    optional message). The automatic check runs again, and the case returns to
-   `COMPLETENESS_REVIEW`.
+   `COMPLETENESS_REVIEW`. A document named for replacement takes one new version, which
+   records the request and its reason; every earlier version is kept.
 
 Each step is a `completeness_record`. Each move needs its record, written in the same
 transaction by an entitled person, never the applicant for an officer's step; the database
@@ -112,6 +115,8 @@ checks this (V15).
 | `APPLICANT_CANNOT_REVIEW` | 403 | an officer handling their own application |
 | `CATEGORIES_REQUIRED`, `CATEGORY_UNKNOWN`, `MESSAGE_REQUIRED` | 422 | an incomplete information request |
 | `CATEGORY_NOT_REQUESTED` | 409 | an upload outside the requested categories during a request |
+| `REPLACEMENT_REASON_REQUIRED`, `REPLACEMENT_NOT_APPLICABLE`, `REPLACEMENT_NOT_REQUESTED` | 422 | a requested category with a file and no reason, a reason for a category without a file, or a replacement naming a category not requested |
+| `REPLACEMENT_NOT_REQUESTED` | 409 | an upload to a document that has a file, not named by the latest request, or already replaced once |
 | `INVALID_TRANSITION`, `STALE_VERSION` | 409 | the case is not in that state, or changed meanwhile |
 
 ### Review and simulated decision (E-15)

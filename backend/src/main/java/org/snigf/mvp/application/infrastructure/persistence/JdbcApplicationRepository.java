@@ -196,14 +196,47 @@ class JdbcApplicationRepository implements ApplicationRepository {
     @Override
     public List<CompletenessRecord> completeness(UUID id) {
         return jdbc.sql("""
-                        SELECT r.id, r.kind, r.missing, r.requested, r.message, u.display_name, r.at
+                        SELECT r.id, r.kind, r.missing, r.requested, r.message, u.display_name, r.at,
+                               ARRAY(SELECT d.category FROM completeness_replacement cr JOIN document d ON d.id = cr.document_id
+                                      WHERE cr.record_id = r.id ORDER BY d.category) AS replace_categories,
+                               ARRAY(SELECT cr.reason FROM completeness_replacement cr JOIN document d ON d.id = cr.document_id
+                                      WHERE cr.record_id = r.id ORDER BY d.category) AS replace_reasons
                           FROM completeness_record r LEFT JOIN app_user u ON u.id = r.actor_id
                          WHERE r.application_id = :id ORDER BY r.at, r.id""")
                 .param("id", id)
-                .query((rs, n) -> new CompletenessRecord(rs.getObject("id", UUID.class),
-                        CompletenessRecord.Kind.valueOf(rs.getString("kind")), strings(rs, "missing"),
-                        strings(rs, "requested"), rs.getString("message"), rs.getString("display_name"), instant(rs, "at")))
+                .query((rs, n) -> {
+                    List<String> categories = strings(rs, "replace_categories");
+                    List<String> reasons = strings(rs, "replace_reasons");
+                    List<CompletenessRecord.Replacement> replacements = new java.util.ArrayList<>();
+                    for (int i = 0; i < categories.size(); i++) {
+                        replacements.add(new CompletenessRecord.Replacement(categories.get(i), reasons.get(i)));
+                    }
+                    return new CompletenessRecord(rs.getObject("id", UUID.class),
+                            CompletenessRecord.Kind.valueOf(rs.getString("kind")), strings(rs, "missing"),
+                            strings(rs, "requested"), rs.getString("message"), rs.getString("display_name"), instant(rs, "at"),
+                            replacements);
+                })
                 .list();
+    }
+
+    @Override
+    public List<String> categoriesWithVersions(UUID id) {
+        return jdbc.sql("""
+                        SELECT d.category FROM document d
+                         WHERE d.application_id = :id AND EXISTS (SELECT 1 FROM document_version v WHERE v.document_id = d.id)
+                         ORDER BY d.category""")
+                .param("id", id).query(String.class).list();
+    }
+
+    @Override
+    public void nameReplacement(UUID id, String category, String reason) {
+        jdbc.sql("""
+                        INSERT INTO completeness_replacement (record_id, document_id, reason)
+                        SELECT (SELECT r.id FROM completeness_record r WHERE r.application_id = :id AND r.kind = 'INFO_REQUESTED'
+                                 ORDER BY r.at DESC, r.id DESC LIMIT 1), d.id, :reason
+                          FROM document d WHERE d.application_id = :id AND d.category = :category""")
+                .param("id", id).param("category", category).param("reason", reason)
+                .update();
     }
 
     @Override

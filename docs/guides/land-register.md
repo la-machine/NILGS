@@ -68,10 +68,14 @@ key (ADR-028) and what they signed must stay verifiable.
 
 Each file goes through the checks of [ADR-033](../adr/033-documents-upload-and-storage.md) through the
 `DocumentFiles` port, then `deposit_document_add` records it. That function writes only that row: it
-inscribes nothing and moves no status. There is no delete. A correction is a new file naming the one it
-replaces, with a reason, and the original stays listed and downloadable. A closed deposit takes nothing
-more and keeps what it has. A `TRANSFER`'s signature names every document's id and hash, so adding one
-during a signature makes it fail.
+inscribes nothing and moves no status. There is no delete. Replacing a file is a request with a reason
+(ADR-041 D19, V29): another conservator of the office holding `register.confirm` approves it, never the
+requester, and only then is the new file added, naming the one it replaces; the original stays listed and
+downloadable, and rejected and withdrawn requests keep their file. A transfer is refused while a
+replacement of its deposit is pending (`REPLACEMENT_PENDING`). A closed deposit takes nothing more and
+keeps what it has. A `TRANSFER`'s signature names every document's id and hash, so adding one, or
+approving a replacement, during a signature makes it fail. Every document and replacement file names its
+retention class, and nothing is disposed of while no schedule is approved (D18).
 
 **If you add another owner of files in this storage, extend `document_storage_keys_known` in the same
 migration.** The orphan cleanup deletes whatever that function does not name.

@@ -14,6 +14,9 @@ export interface DocumentVersion {
   type: string
   sha256: string
   uploadedAt: string
+  /** The information request that allowed this version to replace the earlier ones (ADR-041 D19): its reason and date. */
+  replacementReason?: string | null
+  replacementRequestedAt?: string | null
 }
 
 export interface DocumentCategory {

@@ -125,6 +125,16 @@ public class CaseService {
     @Transactional
     public CaseView requestInformation(AuthenticatedUser officer, UUID id, long expectedVersion, List<String> categories,
                                        String message) {
+        return requestInformation(officer, id, expectedVersion, categories, message, List.of());
+    }
+
+    /**
+     * Asks the applicant for documents. A category that already has a document is a replacement (ADR-041 D19): the
+     * request names it with its reason, and the database links the new version to it. A missing category is not.
+     */
+    @Transactional
+    public CaseView requestInformation(AuthenticatedUser officer, UUID id, long expectedVersion, List<String> categories,
+                                       String message, List<CompletenessRecord.Replacement> replacements) {
         actor.bind(officer.userId());
         Application application = handled(officer, id, expectedVersion);
         Requirements requirements = applications.type(application.typeVersionId()).orElseThrow().requirements();
@@ -141,14 +151,39 @@ public class CaseService {
         if (text.length() < CompletenessRecord.MESSAGE_MIN || text.length() > CompletenessRecord.MESSAGE_MAX) {
             throw refused(application, "MESSAGE_REQUIRED", ApplicationRefused.Kind.INVALID, List.of());
         }
+        Map<String, String> replace = new LinkedHashMap<>();
+        for (CompletenessRecord.Replacement r : replacements == null ? List.<CompletenessRecord.Replacement>of() : replacements) {
+            String reason = r == null || r.reason() == null ? "" : r.reason().strip();
+            if (r == null || r.category() == null || !asked.contains(r.category()) || replace.containsKey(r.category())) {
+                throw refused(application, "REPLACEMENT_NOT_REQUESTED", ApplicationRefused.Kind.INVALID,
+                        r == null || r.category() == null ? List.of() : List.of(r.category()));
+            }
+            if (reason.length() < CompletenessRecord.MESSAGE_MIN || reason.length() > CompletenessRecord.MESSAGE_MAX) {
+                throw refused(application, "REPLACEMENT_REASON_REQUIRED", ApplicationRefused.Kind.INVALID, List.of(r.category()));
+            }
+            replace.put(r.category(), reason);
+        }
+        List<String> stored = applications.categoriesWithVersions(id);
+        List<String> unnamed = asked.stream().filter(stored::contains).filter(c -> !replace.containsKey(c)).toList();
+        if (!unnamed.isEmpty()) {
+            throw refused(application, "REPLACEMENT_REASON_REQUIRED", ApplicationRefused.Kind.INVALID, unnamed);
+        }
+        List<String> nothingToReplace = replace.keySet().stream().filter(c -> !stored.contains(c)).toList();
+        if (!nothingToReplace.isEmpty()) {
+            throw refused(application, "REPLACEMENT_NOT_APPLICABLE", ApplicationRefused.Kind.INVALID, nothingToReplace);
+        }
         guarded(application, () -> {
             applications.record(id, CompletenessRecord.Kind.INFO_REQUESTED, List.copyOf(asked), text, officer.userId());
+            replace.forEach((category, reason) -> applications.nameReplacement(id, category, reason));
             return applications.move(id, expectedVersion, ApplicationState.COMPLETENESS_REVIEW,
                     ApplicationState.INFO_REQUESTED, officer.userId(), text);
         });
         Map<String, Object> facts = new LinkedHashMap<>();
         facts.put("office", application.officeCode());
         facts.put("categories", List.copyOf(asked));
+        if (!replace.isEmpty()) {
+            facts.put("replacements", List.copyOf(replace.keySet()));
+        }
         audit.record(AuditEvent.of(AuditAction.COMPLETENESS_INFO_REQUESTED, AuditOutcome.SUCCESS)
                 .withEntity(ENTITY, id).withEntityRef(application.reference()).withDetails(facts));
         return read(officer, id);

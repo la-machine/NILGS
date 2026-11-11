@@ -226,6 +226,27 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
                     + SOMEONE + "/documents").file(new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[] {'%'})).param("category", "OTHER"), Reach.OWN),
             new Endpoint("GET /professional/deposits/{unknown}/documents/{unknown}/content", Permission.REGISTER_DEPOSIT_READ, () -> get(
                     "/api/v1/professional/deposits/" + SOMEONE + "/documents/" + SOMEONE + "/content"), Reach.OWN),
+            // Replacement requests (ADR-041 D19): the professional asks and withdraws; a conservator decides on the staff endpoint.
+            new Endpoint("POST /professional/deposits/{unknown}/documents/{unknown}/replacement", Permission.REGISTER_DEPOSIT_DOCUMENT, () -> multipart(
+                    "/api/v1/professional/deposits/" + SOMEONE + "/documents/" + SOMEONE + "/replacement")
+                    .file(new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[] {'%'})).param("reason", "permission matrix"), Reach.OWN),
+            new Endpoint("GET /professional/deposits/{unknown}/replacements", Permission.REGISTER_DEPOSIT_READ, () -> get("/api/v1/professional/deposits/"
+                    + SOMEONE + "/replacements"), Reach.OWN),
+            new Endpoint("POST /professional/deposits/{unknown}/replacements/{unknown}/withdrawal", Permission.REGISTER_DEPOSIT_DOCUMENT, () -> post(
+                    "/api/v1/professional/deposits/" + SOMEONE + "/replacements/" + SOMEONE + "/withdrawal").contentType(JSON).content(DECISION), Reach.OWN),
+            new Endpoint("GET /professional/deposits/{unknown}/replacements/{unknown}/content", Permission.REGISTER_DEPOSIT_READ, () -> get(
+                    "/api/v1/professional/deposits/" + SOMEONE + "/replacements/" + SOMEONE + "/content"), Reach.OWN),
+            // Retention and legal holds (ADR-041 D18): an unknown subject or hold answers 404 or 422, never 403, to who may.
+            new Endpoint("GET /records/retention-classes", Permission.RECORDS_RETENTION_READ, () -> get("/api/v1/records/retention-classes")),
+            new Endpoint("GET /records/holds", Permission.RECORDS_RETENTION_READ, () -> get("/api/v1/records/holds")),
+            new Endpoint("GET /records/retention?kind=DEPOSIT_DOCUMENT&id={unknown}", Permission.RECORDS_RETENTION_READ, () -> get("/api/v1/records/retention")
+                    .param("kind", "DEPOSIT_DOCUMENT").param("id", SOMEONE.toString())),
+            new Endpoint("POST /records/holds {unknown subject}", Permission.RECORDS_HOLD_PLACE, () -> post("/api/v1/records/holds").contentType(JSON)
+                    .content("{\"subjectKind\":\"DEPOSIT\",\"subjectId\":\"" + SOMEONE + "\",\"reason\":\"permission matrix\"}")),
+            new Endpoint("POST /records/holds/{unknown}/release-requests", Permission.RECORDS_HOLD_RELEASE, () -> post("/api/v1/records/holds/" + SOMEONE
+                    + "/release-requests").contentType(JSON).content(DECISION)),
+            new Endpoint("POST /records/holds/{unknown}/release-requests/{unknown}/decision", Permission.RECORDS_HOLD_RELEASE, () -> post(
+                    "/api/v1/records/holds/" + SOMEONE + "/release-requests/" + SOMEONE + "/decision").contentType(JSON).content("{\"outcome\":\"APPROVED\"}")),
             new Endpoint("GET /issued-documents/{unknown}", Permission.DOCUMENT_ISSUED_MANAGE, () -> get(
                     "/api/v1/issued-documents/SNIGF-ZZZZZZZZZZZZZZZZZZZZZZZZZZ")),
             new Endpoint("POST /issued-documents/{unknown}/revocation", Permission.DOCUMENT_ISSUED_MANAGE, () -> post(
@@ -302,7 +323,7 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
             }
         }
         assertThat(mismatches).isEmpty();
-        assertThat(ENDPOINTS.stream().filter(e -> expected(BaselineRole.NOTARY, e)).count()).as("a notary reaches the professional endpoints only").isEqualTo(7);
+        assertThat(ENDPOINTS.stream().filter(e -> expected(BaselineRole.NOTARY, e)).count()).as("a notary reaches the professional endpoints only").isEqualTo(11);
     }
 
     @Test

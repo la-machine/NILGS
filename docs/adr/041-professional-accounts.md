@@ -4,7 +4,7 @@
 
 | Status | Date | Deciders |
 | --- | --- | --- |
-| **Accepted, revision 6.** D11 to D16, and the sign-in and suspension answers, of 1 Nov 2026: built in steps 1 to 6, documented in step 7, verified locally in step 8 (2 Nov 2026); what differs from the decision is under "As built". **D17 to D21 of 2 Nov 2026** (conflict visibility, retention, document replacement, account order, dashboard counts): recorded in step 9; D17 built in step 10, D20 in step 11, D21 in step 12; the three readings confirmed on 3 Nov 2026; D18 and D19 to be built in steps 13 to 16 (see "Decisions of 2 Nov 2026" and the plan). | 2026-11-04 | Project owner, Pythagore (FLYT) |
+| **Accepted, revision 7.** D11 to D16, and the sign-in and suspension answers, of 1 Nov 2026: built in steps 1 to 6, documented in step 7, verified locally in step 8 (2 Nov 2026); what differs from the decision is under "As built". **D17 to D21 of 2 Nov 2026** (conflict visibility, retention, document replacement, account order, dashboard counts): recorded in step 9; D17 built in step 10, D20 in step 11, D21 in step 12, D19 in step 13, D18 in step 14; the three readings confirmed on 3 Nov 2026; documented in step 15; verified in step 16 (see "Verified in step 16"). Slice 3 is complete. | 2026-11-08 | Project owner, Pythagore (FLYT) |
 
 ## Context
 
@@ -727,6 +727,152 @@ changed, so there is no migration.
   - e2e: the verifier sees their verification waiting for another administrator; the approver opens
     the activations from the tile and finds the notary.
 
+## As built in step 13 (8 Nov 2026): D19
+
+Migration V29. Formally submitted evidence is never overwritten: replacing it is a request that a
+second authorised person decides.
+
+**Deposit documents, both channels.**
+
+| Who asks | How | Who decides |
+| --- | --- | --- |
+| The depositing notary, for their own open deposit (`register.deposit.document`) | `POST /api/v1/professional/deposits/{id}/documents/{documentId}/replacement` | a conservator of the office holding `register.confirm` |
+| A conservator of the office (`register.propose`) | `POST /api/v1/register/transactions/{id}/documents/{documentId}/replacement` | **another** conservator of the office holding `register.confirm` |
+
+- **The request.** The new file passes the ADR-033 checks and is kept first. A row of
+  `deposit_document_replacement` records the document, the file's hash, size, type and name, who asked,
+  in which capacity (`STAFF` or `PROFESSIONAL`), when, and the reason (10 to 2,000 characters). One
+  request per document may be pending (`REPLACEMENT_PENDING`, 409). `category`, when sent, must be the
+  original's; the endpoint now answers `201` with the request's id.
+- **The decision.** `deposit_document_replacement_decide` refuses the requester
+  (`REQUESTER_CANNOT_DECIDE`, 403), a professional, a conservator elsewhere, and anyone without
+  `register.confirm` at the office. A rejection needs a reason. An approval needs the deposit still open,
+  takes the title's lock, and adds the `deposit_document` row that names the original (`replaces_id`),
+  the request (`replacement_request_id`) and the approver (`approved_by`); the uploader is the requester.
+  The original is never changed. `POST .../replacements/{rid}/decision` with `{outcome, reason}`.
+- **Withdrawal.** The requester only (`NOT_THE_REQUESTER`), while it is pending, with an optional
+  reason: `POST .../replacements/{rid}/withdrawal`, on either channel.
+- **Kept.** Rejected and withdrawn requests stay, with their file. `document_storage_keys_known` returns
+  every request's key, so the orphan cleanup never removes one. The table refuses `DELETE` and `TRUNCATE`;
+  an `UPDATE` may only write the decision of a pending row; the application has `SELECT` only.
+- **The transfer waits.** `register_apply` refuses a `TRANSFER` while a replacement of its deposit is
+  pending (`REPLACEMENT_PENDING`, after the conflict and restriction checks). An approval adds a document,
+  so the transfer's canonical bytes change: a signature started before it fails (`CANONICAL_MISMATCH`)
+  and the conservator signs again. `db-test.sh` races an approval against a signature on 20 titles:
+  each ends registered over the current documents or with the replacement approved, never both.
+- **The immediate replacement of V22 is gone.** `deposit_document_add` with a document to replace
+  answers `REPLACEMENT_APPROVAL_REQUIRED`. Rows replaced by one conservator before V29 keep their history;
+  a `NOT VALID` check requires the request and an approver, other than the uploader, on every row
+  written from now on.
+- **History.** Staff read `GET /api/v1/register/transactions/{id}/replacements` (who asked, who
+  decided, reasons, outcome, the resulting document) and download each request's file. The professional
+  reads `GET /api/v1/professional/deposits/{id}/replacements`: the same, but no conservator is named
+  (`requestedBySelf` says whether it was theirs).
+- **Audit.** `REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_REQUESTED`, `_REJECTED`, `_WITHDRAWN`,
+  `_DOWNLOADED`, and `REGISTER_DEPOSIT_DOCUMENT_REPLACED` on approval. The original document is the
+  entity, so each event keeps its title as subject (ADR-038). A refusal is `REGISTER_REFUSED`.
+- **The permission** `register.deposit.document` now reads "add documents to one's own open deposit,
+  or ask for one to be replaced". It is unchanged otherwise.
+- **Verification evidence** keeps no replacement path; pgTAP holds that none exists.
+
+**Application documents (confirmed reading 3).**
+
+- **The information request names the document.** `POST /api/v1/cases/{id}/information-request`
+  takes `replacements: [{category, reason}]`. A requested category that already has a file is a
+  replacement and must be named, with a reason of 10 to 2,000 characters (`REPLACEMENT_REASON_REQUIRED`,
+  422). A category without a file cannot be (`REPLACEMENT_NOT_APPLICABLE`). The database writes one
+  `completeness_replacement` row per document, refused unless its officer wrote the request in the same
+  transaction and never uploaded a version of that document.
+- **The version records it.** After submission, a document that already has a version takes a new one
+  only when the latest information request names it and that replacement is still unused; the guard
+  sets `document_version.replacement_id` itself. One replacement per named document
+  (`REPLACEMENT_NOT_REQUESTED`, 409). A draft is corrected freely by its owner, as before; a category
+  without a file is added as ADR-034 has it.
+- **History.** Each version shows the reason and date of the request that allowed it; the applicant's
+  and the officer's case history list the documents to replace, with the reasons (public, like the
+  request's message; `ApplicantPayloadSchema` allows the two new fields).
+
+**Screens.** The conservator's deposit shows each request under its document, with its file, reason,
+requester and outcome; another conservator approves or rejects it; the requester sees "waiting for
+another conservator" and may withdraw. The notary's deposit page asks for a replacement the same way
+and shows each request's status and decision, without naming the conservator. The intake officer's
+information request asks why each ticked document with a file must be replaced.
+
+**Tests.** pgTAP `30` (49): the immediate replacement refused; who may ask and see; who never decides;
+the transfer refused while pending; rejection and withdrawal keep the file; approval by another, the
+original unchanged, the old signed bytes refused; a closed deposit; no `UPDATE` or `DELETE`; no
+evidence replacement path; the application document guard. `23_land_register` updated. `RegisterIT`,
+`ProfessionalDepositIT`, `CompletenessIT`, `TrackingIT`, `PermissionMatrixIT` (four professional
+endpoints). Vitest (5 new or rewritten). e2e: the conservator's request approved by the second
+conservator before the transfer; the intake officer's named replacement.
+
+## As built in step 14 (8 Nov 2026): D18
+
+Migration V30 and a new module, `org.snigf.mvp.retention`. Nothing is deleted, and no job removes a
+record or its file.
+
+- **Classes.** `retention_class` holds `PROFESSIONAL_EVIDENCE`, `DEPOSIT_DOCUMENT` and
+  `DEPOSIT_DOCUMENT_REPLACEMENT`, each with a description and no schedule. A `CHECK` requires a
+  schedule's reference and approval date together; a generated `standing` reads
+  `NO_APPROVED_SCHEDULE_KEPT` while they are empty. There is no period column, and the table refuses
+  `UPDATE` and `DELETE`: an approved schedule needs its own ADR and migration.
+- **Every covered record names its class.** `professional_verification_document`, `deposit_document`
+  and `deposit_document_replacement` have `retention_class NOT NULL`, set by a trigger on insert
+  whatever the caller sends, and never changed.
+- **Holds.** `legal_hold` names one deposit document, one replacement file or one piece of evidence,
+  or every document of a deposit (its replacement files included), or every piece of evidence of a
+  professional; a reason; who placed it and when. `legal_hold_place` needs `records.hold.place`.
+- **Released by two.** `legal_hold_release_request` and `legal_hold_release_decide` need
+  `records.hold.release`; the requester never decides (`REQUESTER_CANNOT_DECIDE`, and a `CHECK`); a
+  rejection needs a reason and leaves the hold in force; one release may be pending or approved per
+  hold. A hold is never deleted: its release is recorded beside it.
+- **`record_disposal_allowed(kind, id)`** is false while the record's class has no approved schedule,
+  and false while any hold covers it. pgTAP checks each reason on its own (a schedule is set on a class
+  inside the rolled-back test only). Today it is always false.
+- **Permissions.** `records.retention.read` is `BUSINESS`, so the auditor and the system administrator
+  both hold it without mixing administration and audit duties; `records.hold.place` and
+  `records.hold.release` are `ADMINISTRATION`, held by `SYSTEM_ADMIN`. None is delegable or
+  professional. Row-level security shows the three tables only with `records.retention.read`. Reading
+  retention data opens no document: downloads keep their own permissions.
+- **Endpoints.** `GET /api/v1/records/retention-classes`, `GET /api/v1/records/holds` (all, or
+  `?kind=&id=`), `GET /api/v1/records/retention?kind=&id=` (class, standing, holds in force, whether
+  disposal would be allowed), `POST /api/v1/records/holds`, `POST .../holds/{id}/release-requests`,
+  `POST .../holds/{id}/release-requests/{rid}/decision`.
+- **Audit.** `RECORD_HOLD_PLACED`, `RECORD_HOLD_RELEASE_REQUESTED`, `RECORD_HOLD_RELEASED`,
+  `RECORD_HOLD_RELEASE_REJECTED`, `RECORD_RETENTION_READ` (every read) and `RECORD_REFUSED`. A hold
+  event names the hold and its subject, and has no audit subject (ADR-038), like account events.
+- **Screens.** "Retention and holds" (`#/records`) for whoever holds `records.retention.read`: the
+  classes, every hold with its history, and for system administrators a form that places a hold on a
+  subject named by kind and identifier (as the audit trail shows it). The professional's administration
+  page shows the holds on their evidence, with the same actions.
+- **Narrower than the decision.** The conservator's and the notary's screens do not show holds: their
+  readers do not hold `records.retention.read`. A system administrator names a deposit by the identifier
+  the audit trail gives.
+
+**Tests.** pgTAP `31` (50) and `09_authorization` (the catalogue now 54 permissions). `RetentionIT`
+(2): who reads; placed by one, released by two, refusals and reads audited, never deleted.
+`PermissionMatrixIT` (six endpoints), `PermissionMatrixTest`, `RoleSeedIT`,
+`PermissionCatalogueCheckTest`. Vitest `retention.test.tsx` (4) and the navigation. e2e: one
+administrator places a hold on the notary's evidence and asks for its release; the other approves it.
+
+## Verified in step 16 (9 Nov 2026)
+
+Local results, on a stack rebuilt from the working tree; CI runs once the branch is pushed.
+
+| Check | Result |
+| --- | --- |
+| Backend `./mvnw verify` | 390 tests: 190 unit, 200 integration (`RegisterIT`, `ProfessionalDepositIT`, `CompletenessIT`, `TrackingIT`, `RetentionIT`, `PermissionMatrixIT` included) |
+| pgTAP | 781 tests in 31 files, the concurrent chain test, 200 racing deposits (one holding, 199 in conflict) |
+| Approval racing a signature (`db-test.sh`, 20 titles) | 16 transfers registered, 4 replacements approved, never both on one title, no stale signature accepted |
+| Frontend | 140 Vitest tests; lint, type check and `check-architecture.mjs` clean |
+| Probes | security 38/38, segmentation 4/4 |
+| End-to-end (Chromium) | **not run locally:** the Playwright base image could not be downloaded (connection cut mid-layer, then no DNS). The journeys changed in steps 13 and 14 (register replacement, applications' named replacement, the professional hold) run first in CI |
+| gitleaks | history (11 commits) clean; the working-tree scan finds only the git-ignored local keys in `infra/secrets` |
+
+The rebuilt application refused to start on the old image: the database held V30's three
+permissions and the code did not (`PermissionCatalogueCheck`). This is the intended behaviour; the
+image is rebuilt with the migration.
+
 ## Readings confirmed (3 Nov 2026)
 
 The project owner confirmed the three readings.
@@ -843,10 +989,10 @@ Small steps; each ends with its tests green and is reported for review.
 | 10 | **D17: conflict visibility** (done) | V27: `professional_deposits` and `professional_deposit` with the real status, `conflict`, `reviewDueAt`, `actionRequired`, explicit columns; the withdrawal's `withdrawnDuringConflict`; the notary's deposit page | pgTAP `28`: each status and conflict state, holding and arriving sides; no column of the competing deposit; a resolved conflict without its reason; another professional still sees nothing. `ProfessionalDepositIT`: the answer's exact field set (an allow-list, so a new field fails the test); the lookup unchanged. Vitest; the e2e journey with a second deposit |
 | 11 | **D20: the directory** (done) | V28 `search_fold`; order, `size`, total, `q`, the filters; the screen's search, filters and "page x of y" | `ProfessionalLifecycleIT`: newest first, a tie on `requested_at` broken by id, each filter, the search (case, accents, `%` and `_` taken literally), bounds refused with `422`; a professional refused; pgTAP `29`; Vitest; e2e |
 | 12 | **D21: the counts** (done) | `GET /api/v1/admin/professionals/counts`; the dashboard's three tiles and the informational line, each linking to its filter | IT: each count per role (verifier, approver, reader only, professional `403`), one's own request and verification not counted, completed requests never counted, an absent count rather than zero; Vitest: tiles only for what is returned, the links' filters |
-| 13 | **D19: replacement with a second person** | V29: `deposit_document_replacement`, `_request`, `_decide`, `_withdraw`; both channels; `REPLACEMENT_PENDING` on registration; the version history in the API; application documents: the information request names the document and the reason, the replacement is linked to it, its officer never the uploader (confirmed reading 3); the screens for the requester and the conservator | pgTAP `30`: the requester, a professional, or a conservator elsewhere cannot decide; the original stays current until approval; rejected and withdrawn files kept; no `UPDATE` or `DELETE`; approval under the title's lock; no replacement path for evidence. `RegisterIT`, `ProfessionalDepositIT`: both channels, the history, a transfer refused while pending; `PermissionMatrixIT`: the new endpoints; `db-test.sh`: an approval racing a signature; Vitest; e2e |
-| 14 | **D18: retention and holds** | V30: `retention_class` (no period, no schedule), the class on each covered record, `legal_hold` and its release request, `record_disposal_allowed`; the three permissions; the screens beside the evidence and the deposit's documents | pgTAP `31`: a class cannot claim a schedule without its reference and date; every covered record has its class, set by the database; a hold placed by one, released by two; `record_disposal_allowed` false without a schedule and false under a hold; no delete path, and the cleanup keeps pending files. IT: holds and retention reads audited; refused without the permission; `PermissionMatrixIT`, `PermissionCatalogueCheckTest` |
-| 15 | **Docs** | the guide, the manual chapters, the dated notes in ADR-025, 026, 033, 038 and 040, the permission matrix, the README | `DocumentationSyncTest` |
-| 16 | **Full verification** | backend, pgTAP, frontend, stack rebuild, probes, e2e, secret scan; then CI on the pushed branch | real results only |
+| 13 | **D19: replacement with a second person** (done) | V29: `deposit_document_replacement`, `_request`, `_decide`, `_withdraw`; both channels; `REPLACEMENT_PENDING` on registration; the version history in the API; application documents: the information request names the document and the reason, the replacement is linked to it, its officer never the uploader (confirmed reading 3); the screens for the requester and the conservator | pgTAP `30`: the requester, a professional, or a conservator elsewhere cannot decide; the original stays current until approval; rejected and withdrawn files kept; no `UPDATE` or `DELETE`; approval under the title's lock; no replacement path for evidence. `RegisterIT`, `ProfessionalDepositIT`: both channels, the history, a transfer refused while pending; `PermissionMatrixIT`: the new endpoints; `db-test.sh`: an approval racing a signature; Vitest; e2e |
+| 14 | **D18: retention and holds** (done) | V30: `retention_class` (no period, no schedule), the class on each covered record, `legal_hold` and its release request, `record_disposal_allowed`; the three permissions; the screens beside the evidence and the deposit's documents | pgTAP `31`: a class cannot claim a schedule without its reference and date; every covered record has its class, set by the database; a hold placed by one, released by two; `record_disposal_allowed` false without a schedule and false under a hold; no delete path, and the cleanup keeps pending files. IT: holds and retention reads audited; refused without the permission; `PermissionMatrixIT`, `PermissionCatalogueCheckTest` |
+| 15 | **Docs** (done) | the guide, the manual chapters, the dated notes in ADR-025, 026, 033, 038 and 040, the permission matrix, the README | `DocumentationSyncTest` |
+| 16 | **Full verification** (done locally; CI once pushed) | backend, pgTAP, frontend, stack rebuild, probes, e2e, secret scan; then CI on the pushed branch | real results only |
 
 ### Risks
 

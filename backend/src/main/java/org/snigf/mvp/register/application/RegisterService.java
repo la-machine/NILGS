@@ -376,7 +376,16 @@ public class RegisterService {
         actor.bind(staff.userId());
         RegisterWrites.requireKey(idempotencyKey);
         Register.Transaction t = register.transaction(transactionId).orElseThrow(() -> RegisterRefused.of("TRANSACTION_NOT_FOUND"));
-        return documents.store(staff.userId(), new DepositDocuments.Target(transactionId, t.titleNumber(), t.officeCode()), category, givenName,
+        String kept = category;
+        if (replaces != null) {
+            // A replacement keeps the original's category; another one is refused, as before D19.
+            Register.DepositDocument original = register.depositDocument(transactionId, replaces).orElseThrow(() -> RegisterRefused.of("DOCUMENT_NOT_FOUND"));
+            if (category != null && !category.equals(original.category())) {
+                throw refusedIndependently(staff, ENTITY_TRANSACTION, transactionId, new RegisterRefused(RegisterRefused.Kind.INVALID, "CATEGORY_INVALID"));
+            }
+            kept = original.category();
+        }
+        return documents.store(staff.userId(), new DepositDocuments.Target(transactionId, t.titleNumber(), t.officeCode()), kept, givenName,
                 content, replaces, reason, idempotencyKey);
     }
 
@@ -386,6 +395,58 @@ public class RegisterService {
         actor.bind(staff.userId());
         Register.DepositDocument d = register.depositDocument(transactionId, documentId).orElseThrow(() -> RegisterRefused.of("DOCUMENT_NOT_FOUND"));
         return new DocumentDownload(d, documents.open(transactionId, d.id(), d.category(), d.storageKey(), d.sha256(), d.sizeBytes()));
+    }
+
+    // --- Replacing a deposit's document needs a second person (ADR-041 D19) --------------------------------
+
+    /** A replacement request's file to send, already checked against its hash. */
+    public record ReplacementDownload(Register.DocumentReplacement replacement, InputStream content) {
+    }
+
+    /** Every request of a deposit: pending, approved, rejected and withdrawn, oldest first. */
+    @Transactional(readOnly = true)
+    public List<Register.DocumentReplacement> replacements(AuthenticatedUser staff, UUID transactionId) {
+        actor.bind(staff.userId());
+        register.transaction(transactionId).orElseThrow(() -> RegisterRefused.of("TRANSACTION_NOT_FOUND"));
+        return register.replacements(transactionId);
+    }
+
+    /**
+     * Approves or rejects a pending request. The database refuses the requester, a professional, anyone without
+     * {@code register.confirm} at the office, and an approval on a closed deposit. Approval adds the document
+     * naming the original, under the title's lock; the original is never changed.
+     */
+    @Transactional
+    public Register.DocumentReplacement decideReplacement(AuthenticatedUser staff, UUID transactionId, UUID replacementId, String outcome, String reason) {
+        actor.bind(staff.userId());
+        if (!"APPROVED".equals(outcome) && !"REJECTED".equals(outcome)) {
+            throw refusedIndependently(staff, ENTITY_TRANSACTION, transactionId, new RegisterRefused(RegisterRefused.Kind.INVALID, "OUTCOME_REQUIRED"));
+        }
+        return closeReplacement(staff, transactionId, replacementId, outcome, reason);
+    }
+
+    /** The requester takes their pending request back; its file is kept. */
+    @Transactional
+    public Register.DocumentReplacement withdrawReplacement(AuthenticatedUser staff, UUID transactionId, UUID replacementId, String reason) {
+        actor.bind(staff.userId());
+        return closeReplacement(staff, transactionId, replacementId, "WITHDRAWN", reason);
+    }
+
+    private Register.DocumentReplacement closeReplacement(AuthenticatedUser staff, UUID transactionId, UUID replacementId, String outcome, String reason) {
+        Register.Transaction t = register.transaction(transactionId).orElseThrow(() -> RegisterRefused.of("TRANSACTION_NOT_FOUND"));
+        Register.DocumentReplacement r = register.replacement(replacementId).filter(x -> x.transactionId().equals(transactionId))
+                .orElseThrow(() -> RegisterRefused.of("REPLACEMENT_NOT_FOUND"));
+        documents.close(new DepositDocuments.Target(transactionId, t.titleNumber(), t.officeCode()), r, outcome, reason);
+        return register.replacement(replacementId).orElseThrow();
+    }
+
+    /** The file a request carries, checked against its hash. Audited. */
+    @Transactional
+    public ReplacementDownload downloadReplacement(AuthenticatedUser staff, UUID transactionId, UUID replacementId) {
+        actor.bind(staff.userId());
+        Register.DocumentReplacement r = register.replacement(replacementId).filter(x -> x.transactionId().equals(transactionId))
+                .orElseThrow(() -> RegisterRefused.of("REPLACEMENT_NOT_FOUND"));
+        return new ReplacementDownload(r, documents.openReplacement(transactionId, r.documentId(), r.id(), r.storageKey(), r.sha256(), r.sizeBytes()));
     }
 
     @Transactional(readOnly = true)

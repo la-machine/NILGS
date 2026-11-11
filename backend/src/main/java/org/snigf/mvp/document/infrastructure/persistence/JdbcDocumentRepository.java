@@ -29,9 +29,11 @@ class JdbcDocumentRepository implements DocumentRepository {
 
     private static final String VERSION = """
             SELECT v.id, v.document_id, d.category, v.version_no, v.status, v.storage_key, v.sha256, v.size_bytes,
-                   v.detected_type, v.original_name, v.uploaded_at
+                   v.detected_type, v.original_name, v.uploaded_at, v.replacement_id, cr.reason AS replacement_reason,
+                   cr.at AS replacement_at
               FROM document_version v
               JOIN document d ON d.id = v.document_id
+              LEFT JOIN completeness_replacement cr ON cr.id = v.replacement_id
             """;
 
     private final JdbcClient jdbc;
@@ -54,6 +56,11 @@ class JdbcDocumentRepository implements DocumentRepository {
     public int versionCount(UUID documentId) {
         return jdbc.sql("SELECT count(*) FROM document_version WHERE document_id = :document")
                 .param("document", documentId).query(Integer.class).single();
+    }
+
+    @Override
+    public boolean replacementOpen(UUID documentId) {
+        return jdbc.sql("SELECT document_replacement_open(:document) IS NOT NULL").param("document", documentId).query(Boolean.class).single();
     }
 
     @Override
@@ -96,7 +103,9 @@ class JdbcDocumentRepository implements DocumentRepository {
                 rs.getString("category"), rs.getInt("version_no"), DocumentVersion.Status.valueOf(rs.getString("status")),
                 rs.getString("storage_key"), rs.getString("sha256"), rs.getLong("size_bytes"),
                 DocumentType.ofMediaType(rs.getString("detected_type")).orElseThrow(), rs.getString("original_name"),
-                instant(rs, "uploaded_at"));
+                instant(rs, "uploaded_at"), rs.getObject("replacement_id", UUID.class) == null ? null
+                        : new DocumentVersion.Replacement(rs.getObject("replacement_id", UUID.class), rs.getString("replacement_reason"),
+                                instant(rs, "replacement_at")));
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {

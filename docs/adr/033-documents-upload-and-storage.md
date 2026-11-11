@@ -145,3 +145,8 @@ This covers a crash between storing and committing, and a deleted draft.
 - **Added 2 Nov 2026 ([ADR-041](041-professional-accounts.md)):** a professional's verification evidence and a notary's deposit files go
   through `DocumentFiles`, with these same checks and this same storage. `document_storage_keys_known`
   knows the evidence, so the orphan cleanup keeps it.
+- **Added 8 Nov 2026 ([ADR-041](041-professional-accounts.md) D18 and D19, V29 and V30):** nothing is deleted automatically except
+  the orphans this ADR describes. `document_storage_keys_known` also returns the files of deposit replacement requests, pending,
+  rejected or withdrawn, so the cleanup keeps them. After submission, a new version of a document that already has one needs the
+  latest information request to name it with a reason, and records that request (`document_version.replacement_id`); a draft is
+  still corrected freely by its owner. Application drafts stay outside D18's retention classes.

@@ -66,7 +66,15 @@ class ApplicationController {
 
     /** One step of the completeness review, as the applicant and staff see it. */
     record CompletenessResponse(String kind, List<String> missing, List<String> requested, String message,
-                                String actorName, Instant at) {
+                                String actorName, Instant at, List<ReplacementResponse> replacements) {
+    }
+
+    /** A document an information request asks to be replaced, by its category, and why (ADR-041 D19). */
+    record ReplacementResponse(String category, String reason) {
+
+        static List<ReplacementResponse> of(List<CompletenessRecord.Replacement> replacements) {
+            return replacements.stream().map(r -> new ReplacementResponse(r.category(), r.reason())).toList();
+        }
     }
 
     record TypeResponse(String code, int versionNo, String nameFr, String nameEn, Requirements requirements,
@@ -87,10 +95,10 @@ class ApplicationController {
 
     /** One step of the completeness review as the applicant sees it: no person named. */
     record ApplicantCompletenessResponse(String kind, List<String> missing, List<String> requested, String message,
-                                         String by, Instant at) {
+                                         String by, Instant at, List<ReplacementResponse> replacements) {
     }
 
-    record PendingRequestResponse(List<String> categories, String message, Instant since) {
+    record PendingRequestResponse(List<String> categories, String message, Instant since, List<ReplacementResponse> replacements) {
     }
 
     /**
@@ -191,10 +199,10 @@ class ApplicationController {
                 t.waitingOn() == null ? null : t.waitingOn().name(),
                 t.pendingRequest() == null ? null
                         : new PendingRequestResponse(t.pendingRequest().categories(), t.pendingRequest().message(),
-                                t.pendingRequest().since()),
+                                t.pendingRequest().since(), ReplacementResponse.of(t.pendingRequest().replacements())),
                 t.history().stream().map(s -> new StepResponse(s.from().name(), s.to().name(), s.by().name(), s.at())).toList(),
                 t.completeness().stream().map(c -> new ApplicantCompletenessResponse(c.kind().name(), c.missing(),
-                        c.requested(), c.message(), c.by().name(), c.at())).toList(),
+                        c.requested(), c.message(), c.by().name(), c.at(), ReplacementResponse.of(c.replacements()))).toList(),
                 view.decision().map(d -> new DecisionResponse(d.outcome(), d.grounds(), d.simulated(), d.decidedAt()))
                         .orElse(null));
     }
@@ -204,6 +212,7 @@ class ApplicationController {
     }
 
     static CompletenessResponse completeness(CompletenessRecord r) {
-        return new CompletenessResponse(r.kind().name(), r.missing(), r.requested(), r.message(), r.actorName(), r.at());
+        return new CompletenessResponse(r.kind().name(), r.missing(), r.requested(), r.message(), r.actorName(), r.at(),
+                ReplacementResponse.of(r.replacements()));
     }
 }

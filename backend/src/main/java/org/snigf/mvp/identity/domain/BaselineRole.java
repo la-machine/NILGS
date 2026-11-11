@@ -57,6 +57,9 @@ import static org.snigf.mvp.shared.security.Permission.REGISTER_DEPOSIT_SUBMIT;
 import static org.snigf.mvp.shared.security.Permission.REGISTER_DEPOSIT_WITHDRAW;
 import static org.snigf.mvp.shared.security.Permission.REGISTER_INSCRIBE;
 import static org.snigf.mvp.shared.security.Permission.REGISTER_PROPOSE;
+import static org.snigf.mvp.shared.security.Permission.RECORDS_HOLD_PLACE;
+import static org.snigf.mvp.shared.security.Permission.RECORDS_HOLD_RELEASE;
+import static org.snigf.mvp.shared.security.Permission.RECORDS_RETENTION_READ;
 import static org.snigf.mvp.shared.security.Permission.REGISTER_READ;
 import static org.snigf.mvp.shared.security.Permission.REGISTER_TRANSACTION_DECIDE;
 import static org.snigf.mvp.shared.security.Permission.REVIEW_RECOMMEND;
@@ -90,7 +93,8 @@ public enum BaselineRole {
     AUDITOR("Auditeur", "Auditor", entries(
             PARCEL_READ, Scope.ANY, APPLICATION_READ, Scope.ANY,
             AUDIT_EVENT_SEARCH, Scope.ANY, AUDIT_CHAIN_VERIFY, Scope.ANY, AUDIT_CHECKPOINT_CREATE, Scope.ANY,
-            AUDIT_CHECKPOINT_LIST, Scope.ANY, AUDIT_CHECKPOINT_DOWNLOAD, Scope.ANY, AUDIT_KEY_READ, Scope.ANY)),
+            AUDIT_CHECKPOINT_LIST, Scope.ANY, AUDIT_CHECKPOINT_DOWNLOAD, Scope.ANY, AUDIT_KEY_READ, Scope.ANY,
+            RECORDS_RETENTION_READ, Scope.ANY)),
     FINANCE_OFFICER("Agent financier", "Finance officer", entries(
             PAYMENT_RECONCILE, Scope.ANY)),
     /** The national document verification service (ADR-039): issued documents' status and verification incidents. */
@@ -112,7 +116,8 @@ public enum BaselineRole {
             ADMIN_MFA_RESET, Scope.ANY, ADMIN_ROLE_READ, Scope.ANY, ADMIN_ROLE_DEFINE, Scope.ANY,
             ADMIN_ROLE_APPROVE, Scope.ANY, ADMIN_GRANT_READ, Scope.ANY, ADMIN_GRANT_REQUEST, Scope.ANY,
             ADMIN_GRANT_APPROVE, Scope.ANY, ADMIN_GRANT_REVOKE, Scope.ANY, ADMIN_PROFESSIONAL_READ, Scope.ANY,
-            ADMIN_PROFESSIONAL_VERIFY, Scope.ANY, ADMIN_PROFESSIONAL_APPROVE, Scope.ANY, ADMIN_PROFESSIONAL_SUSPEND, Scope.ANY));
+            ADMIN_PROFESSIONAL_VERIFY, Scope.ANY, ADMIN_PROFESSIONAL_APPROVE, Scope.ANY, ADMIN_PROFESSIONAL_SUSPEND, Scope.ANY,
+            RECORDS_RETENTION_READ, Scope.ANY, RECORDS_HOLD_PLACE, Scope.ANY, RECORDS_HOLD_RELEASE, Scope.ANY));
 
     private final String nameFr;
     private final String nameEn;

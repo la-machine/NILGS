@@ -81,3 +81,35 @@ if [[ "$HOLDING" != "1" || "$IN_CONFLICT" != "199" || "$CONFLICTS" != "199" || "
   exit 1
 fi
 echo "PASS: one holding transaction, every other deposit recorded in conflict, each professional one with its deed"
+
+echo "== A replacement's approval racing a transfer's signature (20 titles, ADR-041 D19)"
+psql_super -d "$DB" -f "$TESTS/bench/register_replacement_setup.sql" >/dev/null
+app_psql() { PGPASSWORD="$APP_PW" psql -X -q -h 127.0.0.1 -U snigf_app -d "$DB" "$@"; }
+for ROUND in $(seq 1 20); do
+  # The conservator registers over the bytes prepared before; meanwhile one asks for the deed's replacement and
+  # another approves it. Either may win the title's lock; a refusal is expected of the loser.
+  app_psql -c "SELECT set_config('snigf.actor_id', '00000000-0000-0000-0000-00000000ba02', false);
+               SELECT snigf.register_register(inscription, canonical, CAST(signature AS jsonb)) FROM snigf.bench_race WHERE round = $ROUND"     >/dev/null 2>&1 &
+  app_psql -c "BEGIN;
+               SELECT set_config('snigf.actor_id', '00000000-0000-0000-0000-00000000ba02', true);
+               SELECT set_config('bench.replacement', CAST(snigf.deposit_document_replacement_request(document, md5(CAST(gen_random_uuid() AS text)),
+                      repeat('e', 64), 100, 'application/pdf', 'deed-v2.pdf', 'A clearer copy of the deed') AS text), true)
+                 FROM snigf.bench_race WHERE round = $ROUND;
+               SELECT set_config('snigf.actor_id', '00000000-0000-0000-0000-00000000ba08', true);
+               SELECT snigf.deposit_document_replacement_decide(CAST(current_setting('bench.replacement') AS uuid), 'APPROVED', NULL);
+               COMMIT;" >/dev/null 2>&1 &
+  wait
+done
+RESULT="$(psql_super -tA -d "$DB" -c   "SELECT count(*) FILTER (WHERE i.status = 'REGISTERED'),
+          count(*) FILTER (WHERE EXISTS (SELECT 1 FROM snigf.deposit_document_replacement x WHERE x.document_id = b.document AND x.status = 'APPROVED')),
+          count(*) FILTER (WHERE i.status = 'REGISTERED' AND EXISTS (SELECT 1 FROM snigf.deposit_document_replacement x WHERE x.document_id = b.document AND x.status = 'APPROVED')),
+          count(*) FILTER (WHERE i.status = 'REGISTERED' AND EXISTS (SELECT 1 FROM snigf.inscription_signature s WHERE s.inscription_id = i.id
+                                                                        AND s.canonical IS DISTINCT FROM snigf.inscription_canonical(i.id)))
+     FROM snigf.bench_race b JOIN snigf.inscription i ON i.id = b.inscription")"
+IFS='|' read -r REGISTERED APPROVED BOTH STALE <<< "$RESULT"
+echo "   registered=$REGISTERED approved=$APPROVED both=$BOTH signed_over_stale_bytes=$STALE"
+if [[ "$BOTH" != "0" || "$STALE" != "0" || $((REGISTERED + APPROVED)) != "20" ]]; then
+  echo "FAIL: each round must end with the transfer registered over the current documents or the replacement approved, never both" >&2
+  exit 1
+fi
+echo "PASS: no transfer registered over documents that changed underneath its signature"

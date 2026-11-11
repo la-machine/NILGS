@@ -51,8 +51,13 @@ class DocumentController {
         this.settings = settings;
     }
 
+    /**
+     * {@code replacementReason}, {@code replacementRequestedAt}: the information request that allowed this version to
+     * replace the earlier ones (ADR-041 D19); null for a draft's version or a first file. The uploader is always the
+     * applicant: nobody else adds a version (V14).
+     */
     record VersionResponse(UUID id, int versionNo, String status, String originalName, long sizeBytes, String type,
-                           String sha256, Instant uploadedAt) {
+                           String sha256, Instant uploadedAt, String replacementReason, Instant replacementRequestedAt) {
     }
 
     record CategoryResponse(String code, boolean required, String labelFr, String labelEn, List<VersionResponse> versions) {
@@ -126,6 +131,7 @@ class DocumentController {
 
     private static VersionResponse version(DocumentVersion v) {
         return new VersionResponse(v.id(), v.versionNo(), v.status().name(), v.originalName(), v.sizeBytes(),
-                v.type().mediaType(), v.sha256(), v.uploadedAt());
+                v.type().mediaType(), v.sha256(), v.uploadedAt(), v.replacement() == null ? null : v.replacement().reason(),
+                v.replacement() == null ? null : v.replacement().requestedAt());
     }
 }

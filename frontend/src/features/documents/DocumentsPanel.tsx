@@ -117,6 +117,7 @@ function CategoryRow({ texts, lang, applicationId, category, source, label, docu
           <p className="document-file">
             <a href={documentsApi.contentUrl(applicationId, latest.id, source)} download={latest.originalName}>{latest.originalName}</a>
             <span className="muted"> · {readableSize(latest.sizeBytes, lang)} · {fill(d.version, { n: latest.versionNo })} · <span className="num">{new Date(latest.uploadedAt).toLocaleString(lang)}</span></span>
+            {latest.replacementReason && <span className="small block" data-replacement-reason>{fill(d.replacedOnRequest, { reason: latest.replacementReason })}</span>}
           </p>
         )
         : <p className="muted">{d.none}</p>}
@@ -128,6 +129,7 @@ function CategoryRow({ texts, lang, applicationId, category, source, label, docu
               <li key={v.id}>
                 <a href={documentsApi.contentUrl(applicationId, v.id, source)} download={v.originalName}>{v.originalName}</a>
                 <span className="muted"> · {fill(d.version, { n: v.versionNo })} · <span className="num">{new Date(v.uploadedAt).toLocaleString(lang)}</span></span>
+                {v.replacementReason && <span className="small block">{fill(d.replacedOnRequest, { reason: v.replacementReason })}</span>}
               </li>
             ))}
           </ul>

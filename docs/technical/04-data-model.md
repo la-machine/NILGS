@@ -53,13 +53,15 @@ checksum. A change is a new migration.
 | `V26__professional_deposits.sql` | ADR-041 step 4: `pending_transaction.submitted_by_account` and `submitted_capacity`, with a `CHECK` tying `received_by` to `COUNTER` and the account to `PROFESSIONAL_ACCOUNT`; `transaction_deposit_professional` (the transaction and its documents together, a `DEED` required, duplicates refused); `professional_title_lookup`; `professional_deposits` and `professional_deposit_documents`; `transaction_close` and `deposit_document_add` replaced with the professional's branch for their own deposits |
 | `V27__professional_conflict_visibility.sql` | ADR-041 D17 (step 10): `professional_deposits` replaced; the professional reads their own deposit's real status, `conflict` (`NONE`, `UNDER_REVIEW`, `RESOLVED`, from either side of a conflict), `review_due_at` while open and `action_required`; columns listed one by one; a conflict decision's reason is no longer shown |
 | `V28__search_fold.sql` | ADR-041 D20 (step 11): `search_fold(text)`, immutable, lower-cases and maps accented Latin letters to their base letter, for the professional directory's search, which compares with `position()` so `%` and `_` are ordinary characters |
+| `V29__document_replacement.sql` | ADR-041 D19 (step 13): `deposit_document_replacement` and its `_request`, `_decide` (another conservator holding `register.confirm`, never the requester or a professional, under the title's lock) and `_withdraw` functions; `deposit_document_add` refuses an immediate replacement (`REPLACEMENT_APPROVAL_REQUIRED`); `register_apply` refuses a transfer while a replacement of its deposit is pending (`REPLACEMENT_PENDING`); `professional_deposit_replacements` and `professional_replacement_file` for the professional's own deposit; `completeness_replacement` (an information request names each document it asks to be replaced, by its officer, with a reason) and `document_version.replacement_id`, set by the guard, one version per named document; the orphan cleanup keeps every request's file |
+| `V30__retention_and_holds.sql` | ADR-041 D18 (step 14): `retention_class` (no period; no schedule until one is approved, `standing` then reads `NO_APPROVED_SCHEDULE_KEPT`), the class on every piece of evidence, deposit document and replacement file, set by the database; `legal_hold` and `legal_hold_release` (placed by one, released by two); `record_disposal_allowed()`, false without a schedule and false under a hold; `record_retention()`; the permissions `records.retention.read`, `records.hold.place`, `records.hold.release` |
 | `V19__audit_subjects.sql` | ADR-038 (E-18), implementing ADR-027: `audit_event.subjects` (JSON array, GIN index): what an event is about, found by the insert trigger with `audit_subjects()` (`SECURITY DEFINER`) from the record in the same transaction, never from the caller: an application (also for its document versions, payment requests and matched provider reports), a parcel, or both parcels of an alert, each with its office at that moment (none for a draft); `audit_canonical()` encodes such an event `snigf-audit-v2` with the subjects hashed, and keeps `snigf-audit-v1` unchanged for every event without them (no backfill); `audit_readable()`: `audit.event.search` everywhere, or at the office of one of the event's subjects |
 
 Every new function must carry the same `SET search_path`. pgTAP test `06` enforces it.
 V7's constraints and triggers are tested by pgTAP test `09`, V8's approval workflow by test `10`,
 the checkpoint rules (V3, V9) by test `11`, the supervised reset and key removal (V10) by test `12`,
 overlap and duplicate detection (V11, the Baseline's fixture set) by test `13`, resolution by a special-grant
-holder and the note bound (V12) by test `14`, applications under row-level security (V13) by test `15`, documents (V14) by test `16`, the completeness review (V15) by test `17`, the land register (V21) by test `23` and the concurrent-deposit run, professional accounts (V23) by test `24`, their lifecycle (V24) by test `25`, their permissions (V25) by test `26`, their deposits (V26) by test `27` and the concurrent-deposit run, what they see of a conflict (V27) by test `28`, the directory's search folding (V28) by test `29`, review and simulated decision (V16) by test `18`, the tracking and workload functions (V17) by test `19`, simulated payment and reconciliation (V18) by test `20`, audit subjects (V19) by test `21`, issued documents and verification (V20) by test `22`.
+holder and the note bound (V12) by test `14`, applications under row-level security (V13) by test `15`, documents (V14) by test `16`, the completeness review (V15) by test `17`, the land register (V21) by test `23` and the concurrent-deposit run, professional accounts (V23) by test `24`, their lifecycle (V24) by test `25`, their permissions (V25) by test `26`, their deposits (V26) by test `27` and the concurrent-deposit run, what they see of a conflict (V27) by test `28`, the directory's search folding (V28) by test `29`, document replacement with a second person (V29) by test `30` and the approval-against-signature race, retention and legal holds (V30) by test `31`, review and simulated decision (V16) by test `18`, the tracking and workload functions (V17) by test `19`, simulated payment and reconciliation (V18) by test `20`, audit subjects (V19) by test `21`, issued documents and verification (V20) by test `22`.
 
 ## Tables
 
@@ -112,7 +114,12 @@ holder and the note bound (V12) by test `14`, applications under row-level secur
 | `pending_transaction` | A deposited transaction, at the counter or through a professional account with its account and capacity; one `HOLDING` per title (V21, V26) | function only; moves forward |
 | `transaction_conflict` | A later deposit against the holding one; decided once (V21) | function only |
 | `register_migration_batch` | Modelled for a future migration of real titles; only `SYNTHETIC_DEMO` is possible (V21) | no writer: the application has no grant |
-| `deposit_document` | A file of a deposit, counter or professional: metadata, uploader, time, SHA-256; a replacement names its original (V22, V26) | function only; never changed or deleted |
+| `deposit_document` | A file of a deposit, counter or professional: metadata, uploader, time, SHA-256; a replacement names its original, the request and its approver (V22, V26, V29); its retention class (V30) | function only; never changed or deleted |
+| `deposit_document_replacement` | A request to replace a deposit's document: the new file, reason, requester and channel; pending, then approved by another conservator, rejected or withdrawn (V29); its retention class (V30) | function only; decided once; never deleted, its file kept |
+| `completeness_replacement` | A document an information request names for replacement, with the reason (V29) | insert by the request's officer, in its transaction; never changed |
+| `retention_class` | A kind of kept record, a description, and a schedule's reference and approval date, both empty while none is approved (V30) | none: read with `records.retention.read`; never changed |
+| `legal_hold` | A hold on one document, every document of a deposit, or every piece of evidence of a professional (V30) | function only; read with `records.retention.read`; never changed or deleted |
+| `legal_hold_release` | A hold's release, asked by one and decided by another (V30) | function only; decided once; never deleted |
 | `professional_profile` | A notary's or sworn surveyor's profession, credential and status (V23) | read by its owner; written by the lifecycle functions from step 2; never deleted |
 | `professional_verification` | How a professional's credential and identity were checked, by whom, when (V24) | function only; read by verifiers and approvers; never changed |
 | `professional_verification_document` | Files supporting a verification (V24) | function only, by the verifier; read by verifiers and approvers; never changed |
@@ -251,7 +258,11 @@ sides produce identical bytes.
 | `REGISTER_LOCK_OVERDUE` | a holding lock passed its review date, recorded once; nothing is released | register |
 | `REGISTER_REFUSED` | a register operation was refused (`code`, `operation`), on its own transaction | register |
 | `REGISTER_DEPOSIT_DOCUMENT_ADDED` | a file was kept with a deposit (category, type, size, SHA-256) | register |
-| `REGISTER_DEPOSIT_DOCUMENT_REPLACED` | a correction replaced a file, the original kept (reason, `replaces`) | register |
+| `REGISTER_DEPOSIT_DOCUMENT_REPLACED` | a second conservator approved a replacement: the new file added, the original kept (`replacement`, `document`); before V29, a correction by one conservator (reason, `replaces`) | register |
+| `REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_REQUESTED` | a replacement of a deposit's document was asked for, with its reason and the new file's type, size and SHA-256; the original is the entity | register |
+| `REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_REJECTED` | a second conservator rejected a replacement (reason); the file kept | register |
+| `REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_WITHDRAWN` | the requester withdrew their replacement request; the file kept | register |
+| `REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_DOWNLOADED` | a replacement request's file was downloaded | register |
 | `REGISTER_DEPOSIT_DOCUMENT_REJECTED` | a file was refused by the checks of ADR-033 (`code`); nothing kept | register |
 | `REGISTER_DEPOSIT_DOCUMENT_DOWNLOADED` | a deposit's file was downloaded | register |
 | `REGISTER_DEPOSIT_DOCUMENT_INTEGRITY_FAILED` | a deposit's file no longer matches its hash, and was not served | register |
@@ -272,6 +283,12 @@ sides produce identical bytes.
 | `PROFESSIONAL_CHANGE_REJECTED` | a second administrator rejected a requested change (reason) | professional |
 | `PROFESSIONAL_REQUEST_EXPIRED` | a request passed its time to live undecided | professional |
 | `PROFESSIONAL_REFUSED` | a professional-account operation was refused (`code`, `operation`) | professional |
+| `RECORD_HOLD_PLACED` | a system administrator placed a legal hold (subject, reason) | retention |
+| `RECORD_HOLD_RELEASE_REQUESTED` | the release of a hold was asked for (reason) | retention |
+| `RECORD_HOLD_RELEASED` | a second system administrator approved the release; the hold is kept, released | retention |
+| `RECORD_HOLD_RELEASE_REJECTED` | a second system administrator rejected the release (reason); the hold stays in force | retention |
+| `RECORD_RETENTION_READ` | retention classes, holds or one record's retention were read (what, and the subject) | retention |
+| `RECORD_REFUSED` | a retention or hold operation was refused (`code`, `operation`), on its own transaction | retention |
 | `CONFLICT_ALERT_RESOLVE_REJECTED` | a resolution was refused (`RESOLVER_IS_AUTHOR`, `STALE_VERSION`, `ALERT_NOT_OPEN`, note or outcome missing; recorded even though nothing changed) | conflict |
 | `ACCESS_DENIED` | an authenticated call is refused by an access rule | shared security |
 | `AUDIT_EVENTS_READ` | someone reads audit events | audit |

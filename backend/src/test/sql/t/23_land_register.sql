@@ -308,12 +308,15 @@ SELECT throws_ok($$ UPDATE deposit_document SET sha256 = repeat('b', 64) WHERE i
     '23001', NULL, 'not even the owner changes a document');
 SELECT throws_ok($$ DELETE FROM deposit_document WHERE id = pg_temp.c('d1')::uuid $$,
     '23001', NULL, 'not even the owner deletes a document');
-SELECT throws_ok($$ SELECT pg_temp.document('00000000-0000-0000-0000-0000000000c1', pg_temp.c('t3'), repeat('2', 32), pg_temp.c('d1'), 'short') $$,
-    'RG001', 'REASON_REQUIRED', 'a replacement has a reason');
-INSERT INTO ctx SELECT 'd2', pg_temp.document('00000000-0000-0000-0000-0000000000c1', pg_temp.c('t3'), repeat('2', 32), pg_temp.c('d1'), 'The first scan was the wrong page');
-SELECT is((SELECT count(*)::int FROM deposit_document WHERE id IN (pg_temp.c('d1')::uuid, pg_temp.c('d2')::uuid)), 2, 'the original stays beside its replacement');
+-- A replacement is a request a second conservator approves (V29, ADR-041 D19; 30_document_replacement covers it whole).
+SELECT throws_ok($$ SELECT pg_temp.document('00000000-0000-0000-0000-0000000000c1', pg_temp.c('t3'), repeat('2', 32), pg_temp.c('d1'), 'The first scan was the wrong page') $$,
+    'RG001', 'REPLACEMENT_APPROVAL_REQUIRED', 'no conservator replaces a document alone');
+INSERT INTO ctx SELECT 'r1', pg_temp.q('00000000-0000-0000-0000-0000000000c1', format($s$SELECT snigf.deposit_document_replacement_request(%L, %L, %L, 100,
+    'application/pdf', 'deed.pdf', 'The first scan was the wrong page')$s$, pg_temp.c('d1'), repeat('2', 32), repeat('a', 64)));
+INSERT INTO ctx SELECT 'd2', pg_temp.q('00000000-0000-0000-0000-0000000000c2', format($s$SELECT snigf.deposit_document_replacement_decide(%L, 'APPROVED', NULL)$s$, pg_temp.c('r1')));
+SELECT is((SELECT count(*)::int FROM deposit_document WHERE id IN (pg_temp.c('d1')::uuid, pg_temp.c('d2')::uuid)), 2, 'the original stays beside its approved replacement');
 SELECT throws_ok($$ SELECT pg_temp.document('00000000-0000-0000-0000-0000000000c1', pg_temp.c('t3'), repeat('4', 32), pg_temp.c('d1'), 'Replacing the same file twice') $$,
-    'RG001', 'DOCUMENT_ALREADY_REPLACED', 'an original is replaced once');
+    'RG001', 'REPLACEMENT_APPROVAL_REQUIRED', 'nor twice');
 SELECT results_eq($$ SELECT * FROM document_storage_keys_known(ARRAY[repeat('1', 32)]) $$, $$ VALUES (repeat('1', 32)) $$, 'the orphan cleanup knows a deposit''s files');
 SELECT is((SELECT (audit_subjects('DEPOSIT_DOCUMENT', pg_temp.c('d1')::uuid)->0->>'id')), pg_temp.c('title'), 'a document''s events belong to its title');
 SELECT lives_ok($$ SELECT pg_temp.q('00000000-0000-0000-0000-0000000000c2', format($s$SELECT snigf.transaction_close(%L, 'REFUSED', 'Reviewed: the deposit was never completed')$s$, pg_temp.c('t3')));

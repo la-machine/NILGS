@@ -78,6 +78,19 @@ public interface RegisterRepository {
 
     Optional<Register.DepositDocument> depositDocument(UUID transactionId, UUID documentId);
 
+    /** Asks for a document to be replaced (D19); the original stays current until a second person approves. */
+    UUID requestReplacement(UUID documentId, String storageKey, String sha256, long sizeBytes, String mediaType, String name, String reason);
+
+    /** Approves or rejects a pending request; the new document on approval, null on rejection. */
+    UUID decideReplacement(UUID replacementId, String outcome, String reason);
+
+    void withdrawReplacement(UUID replacementId, String reason);
+
+    /** Every replacement request of a deposit, oldest first. */
+    List<Register.DocumentReplacement> replacements(UUID transactionId);
+
+    Optional<Register.DocumentReplacement> replacement(UUID replacementId);
+
     /** The documents a TRANSFER's signature binds, by id. */
     List<Register.BoundDocument> boundDocuments(UUID transactionId);
 
@@ -107,4 +120,9 @@ public interface RegisterRepository {
     List<Register.ProfessionalDeposit> professionalDeposits(UUID id, int limit, int offset);
 
     List<Register.ProfessionalDocument> professionalDocuments(UUID transactionId);
+
+    /** The bound professional's own deposit's replacement requests. */
+    List<Register.ProfessionalReplacement> professionalReplacements(UUID transactionId);
+
+    Optional<Register.ReplacementFile> professionalReplacementFile(UUID replacementId);
 }

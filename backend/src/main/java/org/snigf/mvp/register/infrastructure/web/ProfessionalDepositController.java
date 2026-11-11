@@ -138,11 +138,14 @@ class ProfessionalDepositController {
         return stored(professional, id, category, file, null, null, key);
     }
 
-    /** A correction: the file named keeps its place in the record, and this one is shown as replacing it. */
+    /**
+     * Asks for a document to be replaced (ADR-041 D19): the new file is kept with the request, and the original stays
+     * the current document until a conservator of the office approves. {@code category}, when given, must be the original's.
+     */
     @PostMapping(path = "/api/v1/professional/deposits/{id}/documents/{documentId}/replacement", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("@access.canOwn(authentication, 'register.deposit.document')")
     ResponseEntity<Created> replaceDocument(@AuthenticationPrincipal AuthenticatedUser professional, @PathVariable UUID id, @PathVariable UUID documentId,
-                                            @RequestParam String category, @RequestParam String reason,
+                                            @RequestParam(required = false) String category, @RequestParam String reason,
                                             @RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key, @RequestPart("file") MultipartFile file) {
         return stored(professional, id, category, file, documentId, reason, key);
     }
@@ -151,7 +154,8 @@ class ProfessionalDepositController {
                                            String key) {
         try (InputStream content = file.getInputStream()) {
             UUID created = deposits.addDocument(professional, id, category, file.getOriginalFilename(), content, replaces, reason, key);
-            return ResponseEntity.created(URI.create("/api/v1/professional/deposits/" + id + "/documents/" + created + "/content")).body(new Created(created));
+            String location = "/api/v1/professional/deposits/" + id + (replaces == null ? "/documents/" : "/replacements/") + created + "/content";
+            return ResponseEntity.created(URI.create(location)).body(new Created(created));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -165,6 +169,42 @@ class ProfessionalDepositController {
         ProfessionalDepositService.DocumentDownload download = deposits.download(professional, id, documentId);
         Register.ProfessionalDocument d = download.document();
         return ResponseEntity.ok().headers(DocumentHeaders.attachment(d.mediaType(), d.sizeBytes(), d.originalName(), d.sha256()))
+                .body(new InputStreamResource(download.content()));
+    }
+
+    // --- Replacement requests on their own deposit (D19); a conservator decides -------------------------------
+
+    /** {@code requestedBySelf}: false for a conservator's request. No conservator is named. */
+    record ReplacementResponse(UUID id, UUID documentId, String sha256, long sizeBytes, String mediaType, String originalName, String reason,
+                               boolean requestedBySelf, Instant requestedAt, String status, Instant decidedAt, String decisionReason,
+                               UUID resultDocumentId) {
+
+        static ReplacementResponse of(Register.ProfessionalReplacement r) {
+            return new ReplacementResponse(r.id(), r.documentId(), r.sha256(), r.sizeBytes(), r.mediaType(), r.originalName(), r.reason(),
+                    r.requestedBySelf(), r.requestedAt(), r.status(), r.decidedAt(), r.decisionReason(), r.resultDocumentId());
+        }
+    }
+
+    @GetMapping("/api/v1/professional/deposits/{id}/replacements")
+    @PreAuthorize("@access.canOwn(authentication, 'register.deposit.read')")
+    List<ReplacementResponse> replacements(@AuthenticationPrincipal AuthenticatedUser professional, @PathVariable UUID id) {
+        return deposits.replacements(professional, id).stream().map(ReplacementResponse::of).toList();
+    }
+
+    @PostMapping("/api/v1/professional/deposits/{id}/replacements/{replacementId}/withdrawal")
+    @PreAuthorize("@access.canOwn(authentication, 'register.deposit.document')")
+    ReplacementResponse withdrawReplacement(@AuthenticationPrincipal AuthenticatedUser professional, @PathVariable UUID id,
+                                            @PathVariable UUID replacementId, @Valid @RequestBody ReasonBody body) {
+        return ReplacementResponse.of(deposits.withdrawReplacement(professional, id, replacementId, body.reason()));
+    }
+
+    @GetMapping("/api/v1/professional/deposits/{id}/replacements/{replacementId}/content")
+    @PreAuthorize("@access.canOwn(authentication, 'register.deposit.read')")
+    ResponseEntity<InputStreamResource> replacementContent(@AuthenticationPrincipal AuthenticatedUser professional, @PathVariable UUID id,
+                                                           @PathVariable UUID replacementId) {
+        ProfessionalDepositService.ReplacementDownload download = deposits.downloadReplacement(professional, id, replacementId);
+        Register.ReplacementFile f = download.file();
+        return ResponseEntity.ok().headers(DocumentHeaders.attachment(f.mediaType(), f.sizeBytes(), f.originalName(), f.sha256()))
                 .body(new InputStreamResource(download.content()));
     }
 }

@@ -57,7 +57,7 @@ class TrackingTest {
 
         assertThat(t.waitingOn()).isEqualTo(Tracking.Party.APPLICANT);
         assertThat(t.pendingRequest()).isEqualTo(new Tracking.PendingRequest(List.of("DEMO_IDENTITY"),
-                "The identity document is unreadable", at(2)));
+                "The identity document is unreadable", at(2), List.of()));
         assertThat(t.completeness()).extracting(Tracking.CompletenessStep::by)
                 .containsExactly(Tracking.Party.SYSTEM, Tracking.Party.OFFICE);
         assertThat(t.toString()).doesNotContain("Ines Intake");

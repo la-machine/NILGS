@@ -3,7 +3,8 @@
 // Phase 2, the DEMO land register (Slice 2, ADR-040), through the real screens with virtual security
 // keys: a title proposed then signed; a counter deposit that holds it; a second deposit recorded as
 // a conflict, which blocks the transfer; the conflict resolved by a second conservator; the transfer
-// registered and signed; a correction confirmed by a second conservator; the extract labelled as not
+// registered and signed, after a document replacement a second conservator approved (ADR-041 D19); a
+// correction confirmed by a second conservator; the extract labelled as not
 // a certificate; the history verified again. Everything is synthetic.
 import { expect, test } from '@playwright/test'
 import type { Locator } from '@playwright/test'
@@ -105,11 +106,14 @@ export function registerJourneys(people: () => RegisterPeople, parcelReference: 
     await expect(documents.getByRole('link', { name: 'deed.pdf' })).toBeVisible()
     await expect(first.page.locator('[data-title-page]')).toHaveAttribute('data-version', '1')
 
-    // A correction keeps the original beside it, with a reason.
-    await documents.getByLabel('Replace deed.pdf:').setInputFiles({ name: 'deed-corrected.pdf', mimeType: 'application/pdf', buffer: Buffer.concat([PDF, Buffer.from('\n% corrected\n')]) })
+    // A replacement is a request, with a reason (ADR-041 D19): the original stays current until another conservator approves.
+    await documents.getByLabel('Ask to replace deed.pdf:').setInputFiles({ name: 'deed-corrected.pdf', mimeType: 'application/pdf', buffer: Buffer.concat([PDF, Buffer.from('\n% corrected\n')]) })
     await first.respond('The first scan was the wrong page')
-    await expect(documents.getByRole('link', { name: 'deed-corrected.pdf' })).toBeVisible()
-    await expect(documents.locator('[data-document="deed.pdf"]')).toContainText('Replaced, kept')
+    const asked = documents.locator('[data-replacement][data-status="PENDING"]')
+    await expect(asked).toContainText('Replacement waiting for approval')
+    await expect(asked.getByText('Waiting for another conservator of the office.')).toBeVisible()
+    await expect(asked.getByRole('button', { name: 'Approve the replacement' })).toHaveCount(0)
+    await expect(documents.locator('[data-document="deed.pdf"]')).not.toContainText('Replaced, kept')
 
     const propose = main.locator('[data-propose-form]')
     await choose(propose, 'New holder', name('Buyer'))
@@ -138,6 +142,15 @@ export function registerJourneys(people: () => RegisterPeople, parcelReference: 
     await conflict.getByRole('button', { name: 'Record the decision' }).click()
     await second.respond('The first deposit stands as filed')
     await expect(main.locator('[data-conflict]').filter({ hasText: name('Rival') })).toHaveCount(0)
+
+    // The second conservator approves the first one's replacement request: the original stays, marked as replaced.
+    const title = await openTitle(second)
+    const documents = title.locator('[data-transaction][data-status="HOLDING"] [data-deposit-documents]')
+    await documents.locator('[data-replacement][data-status="PENDING"]').getByRole('button', { name: 'Approve the replacement' }).click()
+    await second.respond(true)
+    await expect(documents.locator('[data-document="deed.pdf"]')).toContainText('Replaced, kept')
+    await expect(documents.locator('[data-document="deed-corrected.pdf"]')).toBeVisible()
+    await expect(documents.locator('[data-replacement][data-status="APPROVED"]')).toContainText('Replacement approved')
   })
 
   test('the transfer is registered through the lock and signed; the previous holder stays in the history', async () => {

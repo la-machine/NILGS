@@ -545,3 +545,18 @@ model before this plan is approved.
   *Amended 2 Nov 2026 by ADR-041 D17 (V27): the professional reads their own deposit's real status and
   whether a conflict naming it is under review, never the other deposit nor a conflict decision's
   reason.*
+
+## Amended by ADR-041 D18 and D19 (8 Nov 2026)
+
+- **§4.7, replacing a deposit document, needs a second conservator (D19, V29).** A replacement is a request
+  with a reason; another conservator of the office holding `register.confirm` approves it, never the
+  requester; the original stays the current document until then, and every request is kept with its file.
+  V22's immediate replacement by one conservator is refused (`REPLACEMENT_APPROVAL_REQUIRED`); rows written
+  before V29 keep their history.
+- **§4.7, signature binding.** A transfer is refused while a replacement of its deposit is pending
+  (`REPLACEMENT_PENDING`). The canonical bytes are unchanged in form, so earlier signatures still verify; an
+  approval adds a document, so a signature started before it fails and is made again.
+- **"No retention period; nothing removed" (D18, V30)** is confirmed, with retention metadata and legal holds:
+  every deposit document and replacement file names its class, set by the database, and
+  `record_disposal_allowed` stays false while no schedule is approved. A disposal rule still needs its own ADR
+  and migration.

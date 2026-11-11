@@ -9,6 +9,74 @@ Each entry names the decision record (ADR) and the guide (`docs/guides/`) that e
 
 ## [Unreleased]
 
+### Professional accounts, steps 15 and 16: documented and verified; Slice 3 complete
+
+[ADR-041](docs/adr/041-professional-accounts.md) rev. 7. No migration.
+
+- **Docs:** the professional accounts guide (replacement, retention and holds, how to do it again,
+  verify, pitfalls), the land register and applications guides, the dated notes in ADR-025, ADR-026,
+  ADR-033, ADR-038 and ADR-040, the permission matrix, manual chapters 2, 3, 4, 7 and 10, the ADR index
+  and the README.
+- **Verification (9 Nov 2026, local):** backend 390 (190 unit, 200 integration); pgTAP 781 in 31 files,
+  the chain test, 200 racing deposits, an approval racing a signature on 20 titles (16 registered, 4
+  replaced, never both); Vitest 140; probes 38/38 and 4/4; gitleaks clean. **End-to-end not run
+  locally:** the Playwright base image could not be downloaded; it runs in CI once the branch is pushed.
+- **Fixed in passing:** none. An app image built before V30 refuses to start (`PermissionCatalogueCheck`),
+  as intended; rebuild it with `docker compose build app`.
+
+### Professional accounts, step 14: retention metadata and legal holds, no deletion (Slice 3, D18)
+
+[ADR-041](docs/adr/041-professional-accounts.md) D18, migration V30, a new module `retention`.
+
+- **No schedule, nothing deleted:** `retention_class` has no period; each class reads "no approved
+  schedule: kept" until a schedule's reference and approval date are both recorded, by its own ADR and
+  migration. A `CHECK` refuses one without the other.
+- **Every covered record names its class,** set by the database on insert: verification evidence,
+  deposit documents and replacement files.
+- **Legal holds:** on one document or file, every document of a deposit, or every piece of evidence of
+  a professional. Placed by one system administrator; released only when another approves the first
+  one's request; never deleted.
+- **`record_disposal_allowed`:** false without an approved schedule, and false under a hold. Today
+  always false.
+- **Permissions:** `records.retention.read` (`BUSINESS`: AUDITOR and SYSTEM_ADMIN, no mixing of
+  duties), `records.hold.place` and `records.hold.release` (`ADMINISTRATION`: SYSTEM_ADMIN). Never
+  delegable, never professional.
+- **Audited:** every read (`RECORD_RETENTION_READ`), each hold step, each refusal (`RECORD_REFUSED`).
+- **Screens:** "Retention and holds" (`#/records`), and the holds on a professional's evidence on their
+  administration page.
+- **Tests:** pgTAP `31` (50) and `09_authorization` (54 permissions), `RetentionIT` (2),
+  `PermissionMatrixIT`, `PermissionMatrixTest`, Vitest `retention.test.tsx` (4) and the navigation, an
+  e2e step with the two administrators.
+- **Docs:** ADR-041 "As built in step 14", the guide, chapters 2, 3, 4, 7 and 10, the permission matrix.
+
+### Professional accounts, step 13: replacing a submitted document needs a second person (Slice 3, D19)
+
+[ADR-041](docs/adr/041-professional-accounts.md) D19 and confirmed reading 3, migration V29.
+
+- **Deposit documents, both channels:** replacing one is a request with a reason. A conservator of
+  the office approves a notary's request; **another** conservator approves a conservator's. The
+  requester and professionals never decide, and the database refuses them.
+- **While it waits:** the original stays the current document, and the deposit's transfer cannot be
+  registered (`REPLACEMENT_PENDING`, 409).
+- **On approval:** the new document names the original, the request and the approver, under the
+  title's lock. A signature started before it no longer matches and is made again.
+- **Nothing lost:** rejected and withdrawn requests keep their file; the orphan cleanup keeps them.
+- **Changed behaviour:** a replacement by one conservator alone (V22) is refused with
+  `REPLACEMENT_APPROVAL_REQUIRED`; the replacement endpoints now answer with the request's id. Rows
+  replaced before V29 keep their history.
+- **History:** staff list each deposit's requests; the notary lists theirs, without the conservator's
+  name.
+- **Application documents:** an information request names each document it asks to be replaced, with a
+  reason, by an officer who never uploaded it. The applicant then sends one new version of it, which
+  records the request. Drafts are corrected freely, as before.
+- **Screens:** the requests under each deposit document, with approve, reject and withdraw; the
+  notary's own requests; the intake officer's reason for each document to replace; the reason on each
+  replacing version.
+- **Tests:** pgTAP `30` (49), `23_land_register` updated, `db-test.sh` racing an approval against a
+  signature on 20 titles, `RegisterIT`, `ProfessionalDepositIT`, `CompletenessIT`, `TrackingIT`,
+  `PermissionMatrixIT`, Vitest (5), e2e (register and applications journeys).
+- **Docs:** ADR-041 "As built in step 13", the guides, chapters 3, 4, 7 and 10, the permission matrix.
+
 ### Professional accounts, step 12: the dashboard's counts (Slice 3, D21)
 
 [ADR-041](docs/adr/041-professional-accounts.md) D21. No migration.

@@ -1,7 +1,7 @@
 // SNIGF/NILGS - Copyright (c) 2026 FLYT.
 // Author: Pythagore.
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../../shared/api/client'
 import { t } from '../../shared/i18n'
 import type { PageContext, Session } from '../../shared/session/types'
@@ -9,7 +9,7 @@ import { DialogProvider } from '../../shared/ui/Dialog'
 import { AdminDetailPage } from './AdminDetailPage'
 import { AdminPage } from './AdminPage'
 import { depositProblems, depositsApi, directoryFilterFrom, directoryQuery, NO_FILTER, officeCodes, professionalApi } from './api'
-import type { ChangeRequest, Deposit, Detail, DirectoryPage, Own, OwnDocument, Profile } from './api'
+import type { ChangeRequest, Deposit, Detail, DirectoryPage, Own, OwnDocument, OwnReplacement, Profile } from './api'
 import { DepositPage } from './DepositPage'
 import { OwnPage } from './OwnPage'
 import { RequestScreen } from './RequestScreen'
@@ -200,6 +200,31 @@ describe('one of the notary\'s deposits', () => {
     id: 'x1', transactionId: 'd1', category: 'DEED', sha256: 'ab'.repeat(32), sizeBytes: 10, mediaType: 'application/pdf', originalName: 'deed.pdf',
     uploadedBySelf: true, uploadedAt: '2026-11-01T10:00:00Z', replacesId: null, replaceReason: null, replacedById: null, ...over,
   })
+  const asked = (over: Partial<OwnReplacement> = {}): OwnReplacement => ({
+    id: 'r1', documentId: 'x1', sha256: 'cd'.repeat(32), sizeBytes: 12, mediaType: 'application/pdf', originalName: 'deed-clear.pdf',
+    reason: 'The first scan is unreadable', requestedBySelf: true, requestedAt: '2026-11-05T10:00:00Z', status: 'PENDING', decidedAt: null,
+    decisionReason: null, resultDocumentId: null, ...over,
+  })
+  beforeEach(() => { vi.spyOn(depositsApi, 'replacements').mockResolvedValue([]) })
+
+  it('asks for a replacement a conservator decides, shows it pending and lets the notary withdraw it', async () => {
+    vi.spyOn(depositsApi, 'one').mockResolvedValue(deposit())
+    vi.spyOn(depositsApi, 'documents').mockResolvedValue([doc()])
+    vi.spyOn(depositsApi, 'replacements').mockResolvedValue([asked(), asked({ id: 'r0', status: 'REJECTED', decisionReason: 'Still unreadable, please rescan' })])
+    const withdraw = vi.spyOn(depositsApi, 'withdrawReplacement').mockResolvedValue(asked({ status: 'WITHDRAWN' }))
+    wrap(<DepositPage ctx={ctx(session(NOTARY))} id="d1" />)
+    expect(await screen.findByText('Replacement waiting for approval')).toBeTruthy()
+    expect(screen.getByText('Waiting for a conservator of the office.')).toBeTruthy()
+    expect(screen.getByText('Replacement rejected')).toBeTruthy()
+    expect(screen.getByText('Decision: Still unreadable, please rescan')).toBeTruthy()
+    expect(screen.queryByText(/Decided by/)).toBeNull()
+    expect(screen.queryByLabelText(/^Ask to replace deed.pdf/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw my request' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(dialog.querySelector('button[type="submit"]') as Element)
+    await waitFor(() => expect(withdraw).toHaveBeenCalledWith('d1', 'r1'))
+  })
+
 
   it('while open, takes documents and a withdrawal with a reason; a conservator\'s file is not named', async () => {
     vi.spyOn(depositsApi, 'one').mockResolvedValue(deposit())

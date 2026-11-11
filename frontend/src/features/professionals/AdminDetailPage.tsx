@@ -17,6 +17,7 @@ import { Card, PageHeader } from '../../shared/ui/Card'
 import { useDialog } from '../../shared/ui/dialogContext'
 import { Field } from '../../shared/ui/Field'
 import { Alert, Badge, Skeleton } from '../../shared/ui/Feedback'
+import { HoldsPanel } from '../retention'
 import { officeCodes, professionalApi, REASON_MAX, REASON_MIN } from './api'
 import type { ChangeKind, Detail, Profile } from './api'
 import { useDecision } from './decisions'
@@ -98,6 +99,12 @@ export function AdminDetailPage({ ctx, userId }: { ctx: PageContext; userId: str
           {verifies && activationPending && verification.verifiedBy === session.userId && (
             <EvidenceForm texts={texts} userId={userId} onDone={load} />
           )}
+        </Card>
+      )}
+
+      {can(session, 'records.retention.read') && (
+        <Card title={texts.retention.professionalTitle} icon="lock" description={texts.retention.professionalIntro}>
+          <HoldsPanel texts={texts} lang={lang} session={session} subject={{ kind: 'PROFESSIONAL', id: userId }} />
         </Card>
       )}
 

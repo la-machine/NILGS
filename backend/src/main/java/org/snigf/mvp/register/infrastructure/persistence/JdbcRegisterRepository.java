@@ -429,6 +429,52 @@ class JdbcRegisterRepository implements RegisterRepository {
     }
 
     @Override
+    public UUID requestReplacement(UUID documentId, String storageKey, String sha256, long sizeBytes, String mediaType, String name, String reason) {
+        return jdbc.sql("SELECT deposit_document_replacement_request(:document, :key, :sha256, CAST(:size AS bigint), :type, :name, :reason)")
+                .param("document", documentId).param("key", storageKey).param("sha256", sha256).param("size", sizeBytes)
+                .param("type", mediaType).param("name", name).param("reason", reason)
+                .query(UUID.class).single();
+    }
+
+    @Override
+    public UUID decideReplacement(UUID replacementId, String outcome, String reason) {
+        return jdbc.sql("SELECT deposit_document_replacement_decide(:id, :outcome, :reason)")
+                .param("id", replacementId).param("outcome", outcome).param("reason", reason)
+                .query((rs, n) -> rs.getObject(1, UUID.class)).list().getFirst();   // null on rejection
+    }
+
+    @Override
+    public void withdrawReplacement(UUID replacementId, String reason) {
+        jdbc.sql("SELECT deposit_document_replacement_withdraw(:id, :reason)").param("id", replacementId).param("reason", reason)
+                .query((rs, n) -> 1).single();
+    }
+
+    private static final String REPLACEMENT_COLUMNS = """
+            SELECT r.*, q.display_name AS requested_by_name, d.display_name AS decided_by_name
+              FROM deposit_document_replacement r JOIN app_user q ON q.id = r.requested_by LEFT JOIN app_user d ON d.id = r.decided_by
+            """;
+
+    @Override
+    public List<Register.DocumentReplacement> replacements(UUID transactionId) {
+        return jdbc.sql(REPLACEMENT_COLUMNS + " WHERE r.transaction_id = :transaction ORDER BY r.requested_at, r.id")
+                .param("transaction", transactionId).query((rs, n) -> replacement(rs)).list();
+    }
+
+    @Override
+    public Optional<Register.DocumentReplacement> replacement(UUID replacementId) {
+        return jdbc.sql(REPLACEMENT_COLUMNS + " WHERE r.id = :id").param("id", replacementId).query((rs, n) -> replacement(rs)).optional();
+    }
+
+    private static Register.DocumentReplacement replacement(ResultSet rs) throws SQLException {
+        return new Register.DocumentReplacement(rs.getObject("id", UUID.class), rs.getObject("document_id", UUID.class),
+                rs.getObject("transaction_id", UUID.class), rs.getString("storage_key"), rs.getString("sha256"), rs.getLong("size_bytes"),
+                rs.getString("detected_type"), rs.getString("original_name"), rs.getString("reason"), rs.getObject("requested_by", UUID.class),
+                rs.getString("requested_by_name"), rs.getString("requested_as"), instant(rs, "requested_at"), rs.getString("status"),
+                rs.getObject("decided_by", UUID.class), rs.getString("decided_by_name"), instant(rs, "decided_at"), rs.getString("decision_reason"),
+                rs.getObject("result_document_id", UUID.class));
+    }
+
+    @Override
     public List<Register.BoundDocument> boundDocuments(UUID transactionId) {
         return jdbc.sql("SELECT id, sha256 FROM deposit_document WHERE transaction_id = :transaction ORDER BY id")
                 .param("transaction", transactionId)
@@ -529,6 +575,24 @@ class JdbcRegisterRepository implements RegisterRepository {
                         rs.getString("detected_type"), rs.getString("original_name"), rs.getBoolean("uploaded_by_self"), instant(rs, "uploaded_at"),
                         rs.getObject("replaces_id", UUID.class), rs.getString("replace_reason"), rs.getObject("replaced_by", UUID.class)))
                 .list();
+    }
+
+    @Override
+    public List<Register.ProfessionalReplacement> professionalReplacements(UUID transactionId) {
+        return jdbc.sql("SELECT * FROM professional_deposit_replacements(:transaction)").param("transaction", transactionId)
+                .query((rs, n) -> new Register.ProfessionalReplacement(rs.getObject("id", UUID.class), rs.getObject("document_id", UUID.class),
+                        rs.getString("sha256"), rs.getLong("size_bytes"), rs.getString("detected_type"), rs.getString("original_name"),
+                        rs.getString("reason"), rs.getBoolean("requested_by_self"), instant(rs, "requested_at"), rs.getString("status"),
+                        instant(rs, "decided_at"), rs.getString("decision_reason"), rs.getObject("result_document_id", UUID.class)))
+                .list();
+    }
+
+    @Override
+    public Optional<Register.ReplacementFile> professionalReplacementFile(UUID replacementId) {
+        return jdbc.sql("SELECT * FROM professional_replacement_file(:id)").param("id", replacementId)
+                .query((rs, n) -> new Register.ReplacementFile(rs.getObject("id", UUID.class), rs.getString("storage_key"), rs.getString("sha256"),
+                        rs.getLong("size_bytes"), rs.getString("detected_type"), rs.getString("original_name")))
+                .optional();
     }
 
     // --- Derived state, as the database wrote it ------------------------------------------------------

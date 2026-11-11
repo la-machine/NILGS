@@ -36,11 +36,14 @@ public record Tracking(ApplicationState state, Instant since, Party waitingOn, P
      * @param message the office's message to the applicant (information request) or the applicant's own (response)
      */
     public record CompletenessStep(CompletenessRecord.Kind kind, List<String> missing, List<String> requested,
-                                   String message, Party by, Instant at) {
+                                   String message, Party by, Instant at, List<CompletenessRecord.Replacement> replacements) {
     }
 
-    /** What the office asked for and when; the applicant answers with files in these categories. */
-    public record PendingRequest(List<String> categories, String message, Instant since) {
+    /**
+     * What the office asked for and when; the applicant answers with files in these categories. {@code replacements}:
+     * the documents to replace, and why; each takes one new version.
+     */
+    public record PendingRequest(List<String> categories, String message, Instant since, List<CompletenessRecord.Replacement> replacements) {
     }
 
     public Tracking {
@@ -53,14 +56,14 @@ public record Tracking(ApplicationState state, Instant since, Party waitingOn, P
         List<Step> steps = transitions.stream()
                 .map(t -> new Step(t.from(), t.to(), party(application, t), t.at())).toList();
         List<CompletenessStep> review = records.stream()
-                .map(r -> new CompletenessStep(r.kind(), r.missing(), r.requested(), publicMessage(r), party(r), r.at()))
+                .map(r -> new CompletenessStep(r.kind(), r.missing(), r.requested(), publicMessage(r), party(r), r.at(), r.replacements()))
                 .toList();
         Instant since = transitions.isEmpty() ? application.createdAt() : transitions.getLast().at();
         PendingRequest pending = null;
         if (application.state() == ApplicationState.INFO_REQUESTED) {
             pending = records.stream().filter(r -> r.kind() == CompletenessRecord.Kind.INFO_REQUESTED)
                     .reduce((first, second) -> second)
-                    .map(r -> new PendingRequest(r.requested(), r.message(), r.at())).orElse(null);
+                    .map(r -> new PendingRequest(r.requested(), r.message(), r.at(), r.replacements())).orElse(null);
         }
         return new Tracking(application.state(), since, waitingOn(application.state()), pending, steps, review);
     }

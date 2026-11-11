@@ -13,6 +13,7 @@ import org.snigf.mvp.application.application.CaseService;
 import org.snigf.mvp.application.domain.Application;
 import org.snigf.mvp.application.domain.ApplicationRepository;
 import org.snigf.mvp.application.domain.ApplicationState;
+import org.snigf.mvp.application.domain.CompletenessRecord;
 import org.snigf.mvp.identity.AuthenticatedUser;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -43,8 +44,12 @@ class CaseController {
     record AcceptBody(long expectedVersion) {
     }
 
+    /** {@code replacements}: each requested category that already has a document, with why it must be replaced (D19). */
     record InformationRequestBody(long expectedVersion, @Size(max = 20) List<String> categories,
-                                  @Size(max = 4000) String message) {
+                                  @Size(max = 4000) String message, @Size(max = 20) List<@Valid ReplacementBody> replacements) {
+    }
+
+    record ReplacementBody(@Size(max = 64) String category, @Size(max = 4000) String reason) {
     }
 
     record CaseSummary(UUID id, String reference, String typeCode, String state, String parcelReference,
@@ -95,7 +100,9 @@ class CaseController {
     @PreAuthorize("@access.canAt(authentication, 'completeness.request-info', @caseOffices.of(#id))")
     CaseResponse requestInformation(@AuthenticationPrincipal AuthenticatedUser officer, @PathVariable UUID id,
                                     @Valid @RequestBody InformationRequestBody body) {
-        return response(cases.requestInformation(officer, id, body.expectedVersion(), body.categories(), body.message()));
+        List<CompletenessRecord.Replacement> replacements = body.replacements() == null ? List.of()
+                : body.replacements().stream().map(r -> r == null ? null : new CompletenessRecord.Replacement(r.category(), r.reason())).toList();
+        return response(cases.requestInformation(officer, id, body.expectedVersion(), body.categories(), body.message(), replacements));
     }
 
     private static CaseSummary summary(ApplicationRepository.Case c) {

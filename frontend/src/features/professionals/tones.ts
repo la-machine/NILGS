@@ -4,7 +4,7 @@ import { ApiError } from '../../shared/api/client'
 import type { Texts } from '../../shared/i18n'
 import type { Tone } from '../../shared/ui/Feedback'
 import { errorMessage } from '../../shared/ui/errorMessage'
-import type { ChangeRequest, Deposit, ProfessionalStatus } from './api'
+import type { ChangeRequest, Deposit, OwnReplacement, ProfessionalStatus } from './api'
 
 export const STATUS_TONE: Record<ProfessionalStatus, Tone> = {
   REQUESTED: 'info', VERIFIED: 'info', ACTIVE: 'success', SUSPENDED: 'warning', REVOKED: 'danger',
@@ -23,6 +23,10 @@ export const REQUEST_TONE: Record<ChangeRequest['status'], Tone> = {
 }
 
 /** A refusal in the professional's words first, then a file's (ADR-033), then the shared message. */
+export const REPLACEMENT_TONE: Record<OwnReplacement['status'], Tone> = {
+  PENDING: 'warning', APPROVED: 'success', REJECTED: 'danger', WITHDRAWN: 'neutral',
+}
+
 export function refusal(texts: Texts, error: unknown): string {
   const own: Record<string, string> = texts.professionals.codes
   const files: Record<string, string> = texts.documents.codes

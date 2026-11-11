@@ -52,10 +52,26 @@ class CompletenessIT extends CaseFlowIntegrationTest {
         assertThat(code(early)).isEqualTo("ITEMS_MISSING");
         assertThat(json.readTree(early.getContentAsString()).path("items").toString()).contains("MISSING_DOCUMENT:DEMO_PROOF_OF_RIGHT");
 
-        MockHttpServletResponse request = sendJson(intake.browser(), post(CASES + "/" + id + "/information-request"),
+        // The identity document has a file: asking for it again is a replacement, which names it and says why (D19).
+        MockHttpServletResponse unnamed = sendJson(intake.browser(), post(CASES + "/" + id + "/information-request"),
                 json.writeValueAsString(Map.of("expectedVersion", open.path("version").asLong(),
                         "categories", List.of("DEMO_IDENTITY", "DEMO_PROOF_OF_RIGHT"),
                         "message", "The identity document is unreadable and the proof of right is missing")));
+        assertThat(unnamed.getStatus()).isEqualTo(422);
+        assertThat(code(unnamed)).isEqualTo("REPLACEMENT_REASON_REQUIRED");
+        assertThat(json.readTree(unnamed.getContentAsString()).path("items").toString()).contains("DEMO_IDENTITY");
+        MockHttpServletResponse nothingToReplace = sendJson(intake.browser(), post(CASES + "/" + id + "/information-request"),
+                json.writeValueAsString(Map.of("expectedVersion", open.path("version").asLong(),
+                        "categories", List.of("DEMO_IDENTITY", "DEMO_PROOF_OF_RIGHT"),
+                        "message", "The identity document is unreadable and the proof of right is missing",
+                        "replacements", List.of(Map.of("category", "DEMO_IDENTITY", "reason", "The scan is unreadable"),
+                                Map.of("category", "DEMO_PROOF_OF_RIGHT", "reason", "Nothing was sent yet")))));
+        assertThat(code(nothingToReplace)).as("a missing document is asked for, not replaced").isEqualTo("REPLACEMENT_NOT_APPLICABLE");
+        MockHttpServletResponse request = sendJson(intake.browser(), post(CASES + "/" + id + "/information-request"),
+                json.writeValueAsString(Map.of("expectedVersion", open.path("version").asLong(),
+                        "categories", List.of("DEMO_IDENTITY", "DEMO_PROOF_OF_RIGHT"),
+                        "message", "The identity document is unreadable and the proof of right is missing",
+                        "replacements", List.of(Map.of("category", "DEMO_IDENTITY", "reason", "The scan is unreadable")))));
         assertThat(request.getStatus()).as(request.getContentAsString()).isEqualTo(200);
         assertThat(json.readTree(request.getContentAsString()).path("state").asString("")).isEqualTo("INFO_REQUESTED");
 
@@ -64,9 +80,15 @@ class CompletenessIT extends CaseFlowIntegrationTest {
         JsonNode asked = waiting.path("completeness").get(waiting.path("completeness").size() - 1);
         assertThat(asked.path("kind").asString("")).isEqualTo("INFO_REQUESTED");
         assertThat(asked.path("requested").toString()).contains("DEMO_IDENTITY", "DEMO_PROOF_OF_RIGHT");
+        assertThat(asked.path("replacements").get(0).path("category").asString("")).isEqualTo("DEMO_IDENTITY");
+        assertThat(asked.path("replacements").get(0).path("reason").asString("")).isEqualTo("The scan is unreadable");
+        assertThat(waiting.path("pendingRequest").path("replacements").get(0).path("category").asString("")).isEqualTo("DEMO_IDENTITY");
+        ApplicantPayloadSchema.assertSafe(waiting);
         assertThat(code(upload(applicant, id, "DEMO_SITE_PLAN", "plan.png", DocumentFixtures.png(20, 20))))
                 .isEqualTo("CATEGORY_NOT_REQUESTED");
         assertThat(upload(applicant, id, "DEMO_IDENTITY", "identity.pdf", DocumentFixtures.pdf("/Lang (fr)")).getStatus()).isEqualTo(201);
+        assertThat(code(upload(applicant, id, "DEMO_IDENTITY", "identity-again.pdf", DocumentFixtures.pdf("/Lang (de)"))))
+                .as("one replacement per document named").isEqualTo("REPLACEMENT_NOT_REQUESTED");
         assertThat(upload(applicant, id, "DEMO_PROOF_OF_RIGHT", "deed.pdf", DocumentFixtures.pdf("/Lang (en)")).getStatus()).isEqualTo(201);
         MockHttpServletResponse response = sendJson(applicant, post(APPS + "/" + id + "/response"),
                 json.writeValueAsString(Map.of("expectedVersion", waiting.path("version").asLong(), "message", "Both files attached")));
@@ -76,6 +98,10 @@ class CompletenessIT extends CaseFlowIntegrationTest {
         // Both identity versions are kept; nothing is missing; the officer accepts.
         JsonNode documents = json.readTree(intake.browser().send(get(CASES + "/" + id + "/documents")).getContentAsString());
         assertThat(documents.path("categories").get(0).path("versions").size()).isEqualTo(2);
+        JsonNode newest = documents.path("categories").get(0).path("versions").get(0);
+        assertThat(newest.path("replacementReason").asString("")).as("the new version records the request").isEqualTo("The scan is unreadable");
+        assertThat(newest.path("replacementRequestedAt").asString("")).isNotBlank();
+        assertThat(documents.path("categories").get(0).path("versions").get(1).path("replacementReason").isNull()).isTrue();
         JsonNode back = caseOf(intake, id);
         assertThat(back.path("missing").size()).isZero();
         // Nothing is missing, but the DEMO fee is unpaid: the gate holds the acceptance (E-17).

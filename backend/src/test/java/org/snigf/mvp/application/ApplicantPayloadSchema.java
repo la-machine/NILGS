@@ -25,9 +25,11 @@ public final class ApplicantPayloadSchema {
             "id", "reference", "type", "state", "parcelReference", "officeCode", "data", "createdAt", "updatedAt",
             "submittedAt", "version", "since", "waitingOn",
             "pendingRequest", "pendingRequest.categories", "pendingRequest.message", "pendingRequest.since",
+            "pendingRequest.replacements", "pendingRequest.replacements[].category", "pendingRequest.replacements[].reason",
             "history", "history[].from", "history[].to", "history[].by", "history[].at",
             "completeness", "completeness[].kind", "completeness[].missing", "completeness[].requested",
             "completeness[].message", "completeness[].by", "completeness[].at",
+            "completeness[].replacements", "completeness[].replacements[].category", "completeness[].replacements[].reason",
             "decision", "decision.outcome", "decision.grounds", "decision.simulated", "decision.decidedAt");
 
     /** Taken whole: the public type catalogue and the applicant's own answers. */

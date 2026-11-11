@@ -109,6 +109,34 @@ export function professionalJourneys(browser: () => Browser, people: () => Profe
     await expect(status.locator('[data-status="ACTIVE"]')).toBeVisible()
   })
 
+  test('a legal hold on the notary\'s evidence is placed by one administrator and released only by another (D18)', async () => {
+    const openDetail = async (who: Person) => {
+      const directory = await who.open('Professionals')
+      const filters = directory.locator('[data-directory-filters]')
+      await filters.getByLabel('Search: address, name, chamber or registration number').fill(`DEMO-N-${RUN}`)
+      await filters.getByRole('button', { name: 'Search', exact: true }).click()
+      await directory.locator(`[data-professional="${email('notary')}"]`).getByRole('link').click()
+      await expect(who.page.locator(`[data-professional-detail="${email('notary')}"]`)).toBeVisible()
+      return who.page.locator('[data-holds^="PROFESSIONAL:"]')
+    }
+    let holds = await openDetail(verifier)
+    await expect(holds.getByText('No legal hold.')).toBeVisible()
+    await holds.getByRole('button', { name: 'Place a legal hold' }).click()
+    await verifier.respond(`Litigation notice DEMO-LIT-${RUN} received`)
+    const hold = holds.locator('[data-hold][data-in-force="true"]')
+    await expect(hold).toContainText('In force')
+    await hold.getByRole('button', { name: 'Ask for the release' }).click()
+    await verifier.respond('The litigation was settled, notice closed')
+    await expect(hold.getByText('Waiting for another system administrator.')).toBeVisible()
+    await expect(hold.getByRole('button', { name: 'Approve the release' })).toHaveCount(0)
+
+    holds = await openDetail(approver)
+    await holds.locator('[data-hold][data-in-force="true"]').getByRole('button', { name: 'Approve the release' }).click()
+    await approver.respond(true)
+    await expect(holds.locator('[data-hold][data-in-force="false"]')).toContainText('Released')
+    await expect(holds.locator('[data-release][data-status="APPROVED"]')).toBeVisible()
+  })
+
   test('the notary looks up the title, learns nothing more, and deposits a sale with a deed', async () => {
     const main = await notary.open('My professional account')
     const lookup = main.locator('[data-title-lookup]')

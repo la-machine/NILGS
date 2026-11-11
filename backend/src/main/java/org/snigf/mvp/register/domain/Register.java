@@ -118,6 +118,30 @@ public final class Register {
                                   String replaceReason, UUID replacedById) {
     }
 
+    /**
+     * A request to replace a deposit's document (ADR-041 D19): pending, then approved by a second person, rejected
+     * or withdrawn. Its file is kept whatever the outcome; on approval, {@code resultDocumentId} is the new document.
+     */
+    public record DocumentReplacement(UUID id, UUID documentId, UUID transactionId, String storageKey, String sha256, long sizeBytes,
+                                      String mediaType, String originalName, String reason, UUID requestedBy, String requestedByName,
+                                      String requestedAs, Instant requestedAt, String status, UUID decidedBy, String decidedByName,
+                                      Instant decidedAt, String decisionReason, UUID resultDocumentId) {
+
+        public boolean pending() {
+            return "PENDING".equals(status);
+        }
+    }
+
+    /** A replacement request as the professional reads it: no conservator is named. */
+    public record ProfessionalReplacement(UUID id, UUID documentId, String sha256, long sizeBytes, String mediaType, String originalName,
+                                          String reason, boolean requestedBySelf, Instant requestedAt, String status, Instant decidedAt,
+                                          String decisionReason, UUID resultDocumentId) {
+    }
+
+    /** The stored file of a replacement request, for its download. */
+    public record ReplacementFile(UUID id, String storageKey, String sha256, long sizeBytes, String mediaType, String originalName) {
+    }
+
     /** What a TRANSFER's signature binds of each document of its deposit. */
     public record BoundDocument(UUID id, String sha256) {
     }

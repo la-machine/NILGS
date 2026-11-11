@@ -88,12 +88,12 @@ class PermissionMatrixTest {
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("AUDITOR", "DEMO1")), roles))
                 .containsExactlyInAnyOrder("audit.event.search", "audit.chain.verify", "audit.checkpoint.create",
                         "audit.checkpoint.list", "audit.checkpoint.download", "audit.key.read", "parcel.read",
-                        "application.read");
+                        "application.read", "records.retention.read");
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("SUPERVISOR", "DEMO2")), roles))
                 .contains("audit.event.search@DEMO2", "audit.chain.verify", "identity.reset.confirm@DEMO2")
                 .doesNotContain("audit.event.search", "identity.reset.confirm");
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("SYSTEM_ADMIN", "DEMO1")), roles))
-                .hasSize(17).allMatch(a -> a.startsWith("admin."));
+                .hasSize(20).allMatch(a -> a.startsWith("admin.") || a.startsWith("records."));
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("NOT_A_ROLE", "DEMO1")), roles)).isEmpty();
     }
 

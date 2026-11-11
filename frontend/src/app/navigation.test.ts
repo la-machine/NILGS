@@ -39,6 +39,8 @@ describe('navigation follows the session', () => {
 
   it('shows the administrators of professional accounts their page', () => {
     expect(visible(session(['admin.professional.read', 'admin.professional.verify']))).toEqual(['dashboard', 'professionals'])
+    // ADR-041 D18: auditors and system administrators read retention and holds.
+    expect(visible(session(['records.retention.read']))).toEqual(['dashboard', 'records'])
   })
 
   it('opens the audit trail for a special grant on an audit action', () => {

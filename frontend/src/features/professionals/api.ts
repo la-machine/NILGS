@@ -83,6 +83,12 @@ export interface OwnDocument {
   id: string; transactionId: string; category: string; sha256: string; sizeBytes: number; mediaType: string; originalName: string; uploadedBySelf: boolean
   uploadedAt: string; replacesId: string | null; replaceReason: string | null; replacedById: string | null
 }
+/** A request to replace a file of one's own deposit (ADR-041 D19); a conservator decides, and is never named. */
+export interface OwnReplacement {
+  id: string; documentId: string; sha256: string; sizeBytes: number; mediaType: string; originalName: string; reason: string; requestedBySelf: boolean
+  requestedAt: string; status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN'; decidedAt: string | null; decisionReason: string | null
+  resultDocumentId: string | null
+}
 export interface NewDepositor { kind: (typeof DEPOSITOR_KINDS)[number]; fullName: string; identityKind: string; identityNumber: string }
 export interface DepositFile { category: string; file: File }
 export interface NewDeposit { titleId: string; kind: string; depositor: NewDepositor; files: DepositFile[] }
@@ -145,6 +151,10 @@ export const depositsApi = {
   replaceDocument: (id: string, documentId: string, category: string, file: File, reason: string) =>
     call<{ id: string }>('POST', `${OWN}/${one(id)}/documents/${one(documentId)}/replacement`, withFile(file, { category, reason }), idempotent()),
   documentUrl: (id: string, documentId: string) => `/api/v1${OWN}/${one(id)}/documents/${one(documentId)}/content`,
+  replacements: (id: string) => call<OwnReplacement[]>('GET', `${OWN}/${one(id)}/replacements`),
+  withdrawReplacement: (id: string, replacementId: string) =>
+    call<OwnReplacement>('POST', `${OWN}/${one(id)}/replacements/${one(replacementId)}/withdrawal`, {}),
+  replacementUrl: (id: string, replacementId: string) => `/api/v1${OWN}/${one(id)}/replacements/${one(replacementId)}/content`,
 }
 
 /** What the form still lacks before a deposit can be sent; the server checks all of it again. */

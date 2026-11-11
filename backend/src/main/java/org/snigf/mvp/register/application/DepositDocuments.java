@@ -12,6 +12,7 @@ import org.snigf.mvp.audit.AuditEvent;
 import org.snigf.mvp.audit.AuditOutcome;
 import org.snigf.mvp.audit.AuditRecorder;
 import org.snigf.mvp.document.DocumentFiles;
+import org.snigf.mvp.register.domain.Register;
 import org.snigf.mvp.register.domain.RegisterRepository;
 import org.snigf.mvp.shared.idempotency.IdempotencyStore;
 import org.springframework.stereotype.Component;
@@ -58,9 +59,13 @@ class DepositDocuments {
             }
             key = received.keep();
             String storageKey = key;
-            UUID id = writes.guarded(ENTITY_TRANSACTION, transactionId, replaces == null ? "ADD_DOCUMENT" : "REPLACE_DOCUMENT",
-                    () -> register.addDepositDocument(transactionId, category, storageKey, received.sha256(), received.sizeBytes(),
-                            received.mediaType(), received.name(), replaces, reason));
+            // D19: a replacement is only a request; the original stays current until a second person approves it.
+            UUID id = writes.guarded(ENTITY_TRANSACTION, transactionId, replaces == null ? "ADD_DOCUMENT" : "REQUEST_REPLACEMENT",
+                    () -> replaces == null
+                            ? register.addDepositDocument(transactionId, category, storageKey, received.sha256(), received.sizeBytes(),
+                                    received.mediaType(), received.name(), null, null)
+                            : register.requestReplacement(replaces, storageKey, received.sha256(), received.sizeBytes(), received.mediaType(),
+                                    received.name(), reason));
             Map<String, Object> details = new LinkedHashMap<>();
             details.put("transaction", transactionId.toString());
             details.put("category", category);
@@ -68,13 +73,16 @@ class DepositDocuments {
             details.put("sizeBytes", received.sizeBytes());
             details.put("sha256", received.sha256());
             details.put("office", target.officeCode());
-            AuditEvent event = AuditEvent.of(replaces == null ? AuditAction.REGISTER_DEPOSIT_DOCUMENT_ADDED : AuditAction.REGISTER_DEPOSIT_DOCUMENT_REPLACED,
-                    AuditOutcome.SUCCESS);
-            if (replaces != null) {
-                details.put("replaces", replaces.toString());
-                event = event.withReason(RegisterService.truncate(reason));
+            AuditEvent event;
+            if (replaces == null) {
+                event = AuditEvent.of(AuditAction.REGISTER_DEPOSIT_DOCUMENT_ADDED, AuditOutcome.SUCCESS).withEntity(ENTITY_DOCUMENT, id);
+            } else {
+                // The original document is the entity, so the event belongs to its title (ADR-038).
+                details.put("replacement", id.toString());
+                event = AuditEvent.of(AuditAction.REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_REQUESTED, AuditOutcome.SUCCESS)
+                        .withEntity(ENTITY_DOCUMENT, replaces).withReason(RegisterService.truncate(reason));
             }
-            audit.record(event.withEntity(ENTITY_DOCUMENT, id).withEntityRef(target.titleNumber()).withDetails(details));
+            audit.record(event.withEntityRef(target.titleNumber()).withDetails(details));
             writes.remember(user, idempotencyKey, DOCUMENT_ENDPOINT, hash, id);
             return id;
         } catch (DocumentFiles.Refused e) {
@@ -104,6 +112,61 @@ class DepositDocuments {
         audit.recordIndependently(AuditEvent.of(AuditAction.REGISTER_DEPOSIT_DOCUMENT_REJECTED, AuditOutcome.FAILED)
                 .withEntity(entity, entityId).withReason(e.code()).withDetails(details));
         return new RegisterRefused("FILE_TOO_LARGE".equals(e.code()) ? RegisterRefused.Kind.TOO_LARGE : RegisterRefused.Kind.INVALID, e.code());
+    }
+
+    /**
+     * The second person's decision on a pending request (D19), or its requester's withdrawal; the database decides
+     * who may. Returns the new document on approval, null otherwise. Audited against the original document.
+     */
+    UUID close(Target target, Register.DocumentReplacement r, String outcome, String reason) {
+        UUID transactionId = target.transactionId();
+        UUID result = writes.guarded(ENTITY_TRANSACTION, transactionId, "WITHDRAWN".equals(outcome) ? "WITHDRAW_REPLACEMENT" : "DECIDE_REPLACEMENT",
+                () -> {
+                    if ("WITHDRAWN".equals(outcome)) {
+                        register.withdrawReplacement(r.id(), blankToNull(reason));
+                        return null;
+                    }
+                    return register.decideReplacement(r.id(), outcome, blankToNull(reason));
+                });
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("transaction", transactionId.toString());
+        details.put("replacement", r.id().toString());
+        details.put("office", target.officeCode());
+        details.put("requestedAs", r.requestedAs());
+        AuditAction action = switch (outcome) {
+            case "APPROVED" -> AuditAction.REGISTER_DEPOSIT_DOCUMENT_REPLACED;
+            case "REJECTED" -> AuditAction.REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_REJECTED;
+            default -> AuditAction.REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_WITHDRAWN;
+        };
+        if (result != null) {
+            details.put("document", result.toString());
+            details.put("sha256", r.sha256());
+        }
+        AuditEvent event = AuditEvent.of(action, AuditOutcome.SUCCESS).withEntity(ENTITY_DOCUMENT, r.documentId())
+                .withEntityRef(target.titleNumber()).withDetails(details);
+        if (reason != null && !reason.isBlank()) {
+            event = event.withReason(RegisterService.truncate(reason));
+        }
+        audit.record(event);
+        return result;
+    }
+
+    private static String blankToNull(String text) {
+        return text == null || text.isBlank() ? null : text;
+    }
+
+    /** The bytes of a replacement request's file, checked against its hash. Audited against the original document. */
+    InputStream openReplacement(UUID transactionId, UUID documentId, UUID replacementId, String storageKey, String sha256, long sizeBytes) {
+        if (!files.intact(storageKey, sha256, sizeBytes)) {
+            audit.recordIndependently(AuditEvent.of(AuditAction.REGISTER_DEPOSIT_DOCUMENT_INTEGRITY_FAILED, AuditOutcome.FAILED)
+                    .withEntity(ENTITY_DOCUMENT, documentId).withReason("SHA256_MISMATCH")
+                    .withDetails(Map.of("transaction", transactionId.toString(), "replacement", replacementId.toString())));
+            throw new RegisterRefused(RegisterRefused.Kind.BROKEN, "DOCUMENT_INTEGRITY_FAILED");
+        }
+        audit.record(AuditEvent.of(AuditAction.REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_DOWNLOADED, AuditOutcome.SUCCESS)
+                .withEntity(ENTITY_DOCUMENT, documentId)
+                .withDetails(Map.of("transaction", transactionId.toString(), "replacement", replacementId.toString())));
+        return files.open(storageKey);
     }
 
     /** The bytes of a recorded file, checked against its hash before anything is sent. Audited. */

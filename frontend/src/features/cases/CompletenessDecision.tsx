@@ -4,8 +4,10 @@
 // the automatic check finds nothing missing and the DEMO fee is paid while the payment gate is
 // on (MVP-08; otherwise the button says why); or request
 // information: the document categories wanted (those missing are ticked) and a message of 10 to
-// 2000 characters, confirmed before it is sent. A case changed meanwhile overwrites nothing.
-import { useState } from 'react'
+// 2000 characters, confirmed before it is sent. A category that already has a file is a replacement
+// (ADR-041 D19): the officer says why that document must be replaced, and the applicant may then send
+// one new version of it. A case changed meanwhile overwrites nothing.
+import { useEffect, useState } from 'react'
 import { ApiError } from '../../shared/api/client'
 import { fill } from '../../shared/i18n'
 import type { Lang, Texts } from '../../shared/i18n'
@@ -16,6 +18,7 @@ import { Alert } from '../../shared/ui/Feedback'
 import { useDialog } from '../../shared/ui/dialogContext'
 import { errorMessage } from '../../shared/ui/errorMessage'
 import { documentLabel } from '../applications'
+import { documentsApi } from '../documents'
 import { casesApi, MESSAGE_MAX, MESSAGE_MIN } from './api'
 import type { Case } from './api'
 
@@ -34,6 +37,22 @@ export function CompletenessDecision({ texts, lang, found, canAccept, canRequest
   const [busy, setBusy] = useState<'accept' | 'request' | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [stale, setStale] = useState(false)
+  const [withFiles, setWithFiles] = useState<string[]>([])
+  const [reasons, setReasons] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    let current = true
+    documentsApi.list(found.id, 'case')
+      .then((d) => { if (current) setWithFiles(d.categories.filter((x) => x.versions.length > 0).map((x) => x.code)) })
+      .catch(() => { if (current) setWithFiles([]) })
+    return () => { current = false }
+  }, [found.id])
+
+  // A ticked category with a file: its document is replaced, and the officer says why.
+  const replacing = categories.filter((code) => withFiles.includes(code))
+  const reasonOf = (code: string) => (reasons[code] ?? '').trim()
+  const reasonError = (code: string) => touched && (reasonOf(code).length < MESSAGE_MIN || reasonOf(code).length > MESSAGE_MAX)
+    ? fill(c.replacementReasonBounds, { min: MESSAGE_MIN, max: MESSAGE_MAX }) : null
 
   const length = message.trim().length
   const messageError = touched && (length < MESSAGE_MIN || length > MESSAGE_MAX) ? fill(c.messageBounds, { min: MESSAGE_MIN, max: MESSAGE_MAX }) : null
@@ -63,6 +82,7 @@ export function CompletenessDecision({ texts, lang, found, canAccept, canRequest
   const request = async () => {
     setTouched(true)
     if (categories.length === 0 || length < MESSAGE_MIN || length > MESSAGE_MAX) return
+    if (replacing.some((code) => reasonOf(code).length < MESSAGE_MIN || reasonOf(code).length > MESSAGE_MAX)) return
     const ok = await dialog.confirm({
       title: c.confirmRequestTitle,
       message: fill(c.confirmRequestText, { list: categories.map((code) => documentLabel(lang, found.type, code)).join(', ') }),
@@ -70,7 +90,8 @@ export function CompletenessDecision({ texts, lang, found, canAccept, canRequest
     })
     if (ok) {
       await run('request', () => casesApi.requestInformation(found.id,
-        { expectedVersion: found.version, categories, message: message.trim() }))
+        { expectedVersion: found.version, categories, message: message.trim(),
+          replacements: replacing.map((category) => ({ category, reason: reasonOf(category) })) }))
     }
   }
 
@@ -96,10 +117,20 @@ export function CompletenessDecision({ texts, lang, found, canAccept, canRequest
           <fieldset className="checkbox-list" aria-describedby={categoriesError ? 'request-categories-error' : undefined}>
             <legend className="field-label">{c.categories}</legend>
             {found.type.requirements.documents.map((d) => (
-              <label key={d.code} className="checkbox">
-                <input type="checkbox" checked={categories.includes(d.code)} onChange={() => toggle(d.code)} />
-                <span>{lang === 'fr' ? d.labelFr : d.labelEn}</span>
-              </label>
+              <div key={d.code} data-request-category={d.code}>
+                <label className="checkbox">
+                  <input type="checkbox" checked={categories.includes(d.code)} onChange={() => toggle(d.code)} />
+                  <span>{lang === 'fr' ? d.labelFr : d.labelEn}</span>
+                  {withFiles.includes(d.code) && <span className="small muted"> · {c.hasFile}</span>}
+                </label>
+                {replacing.includes(d.code) && (
+                  <Field label={fill(c.replacementReason, { category: lang === 'fr' ? d.labelFr : d.labelEn })} hint={c.replacementReasonHint}
+                    error={reasonError(d.code)} required requiredLabel={texts.common.required}>
+                    <textarea rows={2} maxLength={MESSAGE_MAX + 100} value={reasons[d.code] ?? ''}
+                      onChange={(e) => setReasons((current) => ({ ...current, [d.code]: e.target.value }))} />
+                  </Field>
+                )}
+              </div>
             ))}
             {categoriesError && <p id="request-categories-error" className="field-error">{categoriesError}</p>}
           </fieldset>

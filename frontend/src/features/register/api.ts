@@ -52,6 +52,13 @@ export interface DepositDocument {
   id: string; transactionId: string; category: string; sha256: string; sizeBytes: number; mediaType: string; originalName: string
   uploadedBy: string; uploadedByName: string; uploadedAt: string; replacesId: string | null; replaceReason: string | null; replacedById: string | null
 }
+/** A request to replace a deposit's document (ADR-041 D19): another conservator of the office decides. */
+export type ReplacementStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'WITHDRAWN'
+export interface DocumentReplacement {
+  id: string; documentId: string; transactionId: string; sha256: string; sizeBytes: number; mediaType: string; originalName: string; reason: string
+  requestedBy: string; requestedByName: string; requestedAs: 'STAFF' | 'PROFESSIONAL'; requestedAt: string; status: ReplacementStatus
+  decidedBy: string | null; decidedByName: string | null; decidedAt: string | null; decisionReason: string | null; resultDocumentId: string | null
+}
 export interface Party { id: string; kind: 'NATURAL_PERSON' | 'LEGAL_PERSON' | 'NOTARY'; fullName: string; identityNumber: string }
 export interface TitleView { title: Title; inscriptions: Inscription[]; transactions: Transaction[]; conflicts: Conflict[] }
 export interface Verification { intact: boolean; inscriptionsChecked: number; signaturesChecked: number; versionsChecked: number; documentsChecked: number; problems: string[] }
@@ -104,6 +111,14 @@ export const registerApi = {
     form.append('reason', reason)
     return call<{ id: string }>('POST', `${BASE}/transactions/${encodeURIComponent(transactionId)}/documents/${encodeURIComponent(documentId)}/replacement`, form, idempotent())
   },
+  replacements: (transactionId: string) => call<DocumentReplacement[]>('GET', `${BASE}/transactions/${encodeURIComponent(transactionId)}/replacements`),
+  decideReplacement: (transactionId: string, replacementId: string, outcome: 'APPROVED' | 'REJECTED', reason?: string) =>
+    call<DocumentReplacement>('POST', `${BASE}/transactions/${encodeURIComponent(transactionId)}/replacements/${encodeURIComponent(replacementId)}/decision`,
+      { outcome, reason }),
+  withdrawReplacement: (transactionId: string, replacementId: string) =>
+    call<DocumentReplacement>('POST', `${BASE}/transactions/${encodeURIComponent(transactionId)}/replacements/${encodeURIComponent(replacementId)}/withdrawal`, {}),
+  replacementUrl: (transactionId: string, replacementId: string) =>
+    `/api/v1${BASE}/transactions/${encodeURIComponent(transactionId)}/replacements/${encodeURIComponent(replacementId)}/content`,
   /** A plain link: the browser downloads it as an attachment, with the session cookie. */
   documentUrl: (transactionId: string, documentId: string) =>
     `/api/v1${BASE}/transactions/${encodeURIComponent(transactionId)}/documents/${encodeURIComponent(documentId)}/content`,

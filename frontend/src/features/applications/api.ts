@@ -59,6 +59,9 @@ export interface Step { from: ApplicationState; to: ApplicationState; by: Party;
 
 export type CompletenessKind = 'AUTOMATIC' | 'COMPLETE' | 'INFO_REQUESTED' | 'RESPONSE'
 
+/** A document an information request asks to be replaced, by its category, and why (ADR-041 D19). */
+export interface Replacement { category: string; reason: string }
+
 /** One step of the completeness review (MVP-03): what the database found missing then, what was asked or said. */
 export interface CompletenessStep {
   kind: CompletenessKind
@@ -67,13 +70,14 @@ export interface CompletenessStep {
   message: string | null
   actorName: string | null
   at: string
+  replacements?: Replacement[]
 }
 
 /** The same step as the applicant reads it: which party acted, no person named. */
 export type ApplicantCompletenessStep = Omit<CompletenessStep, 'actorName'> & { by: Party }
 
 /** The information request the applicant must answer (MVP-03, MVP-06). */
-export interface PendingRequest { categories: string[]; message: string; since: string }
+export interface PendingRequest { categories: string[]; message: string; since: string; replacements?: Replacement[] }
 
 export interface Application {
   id: string

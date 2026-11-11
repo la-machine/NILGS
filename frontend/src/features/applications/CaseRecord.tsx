@@ -67,6 +67,11 @@ export function CompletenessCard({ texts, lang, type, steps }: {
                   {fill(c.requestedList, { list: step.requested.map((code) => documentLabel(lang, type, code)).join(', ') })}
                 </p>
               )}
+              {(step.replacements ?? []).map((r) => (
+                <p key={r.category} className="timeline-reason" data-replacement={r.category}>
+                  {fill(c.replacementAsked, { category: documentLabel(lang, type, r.category), reason: r.reason })}
+                </p>
+              ))}
               {step.message && <p className="timeline-reason pre-line">« {step.message} »</p>}
             </div>
           </li>

@@ -75,10 +75,17 @@ public enum Permission {
      */
     REGISTER_DEPOSIT_SUBMIT("register.deposit.submit", Family.BUSINESS, false, "Look up a title and deposit a transaction on it, as a professional", "Rechercher un titre et y déposer une transaction, en tant que professionnel", Scope.OFFICE),
     REGISTER_DEPOSIT_READ("register.deposit.read", Family.BUSINESS, false, "Read one's own deposits and their documents", "Consulter ses propres dépôts et leurs pièces", Scope.OWN),
-    REGISTER_DEPOSIT_DOCUMENT("register.deposit.document", Family.BUSINESS, false, "Add or replace documents on one's own open deposit", "Ajouter ou remplacer des pièces sur son propre dépôt ouvert", Scope.OWN),
+    REGISTER_DEPOSIT_DOCUMENT("register.deposit.document", Family.BUSINESS, false, "Add documents to one's own open deposit, or ask for one to be replaced", "Ajouter des pièces à son propre dépôt ouvert, ou demander le remplacement d'une pièce", Scope.OWN),
     REGISTER_DEPOSIT_WITHDRAW("register.deposit.withdraw", Family.BUSINESS, false, "Withdraw one's own deposit", "Retirer son propre dépôt", Scope.OWN),
     /** The supervisor's in-application confirmation of a second-factor reset (ADR-028); business, so supervisors keep their audit permissions. */
-    IDENTITY_RESET_CONFIRM("identity.reset.confirm", Family.BUSINESS, false, "Confirm the identity of a person whose second factor is reset", "Confirmer l’identité d’une personne dont le deuxième facteur est réinitialisé", Scope.OFFICE);
+    IDENTITY_RESET_CONFIRM("identity.reset.confirm", Family.BUSINESS, false, "Confirm the identity of a person whose second factor is reset", "Confirmer l’identité d’une personne dont le deuxième facteur est réinitialisé", Scope.OFFICE),
+    /**
+     * Retention metadata and legal holds (ADR-041 D18, V30). Reading is BUSINESS, so the auditor and the system administrator both
+     * hold it without mixing duties; placing and releasing holds are ADMINISTRATION. Reading retention data opens no document.
+     */
+    RECORDS_RETENTION_READ("records.retention.read", Family.BUSINESS, false, "Read retention classes, legal holds and their release history", "Consulter les classes de conservation, les gels juridiques et l'historique de leur levée"),
+    RECORDS_HOLD_PLACE("records.hold.place", Family.ADMINISTRATION, false, "Place a legal hold on records", "Placer un gel juridique sur des pièces"),
+    RECORDS_HOLD_RELEASE("records.hold.release", Family.ADMINISTRATION, false, "Ask for, approve or reject the release of a legal hold (two people)", "Demander, approuver ou rejeter la levée d'un gel juridique (deux personnes)");
 
     /** Families that must never meet in one role or one person (separation of duties). */
     public enum Family { ADMINISTRATION, AUDIT, BUSINESS }

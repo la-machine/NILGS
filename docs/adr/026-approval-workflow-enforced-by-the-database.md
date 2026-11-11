@@ -98,3 +98,7 @@ call spends a use (`frontend/src/shared/session/access.ts`).
 - **Extended (2 Nov 2026, [ADR-041](041-professional-accounts.md)):** four eyes also on a professional's activation (verified by one
   administrator, approved by another), reinstatement, revocation and office changes, enforced by the
   database (V24). Suspension takes one administrator: it is the fast, reversible stop.
+- **Extended (8 Nov 2026, [ADR-041](041-professional-accounts.md) D18 and D19, V29 and V30):** the same pattern for replacing a
+  submitted deposit document (asked by one, approved by another conservator holding `register.confirm`, never by the requester
+  or a professional) and for releasing a legal hold (asked by one system administrator, approved by another). In both, the
+  database refuses the requester as decider, and a `CHECK` holds it too.

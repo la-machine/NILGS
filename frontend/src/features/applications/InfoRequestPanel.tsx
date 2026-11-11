@@ -1,8 +1,9 @@
 // SNIGF/NILGS - Copyright (c) 2026 FLYT.
 // Author: Pythagore.
 // An information request, as the applicant answers it (MVP-03): what the intake officer asked
-// for and why, the files to add (in those categories only; a new file adds a version and
-// replaces nothing), then the response, with an optional message, confirmed before it is sent.
+// for and why, the files to add (in those categories only), then the response, with an optional
+// message, confirmed before it is sent. A document the request names for replacement takes one new
+// version (ADR-041 D19); every earlier version is kept.
 // The application then goes back to completeness review.
 import { useState } from 'react'
 import { ApiError } from '../../shared/api/client'
@@ -60,6 +61,11 @@ export function InfoRequestPanel({ texts, lang, application, onResponded, onRelo
             <p>{fill(c.requestedList, {
               list: request.categories.map((code) => documentLabel(lang, application.type, code)).join(', '),
             })}</p>
+            {(request.replacements ?? []).map((r) => (
+              <p key={r.category} data-replacement={r.category}>
+                {fill(c.replacementAsked, { category: documentLabel(lang, application.type, r.category), reason: r.reason })}
+              </p>
+            ))}
           </>
         )}
       </Alert>

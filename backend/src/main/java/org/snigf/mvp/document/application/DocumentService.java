@@ -144,8 +144,13 @@ public class DocumentService {
                 throw refused(applicationId, category, inspection.code(), staged.size(), inspection.detected());
             }
             UUID documentId = documents.documentFor(applicationId, category);
-            if (documents.versionCount(documentId) >= settings.maxVersions()) {
+            int versions = documents.versionCount(documentId);
+            if (versions >= settings.maxVersions()) {
                 throw new DocumentRefused(DocumentRefused.Kind.CONFLICT, "VERSION_LIMIT_REACHED");
+            }
+            // D19: after submission, a document that has a file is replaced only as an information request names it.
+            if (versions > 0 && !"DRAFT".equals(application.state()) && !documents.replacementOpen(documentId)) {
+                throw new DocumentRefused(DocumentRefused.Kind.CONFLICT, "REPLACEMENT_NOT_REQUESTED");
             }
             key = storage.commit(staged);
             DocumentVersion version = documents.add(new DocumentRepository.NewVersion(documentId, key, staged.sha256(),

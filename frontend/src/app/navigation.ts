@@ -9,7 +9,7 @@ import { accessTo, can, canAssigned, canOwn, canSomewhere } from '../shared/sess
 import type { Session } from '../shared/session/types'
 import type { IconName } from '../shared/ui/Icon'
 
-export type PlaceId = 'dashboard' | 'applications' | 'professional' | 'professionals' | 'cases' | 'reviews' | 'register' | 'parcels' | 'alerts' | 'accounts' | 'roles' | 'grants' | 'workload' | 'payments' | 'issued-documents' | 'confirmations' | 'audit' | 'account'
+export type PlaceId = 'dashboard' | 'applications' | 'professional' | 'professionals' | 'cases' | 'reviews' | 'register' | 'parcels' | 'alerts' | 'accounts' | 'roles' | 'grants' | 'workload' | 'payments' | 'issued-documents' | 'records' | 'confirmations' | 'audit' | 'account'
 
 export interface Place {
   id: PlaceId
@@ -81,6 +81,10 @@ export const GROUPS: PlaceGroup[] = [
       {
         id: 'issued-documents', icon: 'signature', label: (t) => t.nav.issuedDocuments,
         visible: (s) => can(s, 'document.issued.manage') || can(s, 'document.incident.review'),
+      },
+      {
+        id: 'records', icon: 'lock', label: (t) => t.nav.records,
+        visible: (s) => can(s, 'records.retention.read'),
       },
       {
         id: 'confirmations', icon: 'userCheck', label: (t) => t.nav.confirmations,

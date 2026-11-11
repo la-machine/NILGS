@@ -143,7 +143,8 @@ export function TitlePage({ ctx, id }: { ctx: PageContext; id: string }) {
         {view.transactions.length === 0 ? <p className="muted">{k.noTransactions}</p> : (
           <ul className="plain-list exception-list">
             {view.transactions.map((t) => <TransactionItem key={`${t.id}-${t.status}`} texts={texts} lang={lang} transaction={t} canPropose={canPropose}
-              canDecide={canAt(session, 'register.transaction.decide', office)} onChanged={reload} />)}
+              canDecide={canAt(session, 'register.transaction.decide', office)} canConfirm={canAt(session, 'register.confirm', office)}
+              viewerId={session.userId} onChanged={reload} />)}
           </ul>
         )}
         {canPropose && title.status === 'ACTIVE' && <DepositForm texts={texts} titleId={id} parties={parties} onDone={reload} />}
@@ -160,8 +161,8 @@ function chargeList(texts: Texts, charges: Charge[]) {
   return charges.map((c) => `${(k.chargeKinds as Record<string, string>)[c.kind] ?? c.kind}${c.beneficiaryName ? ` · ${c.beneficiaryName}` : ''}${c.blocksTransfer ? ` · ${k.blocksTransfer}` : ''}`).join(' ; ')
 }
 
-function TransactionItem({ texts, lang, transaction: t, canPropose, canDecide, onChanged }: {
-  texts: Texts; lang: Lang; transaction: Transaction; canPropose: boolean; canDecide: boolean; onChanged: () => void
+function TransactionItem({ texts, lang, transaction: t, canPropose, canDecide, canConfirm, viewerId, onChanged }: {
+  texts: Texts; lang: Lang; transaction: Transaction; canPropose: boolean; canDecide: boolean; canConfirm: boolean; viewerId: string; onChanged: () => void
 }) {
   const k = texts.register
   const dialog = useDialog()
@@ -199,7 +200,8 @@ function TransactionItem({ texts, lang, transaction: t, canPropose, canDecide, o
         <div><dt>{k.reviewDue}</dt><dd className="num">{new Date(t.reviewDueAt).toLocaleDateString()}</dd></div>
         {t.closedReason && <div><dt>{k.reason}</dt><dd>{t.closedReason}</dd></div>}
       </dl>
-      <DepositDocuments texts={texts} lang={lang} transactionId={t.id} open={active} canAdd={canPropose} onChanged={onChanged} />
+      <DepositDocuments texts={texts} lang={lang} transactionId={t.id} open={active} canAdd={canPropose} canConfirm={canConfirm}
+        viewerId={viewerId} onChanged={onChanged} />
       {failure && <Alert tone="danger">{failure}</Alert>}
       {active && (
         <div className="form-actions start">

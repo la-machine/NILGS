@@ -98,3 +98,7 @@ retirement or an exhausted grant takes effect on the next request, not at the ne
   permissions carry the new `professional` flag and are held only by the computed roles NOTARY and
   SWORN_SURVEYOR, which are never assigned (V25). Special grants stay staff-only, and none can carry a
   professional permission: they are not delegable.
+- **Amended (8 Nov 2026, [ADR-041](041-professional-accounts.md) D18, V30):** three `records.*` permissions, never professional and
+  never delegable: `records.retention.read` (`BUSINESS`, held by AUDITOR and SYSTEM_ADMIN, so neither mixes duties),
+  `records.hold.place` and `records.hold.release` (`ADMINISTRATION`, SYSTEM_ADMIN). They are in the catalogue, the code and
+  `PermissionCatalogueCheck`. `register.deposit.document` now reads "add documents, or ask for one to be replaced" (D19).

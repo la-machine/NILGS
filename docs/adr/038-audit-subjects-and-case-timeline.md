@@ -156,3 +156,6 @@ read it. The supervisor's audit page now shows the event search, limited to thei
   auditor's timeline, not the supervisor's: the office was not responsible for it yet.
 - **Professional deposits (2 Nov 2026, [ADR-041](041-professional-accounts.md))** keep the title as their subject (`LAND_TITLE`); events
   about a professional account take none.
+- **Replacements and holds (8 Nov 2026, [ADR-041](041-professional-accounts.md) D18 and D19):** a deposit document's replacement
+  events name the original document, so they keep its title as subject (`LAND_TITLE`); legal hold events (`RECORD_HOLD_*`,
+  `RECORD_RETENTION_READ`, `RECORD_REFUSED`) take none, like account events.

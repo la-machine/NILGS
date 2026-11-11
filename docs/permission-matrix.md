@@ -84,9 +84,12 @@ roles; `PermissionMatrixIT` checks every staff role against every protected endp
 | `register.transaction.decide` | business | no | office | Refuse a deposit or resolve a conflict |
 | `register.deposit.submit` | business | no | office | Look up a title and deposit a transaction on it, as a professional |
 | `register.deposit.read` | business | no | own | Read one's own deposits and their documents |
-| `register.deposit.document` | business | no | own | Add or replace documents on one's own open deposit |
+| `register.deposit.document` | business | no | own | Add documents to one's own open deposit, or ask for one to be replaced |
 | `register.deposit.withdraw` | business | no | own | Withdraw one's own deposit |
-| `identity.reset.confirm` | business | no | office | Confirm the identity of a person whose second factor is reset |] 
+| `identity.reset.confirm` | business | no | office | Confirm the identity of a person whose second factor is reset |
+| `records.retention.read` | business | no | any | Read retention classes, legal holds and their release history |
+| `records.hold.place` | administration | no | any | Place a legal hold on records |
+| `records.hold.release` | administration | no | any | Ask for, approve or reject the release of a legal hold (two people) |
 
 ## Baseline roles
 
@@ -142,7 +145,10 @@ roles; `PermissionMatrixIT` checks every staff role against every protected endp
 | `register.deposit.read` | — | — | — | — | — | — | — | — | — | — | own | — | — |
 | `register.deposit.document` | — | — | — | — | — | — | — | — | — | — | own | — | — |
 | `register.deposit.withdraw` | — | — | — | — | — | — | — | — | — | — | own | — | — |
-| `identity.reset.confirm` | — | — | — | — | — | office | — | — | — | — | — | — | — |] 
+| `identity.reset.confirm` | — | — | — | — | — | office | — | — | — | — | — | — | — |
+| `records.retention.read` | — | — | — | — | — | — | any | — | — | — | — | — | any |
+| `records.hold.place` | — | — | — | — | — | — | — | — | — | — | — | — | any |
+| `records.hold.release` | — | — | — | — | — | — | — | — | — | — | — | — | any |
 
 APPLICANT is not assignable: it is what a self-registered account is, not a role an
 administrator grants.

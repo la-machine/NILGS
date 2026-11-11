@@ -518,30 +518,96 @@ class RegisterIT extends CaseFlowIntegrationTest {
                 Long.class, holding)).isEqualTo(1);
     }
 
+    private JsonNode replacements(Officer who, String transaction) throws Exception {
+        return ok(who.browser().send(get(BASE + "/transactions/" + transaction + "/replacements")), 200);
+    }
+
+    private MockHttpServletResponse decide(Officer who, String transaction, String replacement, String outcome, String reason) throws Exception {
+        return reason == null ? postJson(who, "/transactions/" + transaction + "/replacements/" + replacement + "/decision", "outcome", outcome)
+                : postJson(who, "/transactions/" + transaction + "/replacements/" + replacement + "/decision", "outcome", outcome, "reason", reason);
+    }
+
+    /** ADR-041 D19: a replacement is a request; another conservator of the office decides; nothing is overwritten or lost. */
     @Test
-    void aReplacementIsAuditedAndTheOriginalStaysReadable() throws Exception {
-        Officer officer = conservator();
-        String owner = party(officer, "DEMO Owner");
-        String holding = deposit(officer, title(officer, owner), owner, null);
+    void aReplacementNeedsASecondConservatorAndTheOriginalStaysCurrentUntilThen() throws Exception {
+        Officer asker = conservator();
+        Officer second = conservator();
+        Officer elsewhere = conservator("DEMOIT2");
+        String seller = party(asker, "DEMO Seller");
+        String buyer = party(asker, "DEMO Buyer");
+        String title = title(asker, seller);
+        String holding = deposit(asker, title, buyer, null);
         byte[] first = DocumentFixtures.pdf("/Title (first)");
-        byte[] second = DocumentFixtures.pdf("/Title (second)");
-        String original = ok(upload(officer, holding, "DEED", "deed.pdf", first, key()), 201).path("id").asString("");
+        byte[] second1 = DocumentFixtures.pdf("/Title (second)");
+        String original = ok(upload(asker, holding, "DEED", "deed.pdf", first, key()), 201).path("id").asString("");
 
-        assertThat(code(replace(officer, holding, original, "new.pdf", second, "short"))).as("a reason is required").isEqualTo("REASON_REQUIRED");
-        String correction = ok(replace(officer, holding, original, "new.pdf", second, "The first scan was the wrong page"), 201).path("id").asString("");
-        assertThat(code(replace(officer, holding, original, "other.pdf", second, "A second replacement of the same file"))).isEqualTo("DOCUMENT_ALREADY_REPLACED");
+        assertThat(code(replace(asker, holding, original, "new.pdf", second1, "short"))).as("a reason is required").isEqualTo("REASON_REQUIRED");
+        MockHttpServletResponse asked = replace(asker, holding, original, "new.pdf", second1, "The first scan was the wrong page");
+        String request = ok(asked, 201).path("id").asString("");
+        assertThat(asked.getHeader("Location")).endsWith("/replacements/" + request + "/content");
+        assertThat(code(replace(second, holding, original, "other.pdf", second1, "Another request on the same file"))).isEqualTo("REPLACEMENT_PENDING");
 
-        JsonNode listed = documents(officer, holding);
+        // While it waits: the original is the current document, and the transfer cannot be registered.
+        assertThat(documents(asker, holding)).hasSize(1);
+        assertThat(documents(asker, holding).get(0).path("replacedById").isNull()).isTrue();
+        JsonNode pending = replacements(second, holding).get(0);
+        assertThat(pending.path("status").asString("")).isEqualTo("PENDING");
+        assertThat(pending.path("requestedAs").asString("")).isEqualTo("STAFF");
+        assertThat(pending.path("requestedBy").asString("")).isEqualTo(asker.id().toString());
+        assertThat(pending.path("reason").asString("")).isEqualTo("The first scan was the wrong page");
+        assertThat(pending.has("storageKey")).isFalse();
+        assertThat(second.browser().send(get(BASE + "/transactions/" + holding + "/replacements/" + request + "/content")).getContentAsByteArray())
+                .as("the decider reads the new file before deciding").isEqualTo(second1);
+        String transfer = propose(asker, title, "TRANSFER", 1, "completesTransactionId", holding, "holders", holder(buyer));
+        assertThat(code(sign(asker, asker.key(), transfer, "register"))).isEqualTo("REPLACEMENT_PENDING");
+
+        // Who never decides.
+        MockHttpServletResponse own = decide(asker, holding, request, "APPROVED", null);
+        assertThat(own.getStatus()).isEqualTo(403);
+        assertThat(code(own)).isEqualTo("REQUESTER_CANNOT_DECIDE");
+        assertThat(decide(elsewhere, holding, request, "APPROVED", null).getStatus()).as("a conservator elsewhere").isEqualTo(403);
+        assertThat(code(decide(second, holding, request, "REJECTED", null))).as("a rejection explains itself").isEqualTo("REASON_REQUIRED");
+
+        // Rejected: recorded, the file kept; then a new request, approved by the second conservator.
+        JsonNode rejected = ok(decide(second, holding, request, "REJECTED", "Still the wrong page, please check"), 200);
+        assertThat(rejected.path("status").asString("")).isEqualTo("REJECTED");
+        assertThat(rejected.path("decidedBy").asString("")).isEqualTo(second.id().toString());
+        assertThat(code(decide(second, holding, request, "APPROVED", null))).isEqualTo("REPLACEMENT_CLOSED");
+        String retry = ok(replace(asker, holding, original, "new2.pdf", second1, "The right page this time, checked"), 201).path("id").asString("");
+        String withdrawn = retry;
+        assertThat(ok(postJson(asker, "/transactions/" + holding + "/replacements/" + withdrawn + "/withdrawal", "reason", "Sent the wrong file again"), 200)
+                .path("status").asString("")).isEqualTo("WITHDRAWN");
+        String third = ok(replace(asker, holding, original, "final.pdf", second1, "The right page, checked twice"), 201).path("id").asString("");
+        JsonNode approved = ok(decide(second, holding, third, "APPROVED", null), 200);
+        String correction = approved.path("resultDocumentId").asString("");
+        assertThat(correction).isNotBlank();
+
+        JsonNode listed = documents(asker, holding);
         assertThat(listed).hasSize(2);
         assertThat(listed.get(0).path("replacedById").asString("")).isEqualTo(correction);
         assertThat(listed.get(1).path("replacesId").asString("")).isEqualTo(original);
-        assertThat(listed.get(1).path("replaceReason").asString("")).isEqualTo("The first scan was the wrong page");
-        assertThat(officer.browser().send(get(BASE + "/transactions/" + holding + "/documents/" + original + "/content")).getContentAsByteArray())
+        assertThat(listed.get(1).path("replaceReason").asString("")).isEqualTo("The right page, checked twice");
+        assertThat(listed.get(1).path("uploadedBy").asString("")).as("the requester uploaded it").isEqualTo(asker.id().toString());
+        assertThat(asker.browser().send(get(BASE + "/transactions/" + holding + "/documents/" + original + "/content")).getContentAsByteArray())
                 .as("the original is still served").isEqualTo(first);
-        assertThat(jdbc.queryForObject("SELECT reason FROM audit_event WHERE action = 'REGISTER_DEPOSIT_DOCUMENT_REPLACED' AND entity_id = ?::uuid", String.class, correction))
-                .isEqualTo("The first scan was the wrong page");
-        assertThat(jdbc.queryForObject("SELECT details->>'replaces' FROM audit_event WHERE action = 'REGISTER_DEPOSIT_DOCUMENT_REPLACED' AND entity_id = ?::uuid", String.class, correction))
-                .isEqualTo(original);
+        assertThat(replacements(asker, holding).findValuesAsString("status")).containsExactly("REJECTED", "WITHDRAWN", "APPROVED");
+        Long kept = scalar("SELECT count(DISTINCT k) FROM document_storage_keys_known(ARRAY(SELECT storage_key::text FROM deposit_document_replacement WHERE transaction_id = '"
+                + holding + "')) k");
+        assertThat(kept).as("every request's file is kept, rejected and withdrawn ones included").isEqualTo(3);
+
+        for (String action : List.of("REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_REQUESTED", "REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_REJECTED",
+                "REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_WITHDRAWN", "REGISTER_DEPOSIT_DOCUMENT_REPLACED", "REGISTER_DEPOSIT_DOCUMENT_REPLACEMENT_DOWNLOADED")) {
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM audit_event WHERE action = ? AND entity_id = ?::uuid AND subjects @> ?::jsonb", Long.class, action,
+                    original, "[{\"type\":\"LAND_TITLE\",\"id\":\"" + title + "\"}]")).as(action).isPositive();
+        }
+        assertThat(jdbc.queryForObject("SELECT actor_id::text FROM audit_event WHERE action = 'REGISTER_DEPOSIT_DOCUMENT_REPLACED' AND entity_id = ?::uuid",
+                String.class, original)).as("the approver is the actor").isEqualTo(second.id().toString());
+
+        // Nothing pending: the transfer registers, over bytes that name the approved replacement.
+        signed(asker, transfer, "register");
+        JsonNode check = verification(asker, title);
+        assertThat(check.path("intact").asBoolean()).as(check.toString()).isTrue();
+        assertThat(check.path("documentsChecked").asInt()).isEqualTo(2);
     }
 
     @Test

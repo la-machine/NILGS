@@ -19,6 +19,9 @@ public interface DocumentRepository {
 
     int versionCount(UUID documentId);
 
+    /** Whether the latest information request names this document for replacement, unused yet (V29). */
+    boolean replacementOpen(UUID documentId);
+
     /** What a new version records; the database numbers it. */
     record NewVersion(UUID documentId, String storageKey, String sha256, long sizeBytes, DocumentType type,
                       String originalName, UUID uploadedBy) {

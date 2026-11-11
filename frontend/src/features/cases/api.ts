@@ -4,7 +4,7 @@
 // queue, one case with what the automatic check finds missing, and the intake officer's two
 // outcomes. The server decides who may read or decide; nobody handles their own application.
 import { call } from '../../shared/api/client'
-import type { ApplicationState, ApplicationType, CompletenessStep, Transition } from '../applications'
+import type { ApplicationState, ApplicationType, CompletenessStep, Replacement, Transition } from '../applications'
 
 export interface CaseSummary {
   id: string
@@ -58,6 +58,6 @@ export const casesApi = {
   },
   read: (id: string) => call<Case>('GET', one(id)),
   accept: (id: string, expectedVersion: number) => call<Case>('POST', `${one(id)}/acceptance`, { expectedVersion }),
-  requestInformation: (id: string, body: { expectedVersion: number; categories: string[]; message: string }) =>
+  requestInformation: (id: string, body: { expectedVersion: number; categories: string[]; message: string; replacements?: Replacement[] }) =>
     call<Case>('POST', `${one(id)}/information-request`, body),
 }

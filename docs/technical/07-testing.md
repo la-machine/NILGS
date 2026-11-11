@@ -64,9 +64,18 @@ Professional accounts (ADR-041, [guide](../guides/professional-accounts.md)):
   - `27`: deposits under the V21 rules, no lock from a refused deposit, the holder rule and offices;
   - `28`: what a notary sees of their deposit's conflict (D17): an allow-list of columns, both sides,
     nothing of the other deposit, no conflict decision's reason;
-  - `29`: the directory's search folding (D20): case, accents and ligatures, wildcards kept.
+  - `29`: the directory's search folding (D20): case, accents and ligatures, wildcards kept;
+  - `30`: replacing a document needs a second person (D19): the immediate replacement refused, who may
+    ask and see, who never decides, the transfer refused while one is pending, rejected and withdrawn
+    files kept, the approval adding a document under the title's lock and invalidating the bytes signed
+    before it, no `UPDATE` or `DELETE`, no evidence replacement path; the application document guard
+    (one version per document the latest information request names, by an officer who never uploaded it);
+  - `31`: retention and holds (D18): no period and no schedule, the schedule `CHECK`, every covered
+    record's class set by the database, a hold placed by one and released by two, `record_disposal_allowed`
+    false without a schedule and, separately, under a hold, no delete path, who reads.
 - **`db-test.sh`:** conservators and a notary's account race deposits on one title, leaving exactly
-  one holding.
+  one holding; on 20 titles, a replacement's approval races a transfer's signature, and no round ends
+  with both, nor with a transfer signed over bytes that are no longer the deposit's.
 - **Integration tests:**
   - `ProfessionalSignInIT`: two keys like staff, and applicants still password-only;
   - `ProfessionalLifecycleIT`: the transitions and refusals, and the evidence audited; the directory
@@ -78,11 +87,22 @@ Professional accounts (ADR-041, [guide](../guides/professional-accounts.md)):
   - `ProfessionalPermissionsIT`: the computed roles, and a suspension effective at the next request;
   - `ProfessionalDepositIT`: the lookup and its throttling, valid and refused deposits, retries and
     duplicates, isolation, withdrawal; the fields of one's own deposit against an allow-list, a
-    conflict seen from both sides, and `withdrawnDuringConflict` in the audit trail.
+    conflict seen from both sides, and `withdrawnDuringConflict` in the audit trail; a notary's
+    replacement request, approved by a conservator, withdrawn, never decided by the notary, no
+    conservator named;
+  - `RegisterIT`: a conservator's replacement request, refused to its requester and to a conservator
+    elsewhere, rejected, withdrawn, approved by another; the transfer refused while pending, then
+    registered and verified; every request's file kept;
+  - `CompletenessIT`, `TrackingIT`: an information request names the document it asks to be replaced;
+    one replacement per named document; the version records the request;
+  - `RetentionIT`: who reads retention data; a hold placed by one and released by two; refusals and
+    reads audited; nothing deleted.
 - **`PermissionMatrixIT`:** the professionals are refused on every staff endpoint, and the notary
-  reaches exactly its own.
-- **Browser:** `professionals.test.tsx` and `dashboard/dashboard.test.tsx` (Vitest), and the acceptance journey in
-  `e2e/tests/professionals.ts`.
+  reaches exactly its own (eleven endpoints); the retention endpoints by their permission.
+- **Browser:** `professionals.test.tsx`, `dashboard/dashboard.test.tsx`, `register.test.tsx`,
+  `CaseDetailPage.test.tsx` and `retention/retention.test.tsx` (Vitest), and the acceptance journeys in
+  `e2e/tests/professionals.ts` (a hold placed and released by two administrators), `register.ts` (a
+  replacement approved by a second conservator) and `applications.ts` (a named replacement).
 
 ## Continuous integration
 

@@ -3,7 +3,8 @@
 // One of the professional's own deposits (#/professional/deposits/<id>). Any other id answers "not
 // found", a conflicting deposit's included. It shows the deposit's real status and, if a conflict
 // names it, whether conservators are still reviewing it (ADR-041 D17); never the other deposit. While
-// it is open they add or replace documents, nothing ever deleted, and may withdraw it with a reason.
+// it is open they add documents, ask for one to be replaced (a conservator of the office approves: ADR-041
+// D19), nothing ever deleted, and may withdraw it with a reason.
 // Conservators decide it; nothing here registers anything.
 import { useEffect, useState } from 'react'
 import { fill } from '../../shared/i18n'
@@ -18,8 +19,8 @@ import { Field } from '../../shared/ui/Field'
 import { Alert, Badge, Skeleton } from '../../shared/ui/Feedback'
 import { errorMessage } from '../../shared/ui/errorMessage'
 import { depositsApi, DOCUMENT_CATEGORIES, isOpen, REASON_MAX, REASON_MIN } from './api'
-import type { Deposit, OwnDocument } from './api'
-import { CONFLICT_TONE, DEPOSIT_TONE, refusal } from './tones'
+import type { Deposit, OwnDocument, OwnReplacement } from './api'
+import { CONFLICT_TONE, DEPOSIT_TONE, REPLACEMENT_TONE, refusal } from './tones'
 
 export function DepositPage({ ctx, id }: { ctx: PageContext; id: string }) {
   const { texts, session, lang } = ctx
@@ -97,6 +98,7 @@ function OwnDocuments({ texts, lang, depositId, open, canAdd, onChanged }: {
   const k = texts.register
   const dialog = useDialog()
   const [rows, setRows] = useState<OwnDocument[]>([])
+  const [requests, setRequests] = useState<OwnReplacement[]>([])
   const [category, setCategory] = useState<string>(DOCUMENT_CATEGORIES[0])
   const [file, setFile] = useState<File | null>(null)
   const [chooser, setChooser] = useState(0)
@@ -106,8 +108,8 @@ function OwnDocuments({ texts, lang, depositId, open, canAdd, onChanged }: {
 
   useEffect(() => {
     let current = true
-    depositsApi.documents(depositId)
-      .then((loaded) => { if (current) setRows(loaded) })
+    Promise.all([depositsApi.documents(depositId), depositsApi.replacements(depositId)])
+      .then(([loaded, asked]) => { if (current) { setRows(loaded); setRequests(asked) } })
       .catch((e) => { if (current) setFailure(errorMessage(texts, e)) })
     return () => { current = false }
   }, [depositId, reloads]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -145,12 +147,22 @@ function OwnDocuments({ texts, lang, depositId, open, canAdd, onChanged }: {
     await attempt(() => depositsApi.replaceDocument(depositId, original.id, original.category, replacement, reason.trim()))
   }
 
+  const withdraw = async (r: OwnReplacement) => {
+    const yes = await dialog.confirm({
+      title: k.withdrawReplacementTitle, message: k.withdrawReplacementText, confirmLabel: k.withdrawReplacement, cancelLabel: texts.common.cancel,
+    })
+    if (yes) await attempt(() => depositsApi.withdrawReplacement(depositId, r.id))
+  }
+
   return (
     <div data-own-documents={depositId}>
       {failure && <Alert tone="danger">{failure}</Alert>}
       {rows.length === 0 ? <p className="small muted">{k.noDocuments}</p> : (
         <ul className="plain-list">
-          {rows.map((d) => (
+          {rows.map((d) => {
+            const asked = requests.filter((r) => r.documentId === d.id)
+            const pending = asked.some((r) => r.status === 'PENDING')
+            return (
             <li key={d.id} data-document={d.originalName} data-replaced={d.replacedById !== null}>
               <a href={depositsApi.documentUrl(depositId, d.id)}>{d.originalName}</a>
               {' '}<span className="small">{(p.categories as Record<string, string>)[d.category] ?? d.category}</span>
@@ -160,7 +172,30 @@ function OwnDocuments({ texts, lang, depositId, open, canAdd, onChanged }: {
                 <span className="num">{new Date(d.uploadedAt).toLocaleString(lang)}</span> · <span className="mono">{d.sha256.slice(0, 16)}…</span>
               </div>
               {d.replaceReason && <div className="small">{fill(k.replacesBecause, { reason: d.replaceReason })}</div>}
-              {open && canAdd && d.replacedById === null && (
+              {asked.length > 0 && (
+                <ul className="plain-list replacement-list">
+                  {asked.map((r) => (
+                    <li key={r.id} data-replacement={r.id} data-status={r.status}>
+                      <Badge tone={REPLACEMENT_TONE[r.status]}>{(k.replacementStatuses as Record<string, string>)[r.status]}</Badge>{' '}
+                      <a href={depositsApi.replacementUrl(depositId, r.id)}>{r.originalName}</a>
+                      <div className="small muted">
+                        {!r.requestedBySelf && <>{p.byConservation} · </>}<span className="num">{new Date(r.requestedAt).toLocaleString(lang)}</span>
+                      </div>
+                      <div className="small">{fill(k.replacementReason, { reason: r.reason })}</div>
+                      {r.decisionReason && <div className="small">{fill(k.replacementDecisionReason, { reason: r.decisionReason })}</div>}
+                      {r.status === 'PENDING' && (
+                        <div className="form-actions start">
+                          <span className="small muted">{k.replacementAwaitsConservator}</span>
+                          {r.requestedBySelf && canAdd && (
+                            <Button variant="ghost" disabled={busy} onClick={() => void withdraw(r)}>{k.withdrawReplacement}</Button>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {open && canAdd && d.replacedById === null && !pending && (
                 <label className="small">
                   {fill(k.replaceFile, { name: d.originalName })}{' '}
                   <input type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={busy}
@@ -168,7 +203,8 @@ function OwnDocuments({ texts, lang, depositId, open, canAdd, onChanged }: {
                 </label>
               )}
             </li>
-          ))}
+            )
+          })}
         </ul>
       )}
       {open && canAdd && (

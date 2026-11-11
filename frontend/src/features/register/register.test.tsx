@@ -7,7 +7,7 @@ import { t } from '../../shared/i18n'
 import type { PageContext, Session } from '../../shared/session/types'
 import { DialogProvider } from '../../shared/ui/Dialog'
 import { references, registerApi, share, signingActFor } from './api'
-import type { DepositDocument, Inscription, TitleView } from './api'
+import type { DepositDocument, DocumentReplacement, Inscription, TitleView } from './api'
 import { DepositDocuments } from './DepositDocuments'
 import { ProposalItem } from './Proposals'
 import { RegisterPage } from './RegisterPage'
@@ -161,28 +161,39 @@ describe('the documents of a deposit', () => {
     id: 'd1', transactionId: 'x1', category: 'DEED', sha256: 'a'.repeat(64), sizeBytes: 10, mediaType: 'application/pdf', originalName: 'deed.pdf',
     uploadedBy: ME, uploadedByName: 'Me', uploadedAt: '2026-10-31T10:00:00Z', replacesId: null, replaceReason: null, replacedById: 'd2',
   }
-  const panel = (open: boolean) => render(<DialogProvider><DepositDocuments texts={t('en')} lang="en" transactionId="x1" open={open} canAdd onChanged={vi.fn()} /></DialogProvider>)
+  const asked = (over: Partial<DocumentReplacement> = {}): DocumentReplacement => ({
+    id: 'r1', documentId: 'd1', transactionId: 'x1', sha256: 'b'.repeat(64), sizeBytes: 12, mediaType: 'application/pdf', originalName: 'deed-v2.pdf',
+    reason: 'The first scan was the wrong page', requestedBy: 'someone-else', requestedByName: 'DEMO Notary', requestedAs: 'PROFESSIONAL',
+    requestedAt: '2026-11-05T10:00:00Z', status: 'PENDING', decidedBy: null, decidedByName: null, decidedAt: null, decisionReason: null,
+    resultDocumentId: null, ...over,
+  })
+  const panel = (open: boolean, canConfirm = false) => render(<DialogProvider><DepositDocuments texts={t('en')} lang="en" transactionId="x1" open={open}
+    canAdd canConfirm={canConfirm} viewerId={ME} onChanged={vi.fn()} /></DialogProvider>)
 
   it('says storing registers nothing, and keeps a replaced original readable', async () => {
     vi.spyOn(registerApi, 'documents').mockResolvedValue([row])
+    vi.spyOn(registerApi, 'replacements').mockResolvedValue([])
     panel(true)
     expect((await screen.findByRole('link', { name: 'deed.pdf' })).getAttribute('href')).toBe('/api/v1/register/transactions/x1/documents/d1/content')
     expect(screen.getByText('Replaced, kept')).toBeTruthy()
     expect(screen.getByText(/registers nothing and authorises nothing/)).toBeTruthy()
-    expect(screen.queryByLabelText(/^Replace deed.pdf/)).toBeNull()
+    expect(screen.queryByLabelText(/^Ask to replace deed.pdf/)).toBeNull()
   })
 
   it('offers no change once the deposit is closed, and no deletion ever', async () => {
     vi.spyOn(registerApi, 'documents').mockResolvedValue([{ ...row, replacedById: null }])
-    panel(false)
+    vi.spyOn(registerApi, 'replacements').mockResolvedValue([asked()])
+    panel(false, true)
     expect(await screen.findByRole('link', { name: 'deed.pdf' })).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Add the document' })).toBeNull()
-    expect(screen.queryByLabelText(/^Replace deed.pdf/)).toBeNull()
+    expect(screen.queryByLabelText(/^Ask to replace deed.pdf/)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Approve the replacement' })).toBeNull()
     expect(screen.queryByRole('button', { name: /delete/i })).toBeNull()
   })
 
   it('says why a file was refused', async () => {
     vi.spyOn(registerApi, 'documents').mockResolvedValue([])
+    vi.spyOn(registerApi, 'replacements').mockResolvedValue([])
     vi.spyOn(registerApi, 'addDocument').mockRejectedValue(new ApiError(422, { code: 'PDF_ACTIVE_CONTENT' }))
     panel(true)
     fireEvent.change(await screen.findByLabelText('File'), { target: { files: [new File(['x'], 'a.pdf', { type: 'application/pdf' })] } })
@@ -190,18 +201,49 @@ describe('the documents of a deposit', () => {
     expect(await screen.findByText(t('en').documents.codes.PDF_ACTIVE_CONTENT)).toBeTruthy()
   })
 
-  it('replaces only with a reason', async () => {
+  it('asks for a replacement only with a reason; the original stays current', async () => {
     vi.spyOn(registerApi, 'documents').mockResolvedValue([{ ...row, replacedById: null }])
-    const replace = vi.spyOn(registerApi, 'replaceDocument').mockResolvedValue({ id: 'd2' })
+    vi.spyOn(registerApi, 'replacements').mockResolvedValue([])
+    const replace = vi.spyOn(registerApi, 'replaceDocument').mockResolvedValue({ id: 'r1' })
     panel(true)
-    const input = await screen.findByLabelText(/^Replace deed.pdf/)
+    const input = await screen.findByLabelText(/^Ask to replace deed.pdf/)
     const file = new File(['x'], 'new.pdf', { type: 'application/pdf' })
     fireEvent.change(input, { target: { files: [file] } })
     const dialog = await screen.findByRole('dialog')
+    expect(dialog.textContent).toMatch(/other than you, approves or rejects it/)
     expect(replace).not.toHaveBeenCalled()
     fireEvent.change(dialog.querySelector('textarea, input') as Element, { target: { value: 'The first scan was the wrong page' } })
     fireEvent.click(dialog.querySelector('button[type="submit"]') as Element)
     await waitFor(() => expect(replace).toHaveBeenCalledWith('x1', 'd1', 'DEED', file, 'The first scan was the wrong page'))
+  })
+
+  it('lets another conservator approve or reject a pending request, with a reason to reject', async () => {
+    vi.spyOn(registerApi, 'documents').mockResolvedValue([{ ...row, replacedById: null }])
+    vi.spyOn(registerApi, 'replacements').mockResolvedValue([asked()])
+    const decide = vi.spyOn(registerApi, 'decideReplacement').mockResolvedValue(asked({ status: 'REJECTED' }))
+    panel(true, true)
+    expect(await screen.findByText('Replacement waiting for approval')).toBeTruthy()
+    expect(screen.getByText(/Asked by DEMO Notary \(the depositing professional\)/)).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'deed-v2.pdf' }).getAttribute('href')).toBe('/api/v1/register/transactions/x1/replacements/r1/content')
+    expect(screen.queryByLabelText(/^Ask to replace deed.pdf/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(dialog.querySelector('textarea, input') as Element, { target: { value: 'Still the wrong page, please check' } })
+    fireEvent.click(dialog.querySelector('button[type="submit"]') as Element)
+    await waitFor(() => expect(decide).toHaveBeenCalledWith('x1', 'r1', 'REJECTED', 'Still the wrong page, please check'))
+  })
+
+  it('never offers the requester a decision on their own request, only its withdrawal', async () => {
+    vi.spyOn(registerApi, 'documents').mockResolvedValue([{ ...row, replacedById: null }])
+    vi.spyOn(registerApi, 'replacements').mockResolvedValue([asked({ requestedBy: ME, requestedByName: 'Me', requestedAs: 'STAFF' })])
+    const withdraw = vi.spyOn(registerApi, 'withdrawReplacement').mockResolvedValue(asked({ status: 'WITHDRAWN' }))
+    panel(true, true)
+    expect(await screen.findByText('Waiting for another conservator of the office.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Approve the replacement' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Withdraw my request' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(dialog.querySelector('button[type="submit"]') as Element)
+    await waitFor(() => expect(withdraw).toHaveBeenCalledWith('x1', 'r1'))
   })
 })
 

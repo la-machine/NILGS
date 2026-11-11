@@ -67,6 +67,15 @@ public interface ApplicationRepository {
 
     List<CompletenessRecord> completeness(UUID id);
 
+    /** The document categories of the application that already have a version: asking for one again is a replacement. */
+    List<String> categoriesWithVersions(UUID id);
+
+    /**
+     * Names a document of the application's latest information request for replacement, with its reason (V29). The
+     * database checks that the request is the officer's own, written in this transaction, and that they never uploaded it.
+     */
+    void nameReplacement(UUID id, String category, String reason);
+
     /**
      * Moves the state if the application is still at {@code expectedVersion} and {@code from};
      * {@code actor} null only for the automatic check. False when it changed meanwhile.
