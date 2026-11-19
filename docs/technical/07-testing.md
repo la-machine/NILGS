@@ -55,6 +55,98 @@ It also covers a deposit's documents: the checks of ADR-033, replacement with th
 deposit's lifecycle, a signature failing when a document is added during it, the orphan cleanup keeping
 their files, a changed file never served, and access by office.
 
+Procedures A and B (ADR-042, [guide](../guides/procedures.md)), step 2:
+
+- **pgTAP `32`:** the stage catalogue, fixed and append-only; every reason a procedure is refused for; the seven
+  permissions and their roles; the commission's report, owned by its secretary, the only one that can be granted
+  specially.
+- **Java:** `ProcedureTest` (the same reasons in the code); `ApplicationTypeConfigIT` (the three DEMO types, the
+  catalogue equal in code and database, an invalid procedure refused by both); `PermissionMatrixTest`, `RoleSeedIT`.
+
+Step 3:
+
+- **pgTAP `33`:** every refusal of `procedure_stage_record_add`; the correction chain, nothing updated or deleted; the
+  commission's report never by the visit's officer; the gate on an approval recommendation and an approved decision,
+  a refusal never gated; a stage officer never claims the case; the applicant's statuses only; another office reads none.
+- **Java:** `ProcedureIT` (procedure A through the API, files, corrections, the gate, the applicant's projection, the
+  audit); `PermissionMatrixIT` (`READ_CASE` and `STAGE_RECORDER` reach); `EndpointAnnotationArchTest` (every permission
+  a rule names).
+- **Vitest:** `procedures.test.tsx` and the navigation.
+
+Step 3 verified, and step 4:
+
+- **pgTAP `33`** adds the step 3 verification: a stage file's recorded hash is never changed nor its record deleted; a
+  corrected visit leaves its report kept but `OUTDATED` (staff, queue, applicant), refuses the recommendation with
+  `REPORT_ON_SUPERSEDED_VISIT`, and the decision trigger catches it on its own.
+- **pgTAP `34`:** publication only after the stages before it, the period bounded, the notice append-only; the public
+  function's exact result type; every refusal of an objection and of its decision; the retry key; the late objection;
+  the identity column not granted, masked for other readers; the block on recommendations and decisions, a refusal
+  included; an upheld objection sending a stage back and a new publication; `procedure_registration_problems`.
+  It moves a notice's period into the past by disabling its append-only trigger inside the test transaction.
+- **Java:** `ProcedureIT` (the stage file's hash, bytes, readers, tampering and audit; the journey from publication
+  to approval recommended through two objections); `PermissionMatrixIT` (five more endpoints); `NoticeRateLimiterTest`.
+- **Vitest:** `procedures.test.tsx` (publication, notice, counter form with one retry key, decision form, objection
+  queue, public notices) and the navigation.
+
+The persons of a case (ADR-043 step 5a, V35):
+- **pgTAP `36`:** the declaration's rules (capacity, explicit roles, mandates, exact shares with no default); the
+  declaration turned into DECLARED records and never changed; transcription from a cited document, corrections kept;
+  the check never by its recorder; `UNVERIFIED_DEMO` the only value; acceptance and approval held; who reads; the decided
+  statement; the holders exactly its owners, never the representative; a change after the decision; two signatures.
+  `tap.parties_ready` (helpers) takes the other procedure files' cases through intake.
+- **Java:** `CaseRegistrationIT` (two heirs through a representative, to a title signed by two conservators);
+  `PermissionMatrixIT` (seven endpoints).
+- **Vitest:** `parties.test.tsx`, `DeclarationEditor.test.tsx`.
+
+The corrections of the owner's review (ADR-043 C1 to C5, V35):
+
+The reconsideration of an approved case (ADR-043 step 5b, V36):
+- **pgTAP `38_reconsideration.sql`:** the grounds and every refusal of the opening (permission, state, a registered
+  title, a CREATION in progress, each independence rule, justification, version, stages); round 1 opened, the earlier
+  round unchanged; append-only; one open at a time; registration blocked; the transition and the round refused around
+  the function; the reopened stages recorded again and published anew; the separation across rounds; the new approval
+  and its registration; a refusal that ends the case; privileges.
+- **`db-test.sh`:** two supervisors open the same case's reconsideration at once (ten cases): each exactly once.
+- **Java:** `CaseRegistrationIT` (from the upheld objection to a registered title through the API), `ApplicationDomainTest`,
+  `PermissionMatrixIT`.
+- **Vitest:** `reconsideration.test.tsx`, `reviews/rounds.test.tsx`.
+- **pgTAP `37_registration_integrity.sql`:** every rights code, a usufruct with its term signed and in the state; an
+  expired identity document, its problem and the exception (every refusal); the conservators' evidence (who reads,
+  never a phone or address, the files); the new retention classes and a case hold covering a document added later;
+  `STALE_PROPOSAL` after an identity, statement or parcel correction and after the decision's statement changed; a first
+  signature refused on a new inscription (`CANONICAL_MISMATCH`); a party tampered with fails verification.
+- **`db-test.sh`:** an identity correction races the second signature on ten cases: never both.
+- **Java:** `InscriptionCanonicalTest` (bound bytes), `CaseRegistrationIT` (evidence, tampering, a stale proposal
+  through the API), `PermissionMatrixIT`, `RetentionIT`.
+- **Vitest:** `CaseEvidence.test.tsx`; the exception, the expired document and the term in `parties.test.tsx` and
+  `DeclarationEditor.test.tsx`.
+
+Procedure B's mutation totale (ADR-042 step 6, V37):
+- **pgTAP `39_procedure_mutation.sql`:** the transfer declaration; the opening's refusals and the title resolved, never
+  changed; the deposit naming a case and its refusals; D45 (a co-owner left out); the verification's record, the duty
+  receipt and the conservator's reading of it; D47 after a mortgage, an opposition and a holders' correction; the
+  TRANSFER's refusals, content and holders; D46; a stale proposal proposed again; the registered title and its
+  history; the applicant's reading; privileges. `tap.transfer_declaration` (helpers).
+- **`db-test.sh`:** the case's counter deposit races a notary's deposit on 20 titles (one holds, one in conflict); two
+  deposits naming one case on 10 cases (exactly one accepted) (`bench/register_mutation_setup.sql`).
+- **Java:** `CaseRegistrationIT` (a sale through the notary's account to a TRANSFER signed twice, through the API),
+  `PermissionMatrixIT`, `ApplicantPayloadSchema`.
+- **Vitest:** `DeclarationEditor.test.tsx`, `register.test.tsx`, `procedures.test.tsx`, `RegistrationNotice.test.tsx`.
+
+Procedure A's registration (ADR-042 step 5, V34):
+- **pgTAP `35`:** a CREATION from an approved case only, never from procedure B or the generic type; every refusal
+  of §4 (not approved, an objection open, a second CREATION, a titled parcel or one awaiting another CREATION, a
+  conservator who handled the case); the proposal's content and signed bytes; the case checked again at the signature
+  (an objection, a handler signing, a parcel corrected); the IMMATRICULATION title; the applicant's reading; no
+  objection afterwards; no other origin can be written; the privileges.
+- **`db-test.sh`:** on 20 approved cases, a CREATION's signature races an objection at the counter: no round ends with
+  both the title registered and the objection received (both take the case's lock); a control case registers alone,
+  then refuses an objection.
+- **Java:** `CaseRegistrationIT` (a procedure A case from submission to a signed IMMATRICULATION title that verifies,
+  with the refusals through the API; a generic case refused); `InscriptionCanonicalTest` (the case appended to the
+  signed bytes, every other inscription's unchanged); `PermissionMatrixIT` (two more endpoints).
+- **Vitest:** `register.test.tsx` ("Approved, to register" and the proposal form), `RegistrationNotice.test.tsx`.
+
 Professional accounts (ADR-041, [guide](../guides/professional-accounts.md)):
 
 - **pgTAP:**

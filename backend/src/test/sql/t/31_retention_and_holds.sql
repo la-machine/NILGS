@@ -107,9 +107,13 @@ $f$;
 
 -- ---- 1. The classes: no period, no schedule -----------------------------------------------------------------
 SELECT results_eq($$ SELECT code, standing, schedule_reference IS NULL AND schedule_approved_on IS NULL FROM retention_class ORDER BY code $$,
-    $$ VALUES ('DEPOSIT_DOCUMENT', 'NO_APPROVED_SCHEDULE_KEPT', true), ('DEPOSIT_DOCUMENT_REPLACEMENT', 'NO_APPROVED_SCHEDULE_KEPT', true),
-              ('PROFESSIONAL_EVIDENCE', 'NO_APPROVED_SCHEDULE_KEPT', true) $$,
-    'three classes, each read "no approved schedule: kept"');
+    $$ VALUES ('APPLICATION_IDENTITY_DOCUMENT', 'NO_APPROVED_SCHEDULE_KEPT', true), ('APPLICATION_OWNERSHIP_EVIDENCE', 'NO_APPROVED_SCHEDULE_KEPT', true),
+              ('APPLICATION_SUPPORTING_DOCUMENT', 'NO_APPROVED_SCHEDULE_KEPT', true), ('CASE_IDENTITY_DOCUMENT', 'NO_APPROVED_SCHEDULE_KEPT', true),
+              ('CASE_MANDATE', 'NO_APPROVED_SCHEDULE_KEPT', true), ('CASE_OWNERSHIP_EVIDENCE', 'NO_APPROVED_SCHEDULE_KEPT', true),
+              ('DEPOSIT_DOCUMENT', 'NO_APPROVED_SCHEDULE_KEPT', true), ('DEPOSIT_DOCUMENT_REPLACEMENT', 'NO_APPROVED_SCHEDULE_KEPT', true),
+              ('PROCEDURE_OBJECTION_EVIDENCE', 'NO_APPROVED_SCHEDULE_KEPT', true),
+              ('PROCEDURE_STAGE_EVIDENCE', 'NO_APPROVED_SCHEDULE_KEPT', true), ('PROFESSIONAL_EVIDENCE', 'NO_APPROVED_SCHEDULE_KEPT', true) $$,
+    'eleven classes (from V32 and V33, ADR-042, and six from V35, ADR-043), each read "no approved schedule: kept"');
 SELECT is((SELECT count(*)::int FROM information_schema.columns WHERE table_schema = 'snigf' AND table_name = 'retention_class'
              AND column_name ~ '(period|year|month|day|until|expir|dispos)'), 0, 'no period column: a schedule needs its own ADR and migration');
 SELECT throws_ok($$ INSERT INTO retention_class (code, description_en, description_fr, schedule_reference) VALUES ('TEST_CLASS', 'x', 'x', 'DEMO-SCHED-1') $$,

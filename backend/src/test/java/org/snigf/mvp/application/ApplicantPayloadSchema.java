@@ -30,7 +30,26 @@ public final class ApplicantPayloadSchema {
             "completeness", "completeness[].kind", "completeness[].missing", "completeness[].requested",
             "completeness[].message", "completeness[].by", "completeness[].at",
             "completeness[].replacements", "completeness[].replacements[].category", "completeness[].replacements[].reason",
-            "decision", "decision.outcome", "decision.grounds", "decision.simulated", "decision.decidedAt");
+            "decision", "decision.outcome", "decision.grounds", "decision.simulated", "decision.decidedAt",
+            // ADR-042: each stage of the procedure, its status and date; never the officer, finding or evidence.
+            "stages", "stages[].stage", "stages[].status", "stages[].at",
+            // ADR-042 decision 5: what the office asks to carry out again, and the applicant's action; never the objection.
+            "procedureInstructions", "procedureInstructions[].stages", "procedureInstructions[].action", "procedureInstructions[].at",
+            "procedureInstructions[].pending",
+            // ADR-042 §4: "Registered: DEMO-TF-…", the title's number and when; never its holders or the inscription. Step 6:
+            // whether the case created the title or transferred it.
+            "registration", "registration.titleNumber", "registration.registeredAt", "registration.kind",
+            // ADR-043: the applicant's own declaration, what is wrong with it while a draft, and where each person stands;
+            // never the officer, the files or a check's note. Every status is DEMO, never independently verified.
+            "declaration", "declaration.capacity", "declaration.persons", "declaration.persons[].ref", "declaration.persons[].kind",
+            "declaration.persons[].roles", "declaration.persons[].fullName", "declaration.persons[].identityKind",
+            "declaration.persons[].identityNumber", "declaration.persons[].phone", "declaration.persons[].postalAddress",
+            "declaration.shares", "declaration.shares[].person", "declaration.shares[].interest", "declaration.shares[].shareNum",
+            "declaration.shares[].shareDen", "declaration.mandates", "declaration.mandates[].representative",
+            "declaration.mandates[].represents", "declaration.mandates[].scope", "declarationProblems",
+            "parties", "parties[].ref", "parties[].roles", "parties[].fullName", "parties[].status", "parties[].verification",
+            "reconsiderations", "reconsiderations[].round", "reconsiderations[].stages", "reconsiderations[].openedAt",
+            "reconsiderations[].decided");
 
     /** Taken whole: the public type catalogue and the applicant's own answers. */
     private static final Set<String> WHOLE = Set.of("type", "data");

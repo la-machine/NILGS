@@ -10,6 +10,9 @@ import org.snigf.mvp.shared.security.Permission;
 import org.snigf.mvp.shared.security.Permission.Scope;
 
 import static org.snigf.mvp.shared.security.Permission.ADMIN_ACCOUNT_LIST;
+import static org.snigf.mvp.shared.security.Permission.APPLICATION_PARTY_CHECK;
+import static org.snigf.mvp.shared.security.Permission.APPLICATION_PARTY_EXCEPTION;
+import static org.snigf.mvp.shared.security.Permission.APPLICATION_PARTY_RECORD;
 import static org.snigf.mvp.shared.security.Permission.ADMIN_ASSIGNMENT_APPROVE;
 import static org.snigf.mvp.shared.security.Permission.ADMIN_ASSIGNMENT_READ;
 import static org.snigf.mvp.shared.security.Permission.ADMIN_GRANT_APPROVE;
@@ -63,6 +66,14 @@ import static org.snigf.mvp.shared.security.Permission.RECORDS_RETENTION_READ;
 import static org.snigf.mvp.shared.security.Permission.REGISTER_READ;
 import static org.snigf.mvp.shared.security.Permission.REGISTER_TRANSACTION_DECIDE;
 import static org.snigf.mvp.shared.security.Permission.REVIEW_RECOMMEND;
+import static org.snigf.mvp.shared.security.Permission.PROCEDURE_DELIVERY_RECORD;
+import static org.snigf.mvp.shared.security.Permission.PROCEDURE_CASE_REOPEN;
+import static org.snigf.mvp.shared.security.Permission.PROCEDURE_OBJECTION_DECIDE;
+import static org.snigf.mvp.shared.security.Permission.PROCEDURE_OBJECTION_RECORD;
+import static org.snigf.mvp.shared.security.Permission.PROCEDURE_STAGE_TITLE;
+import static org.snigf.mvp.shared.security.Permission.PROCEDURE_STAGE_PUBLISH;
+import static org.snigf.mvp.shared.security.Permission.PROCEDURE_COMMISSION_REPORT;
+import static org.snigf.mvp.shared.security.Permission.PROCEDURE_STAGE_CADASTRAL;
 
 /**
  * The baseline roles of the Baseline permission matrix, expressed in the fine-grained
@@ -79,17 +90,25 @@ public enum BaselineRole {
             APPLICATION_READ, Scope.OWN, PAYMENT_PAY, Scope.OWN)),
     INTAKE_OFFICER("Agent d’accueil", "Intake officer", entries(
             PARCEL_READ, Scope.ANY, APPLICATION_READ, Scope.OFFICE,
-            COMPLETENESS_REVIEW, Scope.OFFICE, COMPLETENESS_REQUEST_INFO, Scope.OFFICE)),
+            COMPLETENESS_REVIEW, Scope.OFFICE, COMPLETENESS_REQUEST_INFO, Scope.OFFICE,
+            PROCEDURE_STAGE_PUBLISH, Scope.OFFICE, PROCEDURE_OBJECTION_RECORD, Scope.OFFICE, PROCEDURE_DELIVERY_RECORD, Scope.OFFICE,
+            APPLICATION_PARTY_RECORD, Scope.OFFICE, APPLICATION_PARTY_CHECK, Scope.OFFICE)),
     CADASTRAL_OFFICER("Agent du cadastre", "Cadastral officer", entries(
             PARCEL_CREATE, Scope.OFFICE, PARCEL_CORRECT, Scope.OFFICE, PARCEL_READ, Scope.ANY,
-            APPLICATION_READ, Scope.OFFICE, ALERT_REVIEW, Scope.OFFICE, ALERT_RESOLVE, Scope.OFFICE)),
+            APPLICATION_READ, Scope.OFFICE, ALERT_REVIEW, Scope.OFFICE, ALERT_RESOLVE, Scope.OFFICE,
+            PROCEDURE_STAGE_CADASTRAL, Scope.OFFICE)),
+    /** Records and validates the commission's report on a field visit (ADR-042, D26); a designated member gets it by special grant. */
+    COMMISSION_SECRETARY("Secrétaire de commission (démonstration)", "Commission secretary (demonstration)", entries(
+            PARCEL_READ, Scope.ANY, APPLICATION_READ, Scope.OFFICE, PROCEDURE_COMMISSION_REPORT, Scope.OFFICE)),
     REVIEWER("Instructeur", "Reviewer", entries(
             PARCEL_READ, Scope.ANY, APPLICATION_READ, Scope.ASSIGNED, REVIEW_RECOMMEND, Scope.ASSIGNED)),
     DECISION_AUTHORITY("Autorité de décision (simulée)", "Decision authority (simulated)", entries(
             PARCEL_READ, Scope.ANY, APPLICATION_READ, Scope.ASSIGNED, DECISION_RECORD, Scope.ASSIGNED)),
     SUPERVISOR("Superviseur", "Supervisor", entries(
             PARCEL_READ, Scope.ANY, APPLICATION_READ, Scope.OFFICE, REPORT_WORKLOAD, Scope.OFFICE,
-            AUDIT_EVENT_SEARCH, Scope.OFFICE, AUDIT_CHAIN_VERIFY, Scope.ANY, IDENTITY_RESET_CONFIRM, Scope.OFFICE)),
+            AUDIT_EVENT_SEARCH, Scope.OFFICE, AUDIT_CHAIN_VERIFY, Scope.ANY, IDENTITY_RESET_CONFIRM, Scope.OFFICE,
+            PROCEDURE_OBJECTION_DECIDE, Scope.OFFICE, APPLICATION_PARTY_CHECK, Scope.OFFICE, APPLICATION_PARTY_EXCEPTION, Scope.OFFICE,
+            PROCEDURE_CASE_REOPEN, Scope.OFFICE)),
     AUDITOR("Auditeur", "Auditor", entries(
             PARCEL_READ, Scope.ANY, APPLICATION_READ, Scope.ANY,
             AUDIT_EVENT_SEARCH, Scope.ANY, AUDIT_CHAIN_VERIFY, Scope.ANY, AUDIT_CHECKPOINT_CREATE, Scope.ANY,
@@ -103,7 +122,7 @@ public enum BaselineRole {
     /** The keeper of the DEMO land register at a conservation (ADR-040): nothing here is a legal registration. */
     CONSERVATOR("Conservateur (démonstration)", "Conservator (demonstration)", entries(
             PARCEL_READ, Scope.ANY, REGISTER_READ, Scope.OFFICE, REGISTER_PROPOSE, Scope.OFFICE, REGISTER_INSCRIBE, Scope.OFFICE,
-            REGISTER_CONFIRM, Scope.OFFICE, REGISTER_TRANSACTION_DECIDE, Scope.OFFICE)),
+            REGISTER_CONFIRM, Scope.OFFICE, REGISTER_TRANSACTION_DECIDE, Scope.OFFICE, PROCEDURE_STAGE_TITLE, Scope.OFFICE)),
     /** A notary's account once approved (ADR-041): computed from the profile and its offices, never assigned. */
     NOTARY("Notaire (démonstration)", "Notary (demonstration)", entries(
             REGISTER_DEPOSIT_SUBMIT, Scope.OFFICE, REGISTER_DEPOSIT_READ, Scope.OWN, REGISTER_DEPOSIT_DOCUMENT, Scope.OWN,

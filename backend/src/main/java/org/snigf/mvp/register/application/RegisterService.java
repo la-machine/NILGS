@@ -52,6 +52,9 @@ public class RegisterService {
     static final String ENTITY_TITLE = "LAND_TITLE";
     private static final String PROPOSE_ENDPOINT = "POST /api/v1/register/inscriptions";
     private static final String DEPOSIT_ENDPOINT = "POST /api/v1/register/transactions";
+    private static final String CASE_ENDPOINT = "POST /api/v1/register/cases/{id}/creation";
+    private static final String CASE_TRANSFER_ENDPOINT = "POST /api/v1/register/cases/{id}/transfer";
+    static final String ENTITY_APPLICATION = "APPLICATION";
 
     /** A title with its whole history, as a conservator reads it. */
     public record TitleView(Register.Title title, List<Register.Inscription> inscriptions, List<Register.Transaction> transactions,
@@ -104,6 +107,13 @@ public class RegisterService {
     public List<Register.Inscription> proposals(AuthenticatedUser staff, String officeCode, int page) {
         actor.bind(staff.userId());
         return register.proposals(officeCode, properties.pageSize(), offset(page));
+    }
+
+    /** "Approved, to register" (ADR-042 §4): a view over the cases at the conservator's offices, never a table of its own. */
+    @Transactional(readOnly = true)
+    public List<Register.CaseToRegister> caseQueue(AuthenticatedUser staff, int page) {
+        actor.bind(staff.userId());
+        return register.caseQueue(properties.pageSize(), offset(page));
     }
 
     @Transactional(readOnly = true)
@@ -217,6 +227,90 @@ public class RegisterService {
         return id;
     }
 
+    /**
+     * Proposes the CREATION of an approved procedure A case (ADR-042 §4). The database takes the parcel, its area, the
+     * authority and the evidence from the case, and the holders from the ownership statement the decision approved
+     * (ADR-043 D36), and refuses everything §4 lists. It is then signed by two conservators who never handled the case
+     * (D40), each signature checked against the case. Registering creates the title's record and nothing else: no title
+     * document, no notice (D27, D29). A retry with the same {@code Idempotency-Key} returns the same proposal.
+     */
+    @Transactional
+    public UUID proposeFromCase(AuthenticatedUser staff, UUID applicationId, String reason, String idempotencyKey) {
+        actor.bind(staff.userId());
+        String hash = writes.requestHash(idempotencyKey, new Object[] {applicationId, reason});
+        var earlier = writes.earlier(staff.userId(), idempotencyKey, hash);
+        if (earlier.isPresent()) {
+            return earlier.get();
+        }
+        UUID id = guarded(staff, ENTITY_APPLICATION, applicationId, "PROPOSE_FROM_CASE", () -> register.proposeFromCase(applicationId, reason));
+        Register.Inscription proposed = register.inscription(id).orElseThrow();
+        audit.record(AuditEvent.of(AuditAction.PROCEDURE_REGISTRATION_PROPOSED, AuditOutcome.SUCCESS).withEntity(ENTITY_INSCRIPTION, id)
+                .withEntityRef(proposed.authorityReference())
+                .withDetails(Map.of("kind", proposed.kind(), "office", proposed.officeCode(), "application", applicationId.toString())));
+        writes.remember(staff.userId(), idempotencyKey, CASE_ENDPOINT, hash, id);
+        return id;
+    }
+
+    /**
+     * Proposes the TRANSFER of an approved procedure B case (ADR-042 step 6, §5 as redesigned). The database puts it onto the
+     * case's title at its current version, completing the case's holding deposit, and takes the new holders from the
+     * transferees of the ownership statement the decision approved (ADR-043 D36); the conservator enters no holder. It refuses
+     * a case not approved, a verification that no longer holds (D47), persons changed since the decision, a second TRANSFER,
+     * and a conservator who handled the case or received its counter deposit. It is then signed by two such conservators
+     * (D46). A retry with the same {@code Idempotency-Key} returns the same proposal.
+     */
+    @Transactional
+    public UUID proposeTransferFromCase(AuthenticatedUser staff, UUID applicationId, String reason, String idempotencyKey) {
+        actor.bind(staff.userId());
+        String hash = writes.requestHash(idempotencyKey, new Object[] {applicationId, reason, "TRANSFER"});
+        var earlier = writes.earlier(staff.userId(), idempotencyKey, hash);
+        if (earlier.isPresent()) {
+            return earlier.get();
+        }
+        UUID id = guarded(staff, ENTITY_APPLICATION, applicationId, "PROPOSE_TRANSFER_FROM_CASE",
+                () -> register.proposeTransferFromCase(applicationId, reason));
+        Register.Inscription proposed = register.inscription(id).orElseThrow();
+        audit.record(AuditEvent.of(AuditAction.PROCEDURE_REGISTRATION_PROPOSED, AuditOutcome.SUCCESS).withEntity(ENTITY_INSCRIPTION, id)
+                .withEntityRef(proposed.authorityReference())
+                .withDetails(Map.of("kind", proposed.kind(), "office", proposed.officeCode(), "application", applicationId.toString())));
+        writes.remember(staff.userId(), idempotencyKey, CASE_TRANSFER_ENDPOINT, hash, id);
+        return id;
+    }
+
+    /** A document of a case's evidence to send, already checked against its hash. */
+    public record EvidenceDownload(Register.EvidenceFile file, InputStream content) {
+    }
+
+    /**
+     * What a conservator examines before signing a CREATION from a case (ADR-043, owner's review): the approved owners,
+     * rights and shares, their identities as transcribed and checked, the mandates and the cited documents; never a phone
+     * or an address. Read-only, for the registration task only (the database decides who), and every read is audited.
+     */
+    @Transactional
+    public String caseEvidence(AuthenticatedUser staff, UUID applicationId) {
+        actor.bind(staff.userId());
+        String evidence = register.caseEvidence(applicationId).orElse(null);
+        if (evidence == null) {
+            throw refusedIndependently(staff, ENTITY_APPLICATION, applicationId, RegisterRefused.of("CASE_NOT_FOUND"));
+        }
+        audit.record(AuditEvent.of(AuditAction.CASE_PARTIES_READ_FOR_REGISTRATION, AuditOutcome.SUCCESS).withEntity(ENTITY_APPLICATION, applicationId)
+                .withDetails(Map.of("purpose", "REGISTRATION")));
+        return evidence;
+    }
+
+    /** A cited document, as an attachment; its hash is checked first, and the read is audited. */
+    @Transactional
+    public EvidenceDownload caseEvidenceFile(AuthenticatedUser staff, UUID applicationId, UUID fileId) {
+        actor.bind(staff.userId());
+        Register.EvidenceFile f = register.caseEvidenceFile(applicationId, fileId).orElseThrow(() -> RegisterRefused.of("DOCUMENT_NOT_FOUND"));
+        if (!files.intact(f.storageKey(), f.sha256(), f.sizeBytes())) {
+            throw refusedIndependently(staff, ENTITY_APPLICATION, applicationId, new RegisterRefused(RegisterRefused.Kind.BROKEN, "FILE_INTEGRITY_FAILED"));
+        }
+        audit.record(AuditEvent.of(AuditAction.CASE_PARTY_FILE_DOWNLOADED, AuditOutcome.SUCCESS).withEntity(ENTITY_APPLICATION, applicationId)
+                .withDetails(Map.of("file", f.id().toString(), "kind", f.kind(), "purpose", "REGISTRATION")));
+        return new EvidenceDownload(f, files.open(f.storageKey()));
+    }
+
     // --- Signing -----------------------------------------------------------------------------------
 
     /** Starts the officer's signature over the inscription as the database encodes it now. */
@@ -316,6 +410,9 @@ public class RegisterService {
         details.put("status", t.status());
         details.put("office", t.officeCode());
         details.put("reviewDueAt", t.reviewDueAt().toString());
+        if (deposit.caseReference() != null && !deposit.caseReference().isBlank()) {
+            details.put("case", deposit.caseReference().strip());
+        }
         audit.record(AuditEvent.of(AuditAction.REGISTER_TRANSACTION_DEPOSITED, AuditOutcome.SUCCESS).withEntity(ENTITY_TRANSACTION, id)
                 .withEntityRef(t.titleNumber()).withDetails(details));
         register.conflictOf(id).ifPresent(conflict -> audit.record(AuditEvent.of(AuditAction.REGISTER_CONFLICT_OPENED, AuditOutcome.SUCCESS)

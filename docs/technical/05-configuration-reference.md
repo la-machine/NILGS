@@ -165,6 +165,9 @@ an environment variable of the same name.
 | `SNIGF_REGISTER_OVERDUE_CRON` | `0 15 * * * *` | When overdue locks are recorded for review (Spring cron; `-` turns it off) | compose, `application.yaml` |
 | `SNIGF_REGISTER_PAGE_SIZE` | `20` | Entries per page in the register's lists (5 to 200) | compose, `application.yaml` |
 | `SNIGF_RATE_LOOKUP_PER_HOUR` | `60` | Title lookups per professional account per hour (ADR-041 §6), 1 to 10000; the accounts counted at once follow `SNIGF_RATE_MAX_TRACKED_CLIENTS` | compose, `application.yaml` |
+| `SNIGF_PROCEDURE_OBJECTION_PERIOD` | `P30D` (`PT5M` in the development `.env`) | The objection period a publication opens (ADR-042 §3, P3), ISO-8601, `PT1M` to `P365D`; a DEMO value, never a legal deadline. The app refuses to start outside the bounds, and the database bounds it again | compose, `application.yaml` |
+| `SNIGF_RATE_NOTICES_PER_MINUTE` | `30` | Public notices listings per client address and minute, 1 to 600 (ADR-042 §3); then `429` with `Retry-After` | compose, `application.yaml` |
+| `SNIGF_PROCEDURE_PAGE_SIZE` | `50` | Entries per page of the objection queue and of the public notices, 5 to 200 | compose, `application.yaml` |
 | `SNIGF_DOCUMENT_DIRECTORY` | `../var/documents` | Where document files are kept when running from the IDE; compose mounts the volume `document-data` at `/var/lib/snigf/documents` | `application.yaml` |
 | `SNIGF_DOCUMENT_MAX_BYTES` | `10485760` | Largest document accepted, in bytes (Baseline: 10 MB DEMO limit; at most 100 MB) | compose, `application.yaml` (also the servlet's `max-file-size`) |
 | `SNIGF_DOCUMENT_MAX_VERSIONS` | `10` | Versions one document may have (1 to 100) | compose, `application.yaml` |

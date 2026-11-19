@@ -12,11 +12,12 @@ import java.util.regex.Pattern;
 
 /**
  * What an application type asks for (C4: configurable, labelled as demonstration requirements):
- * the form's fields and the document categories. Defined in configuration, stored as one version
- * of the type (V13), and checked here, both when a definition is loaded and when a form is saved
- * or submitted. Every value of a form is text.
+ * the form's fields, the document categories and, for a procedure's type, its procedure (ADR-042).
+ * Defined in configuration, stored as one version of the type (V13), and checked here, both when a
+ * definition is loaded and when a form is saved or submitted. Every value of a form is text. The
+ * database checks the procedure again (V31, {@code application_procedure_problems}).
  */
-public record Requirements(List<Field> fields, List<DocumentCategory> documents) {
+public record Requirements(List<Field> fields, List<DocumentCategory> documents, Procedure procedure) {
 
     /** A field's key, a document category's code, a choice's code. */
     private static final Pattern KEY = Pattern.compile("^[a-z][a-zA-Z0-9]{1,39}$");
@@ -42,9 +43,69 @@ public record Requirements(List<Field> fields, List<DocumentCategory> documents)
     public record DocumentCategory(String code, boolean required, String labelFr, String labelEn) {
     }
 
+    /**
+     * A type's procedure (ADR-042 §1): its code ({@code A} or {@code B}), its stages from the catalogue in rank
+     * order, the register act it leads to, and whether a notice and its collection follow the registration.
+     */
+    public record Procedure(String code, List<String> stages, String registers, boolean delivery) {
+
+        public Procedure {
+            stages = stages == null ? List.of() : List.copyOf(stages);
+        }
+
+        /** The stages as the catalogue knows them (unknown codes left out). */
+        public List<ProcedureStage> catalogueStages() {
+            return stages.stream().map(ProcedureStage::of).filter(java.util.Objects::nonNull).toList();
+        }
+
+        /** What is wrong with it, with the database's reason codes. */
+        public List<String> problems() {
+            List<String> problems = new ArrayList<>();
+            if (!"A".equals(code) && !"B".equals(code)) {
+                problems.add("procedure: PROCEDURE_UNKNOWN (A or B)");
+            }
+            if (registers == null || !registers.equals(ProcedureStage.registers(code == null ? "" : code))) {
+                problems.add("procedure: PROCEDURE_REGISTERS_MISMATCH (A registers CREATION, B registers TRANSFER)");
+            }
+            if (stages.isEmpty()) {
+                problems.add("procedure: PROCEDURE_NO_STAGES");
+                return problems;
+            }
+            Set<ProcedureStage> seen = new HashSet<>();
+            int lastRank = 0;
+            for (String c : stages) {
+                ProcedureStage stage = ProcedureStage.of(c);
+                if (stage == null) {
+                    problems.add("procedure: STAGE_UNKNOWN:" + c);
+                    continue;
+                }
+                if (!stage.procedure().equals(code)) {
+                    problems.add("procedure: STAGE_OF_ANOTHER_PROCEDURE:" + c);
+                    continue;
+                }
+                if (seen.contains(stage)) {
+                    problems.add("procedure: STAGE_TWICE:" + c);
+                } else if (stage.rank() <= lastRank) {
+                    problems.add("procedure: STAGE_OUT_OF_ORDER:" + c);
+                }
+                if (stage.requires() != null && !seen.contains(stage.requires())) {
+                    problems.add("procedure: STAGE_NEEDS:" + c + "<" + stage.requires().name());
+                }
+                seen.add(stage);
+                lastRank = Math.max(lastRank, stage.rank());
+            }
+            return problems;
+        }
+    }
+
     public Requirements {
         fields = fields == null ? List.of() : List.copyOf(fields);
         documents = documents == null ? List.of() : List.copyOf(documents);
+    }
+
+    /** A type without a procedure. */
+    public Requirements(List<Field> fields, List<DocumentCategory> documents) {
+        this(fields, documents, null);
     }
 
     /** What is wrong with this definition, as readable reasons (empty when it can be used). */
@@ -93,6 +154,9 @@ public record Requirements(List<Field> fields, List<DocumentCategory> documents)
                 problems.add(where + ": duplicate code");
             }
             labels(problems, where, d.labelFr(), d.labelEn());
+        }
+        if (procedure != null) {
+            problems.addAll(procedure.problems());
         }
         return problems;
     }

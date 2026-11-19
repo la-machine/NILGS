@@ -54,12 +54,12 @@ class ReviewController {
     record AssignmentResponse(String stage, String assigneeName, Instant at, boolean mine) {
     }
 
-    record StepResponse(String kind, String recommendation, String text, String actorName, Instant at) {
+    record StepResponse(String kind, String recommendation, String text, String actorName, Instant at, int round) {
     }
 
     /** {@code simulated} is always true: "Simulated decision — no legal effect". */
     record DecisionResponse(String outcome, String grounds, List<UUID> citedVersions, boolean simulated, String decidedByName,
-                            Instant at) {
+                            Instant at, int round) {
     }
 
     /**
@@ -67,10 +67,17 @@ class ReviewController {
      */
     /**
      * @param youRecommended whether the person asking recommended on this case (then never decides it)
+     * @param procedureGate  what the case's procedure still needs before an approval (ADR-042): empty when nothing,
+     *                       or for a type without a procedure; a refusal never waits for it
+     */
+    /**
+     * @param round            the current review round (V36): 0, then one per reconsideration; {@code decision} is its own,
+     *                         {@code earlierDecisions} those of the earlier rounds, kept unchanged
      */
     record ReviewResponse(UUID id, String reference, String state, long version, String officeCode,
                           List<AssignmentResponse> assignments, List<StepResponse> steps, DecisionResponse decision,
-                          int openAlerts, boolean youRecommended) {
+                          int openAlerts, boolean youRecommended, List<String> procedureGate, int round,
+                          List<DecisionResponse> earlierDecisions) {
     }
 
     @GetMapping("/api/v1/reviews")
@@ -135,10 +142,14 @@ class ReviewController {
                 view.assignments().stream().map(a -> new AssignmentResponse(a.stage().name(), a.assigneeName(), a.at(),
                         a.assigneeId().equals(viewer.userId()))).toList(),
                 view.steps().stream().map(s -> new StepResponse(s.kind(),
-                        s.recommendation() == null ? null : s.recommendation().name(), s.text(), s.actorName(), s.at())).toList(),
-                view.decision().map(d -> new DecisionResponse(d.outcome().name(), d.grounds(), d.citedVersions(), d.simulated(),
-                        d.decidedByName(), d.at())).orElse(null),
+                        s.recommendation() == null ? null : s.recommendation().name(), s.text(), s.actorName(), s.at(), s.round())).toList(),
+                view.decision().map(ReviewController::decision).orElse(null),
                 view.openAlerts(),
-                view.steps().stream().anyMatch(st -> st.kind().equals("RECOMMENDATION") && st.actorId().equals(viewer.userId())));
+                view.steps().stream().anyMatch(st -> st.kind().equals("RECOMMENDATION") && st.actorId().equals(viewer.userId())),
+                view.procedureGate(), view.round(), view.earlierDecisions().stream().map(ReviewController::decision).toList());
+    }
+
+    private static DecisionResponse decision(Review.Decision d) {
+        return new DecisionResponse(d.outcome().name(), d.grounds(), d.citedVersions(), d.simulated(), d.decidedByName(), d.at(), d.round());
     }
 }

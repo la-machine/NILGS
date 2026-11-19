@@ -47,6 +47,8 @@ public class SecurityConfiguration {
     /** Public verification of documents issued by SNIGF (ADR-039): no session needed; CSRF still applies to POST. */
     static final String PUBLIC_VERIFICATION = API + "/public/verifications/**";
     static final String PUBLIC_VERIFICATION_ROOT = API + "/public/verifications";
+    /** The public notices of procedures (ADR-042): read-only, no session needed. */
+    static final String PUBLIC_NOTICES = API + "/public/notices";
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, SessionSecurityContextRepository contexts,
@@ -66,6 +68,7 @@ public class SecurityConfiguration {
                 .requestMatchers(HttpMethod.POST, PROVIDER_CALLBACKS).permitAll()
                 .requestMatchers(HttpMethod.GET, PUBLIC_VERIFICATION).permitAll()
                 .requestMatchers(HttpMethod.POST, PUBLIC_VERIFICATION_ROOT).permitAll()
+                .requestMatchers(HttpMethod.GET, PUBLIC_NOTICES).permitAll()
                 .requestMatchers(API + "/auth/session", API + "/auth/logout", API + "/auth/mfa/**").authenticated()
                 .requestMatchers(API + "/**").hasAuthority(AuthLevel.FULL.authority())
                 .anyRequest().denyAll())

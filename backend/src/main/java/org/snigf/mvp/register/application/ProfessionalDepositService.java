@@ -48,7 +48,7 @@ public class ProfessionalDepositService {
     }
 
     /** What makes two deposit requests the same, for {@code Idempotency-Key}. */
-    private record DepositRequest(UUID titleId, String kind, Register.NewDepositor depositor, List<String> files) {
+    private record DepositRequest(UUID titleId, String kind, String caseReference, Register.NewDepositor depositor, List<String> files) {
     }
 
     private final RegisterRepository register;
@@ -103,8 +103,8 @@ public class ProfessionalDepositService {
 
     /** Deposits a transaction with its files, a deed among them. A retry with the same {@code Idempotency-Key} returns the same deposit. */
     @Transactional
-    public UUID deposit(AuthenticatedUser professional, UUID titleId, String kind, Register.NewDepositor depositor, List<Upload> uploads,
-                        String idempotencyKey) {
+    public UUID deposit(AuthenticatedUser professional, UUID titleId, String kind, String caseReference, Register.NewDepositor depositor,
+                        List<Upload> uploads, String idempotencyKey) {
         actor.bind(professional.userId());
         RegisterWrites.requireKey(idempotencyKey);
         if (uploads == null || uploads.isEmpty() || uploads.size() > MAX_FILES) {
@@ -127,7 +127,7 @@ public class ProfessionalDepositService {
             for (int i = 0; i < uploads.size(); i++) {
                 described.add(uploads.get(i).category() + ":" + received.get(i).sha256() + ":" + received.get(i).name());
             }
-            String hash = writes.requestHash(idempotencyKey, new DepositRequest(titleId, kind, depositor, described));
+            String hash = writes.requestHash(idempotencyKey, new DepositRequest(titleId, kind, caseReference, depositor, described));
             var earlier = writes.earlier(professional.userId(), idempotencyKey, hash);
             if (earlier.isPresent()) {
                 return earlier.get();
@@ -140,7 +140,7 @@ public class ProfessionalDepositService {
                 recorded.add(new Register.KeptDocument(uploads.get(i).category(), key, file.sha256(), file.sizeBytes(), file.mediaType(), file.name()));
             }
             Register.DepositOutcome outcome = writes.guarded(ENTITY_TITLE, titleId, "DEPOSIT_AS_PROFESSIONAL",
-                    () -> register.depositAsProfessional(titleId, kind, depositor, recorded, properties.lockReviewAfter()));
+                    () -> register.depositAsProfessional(titleId, kind, caseReference, depositor, recorded, properties.lockReviewAfter()));
             UUID id = outcome.transactionId();
             Register.ProfessionalDeposit d = own(id);
             Map<String, Object> details = new LinkedHashMap<>();

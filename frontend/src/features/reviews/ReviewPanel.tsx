@@ -19,6 +19,7 @@ import { Field } from '../../shared/ui/Field'
 import { Alert } from '../../shared/ui/Feedback'
 import { useDialog } from '../../shared/ui/dialogContext'
 import { errorMessage } from '../../shared/ui/errorMessage'
+import { gateReason } from '../procedures'
 import { OUTCOMES, RECOMMENDATIONS, reviewsApi, TEXT_MAX, TEXT_MIN } from './api'
 import type { Outcome, Recommendation, Review } from './api'
 
@@ -124,6 +125,7 @@ export function ReviewPanel({ texts, session, review, citable, onChanged, onRelo
         <div className="form">
           <p className="simulated-notice" role="note">{texts.decision.simulated}</p>
           {review.openAlerts > 0 && <Alert tone="warning">{fill(r.alertText, { n: review.openAlerts })}</Alert>}
+          <ProcedureGate texts={texts} gate={review.procedureGate} />
           <fieldset className="resolution-choices">
             <legend className="field-label">{r.outcomeLabel}</legend>
             {OUTCOMES.map((value) => (
@@ -166,5 +168,16 @@ export function ReviewPanel({ texts, session, review, citable, onChanged, onRelo
         </div>
       )}
     </Card>
+  )
+}
+
+/** What the case's procedure still needs (ADR-042): an approval waits for it, a refusal does not. */
+function ProcedureGate({ texts, gate }: { texts: Texts; gate: string[] | undefined }) {
+  if (!gate || gate.length === 0) return null
+  return (
+    <Alert tone="warning" title={texts.procedures.gateTitle}>
+      <ul className="plain-list" data-gate>{gate.map((g) => <li key={g} data-problem={g}>{gateReason(texts, g)}</li>)}</ul>
+      <div className="small">{texts.procedures.gateRefusalStillPossible}</div>
+    </Alert>
   )
 }

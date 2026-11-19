@@ -12,6 +12,7 @@ import { Alert, Badge } from '../../shared/ui/Feedback'
 import { errorMessage } from '../../shared/ui/errorMessage'
 import { DUAL_CONTROL, REASON_MAX, REASON_MIN, registerApi, share, signingActFor } from './api'
 import type { Inscription } from './api'
+import { CaseEvidence } from './CaseEvidence'
 import { STATUS_TONE } from './tones'
 
 /** What an inscription says: its holders, its charge, its authority. */
@@ -82,6 +83,7 @@ export function ProposalItem({ texts, lang, viewerId, inscription: i, canInscrib
       </div>
       {DUAL_CONTROL.includes(i.kind) && <p className="small muted">{k.dualControl}</p>}
       <InscriptionFacts texts={texts} inscription={i} />
+      {i.kind === 'CREATION' && i.applicationId && i.status !== 'REGISTERED' && <CaseEvidence texts={texts} lang={lang} applicationId={i.applicationId} />}
       {failure && <Alert tone="danger">{failure}</Alert>}
       <div className="form-actions start">
         {act && allowed && <Button variant="primary" icon="key" onClick={sign} busy={busy} disabled={busy}>{k.signAction[act]}</Button>}

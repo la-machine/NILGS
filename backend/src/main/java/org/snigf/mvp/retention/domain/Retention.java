@@ -20,10 +20,11 @@ public final class Retention {
 
     /** What a hold may name. The first three are single records; the last two cover what belongs to them. */
     public static final Set<String> SUBJECT_KINDS = Set.of("DEPOSIT_DOCUMENT", "DEPOSIT_DOCUMENT_REPLACEMENT", "PROFESSIONAL_EVIDENCE",
-            "DEPOSIT", "PROFESSIONAL");
+            "DEPOSIT", "PROFESSIONAL", "CASE", "APPLICATION_DOCUMENT", "CASE_PARTY_FILE", "PROCEDURE_STAGE_FILE", "PROCEDURE_OBJECTION_FILE");
 
     /** The kinds that are one record, with a retention class of their own. */
-    public static final Set<String> RECORD_KINDS = Set.of("DEPOSIT_DOCUMENT", "DEPOSIT_DOCUMENT_REPLACEMENT", "PROFESSIONAL_EVIDENCE");
+    public static final Set<String> RECORD_KINDS = Set.of("DEPOSIT_DOCUMENT", "DEPOSIT_DOCUMENT_REPLACEMENT", "PROFESSIONAL_EVIDENCE",
+            "APPLICATION_DOCUMENT", "CASE_PARTY_FILE", "PROCEDURE_STAGE_FILE", "PROCEDURE_OBJECTION_FILE");
 
     public static final int REASON_MIN = 10;
     public static final int REASON_MAX = 2000;

@@ -20,6 +20,9 @@ import { AcknowledgmentCard } from '../issuance'
 import { PaymentPanel } from '../payments'
 import { applicationsApi } from './api'
 import type { Application } from './api'
+import { StageProgress } from '../procedures'
+import { PartiesStatus } from './PartiesStatus'
+import { RegistrationNotice } from './RegistrationNotice'
 import { AnswersCard, CompletenessCard, DecisionCard, HistoryCard } from './CaseRecord'
 import { DraftForm } from './DraftForm'
 import { typeName } from './form'
@@ -69,6 +72,8 @@ export function ApplicationDetailPage({ ctx, id, params }: { ctx: PageContext; i
       {responded && <Alert tone="success" title={texts.completeness.respondedTitle}>{texts.completeness.respondedText}</Alert>}
       {params.get('saved') && application.state === 'DRAFT' && <Alert tone="success">{a.saved}</Alert>}
       {application.state !== 'DRAFT' && <TrackingCard texts={texts} lang={lang} application={application} />}
+      {application.state !== 'DRAFT' && <StageProgress texts={texts} lang={lang} stages={application.stages} instructions={application.procedureInstructions}
+        reconsiderations={application.reconsiderations} />}
       {application.state !== 'DRAFT' && <AcknowledgmentCard texts={texts} lang={lang} applicationId={application.id} />}
       {application.state !== 'DRAFT' && <PaymentPanel texts={texts} lang={lang} applicationId={application.id} />}
       {application.state === 'DRAFT' && <DraftForm ctx={ctx} type={application.type} draft={application} />}
@@ -90,6 +95,8 @@ function Submitted({ texts, lang, application }: { texts: Texts; lang: Lang; app
         <DecisionCard texts={texts} lang={lang}
           decision={{ outcome: application.decision.outcome, grounds: application.decision.grounds, decidedAt: application.decision.decidedAt }} />
       )}
+      <RegistrationNotice texts={texts} lang={lang} registration={application.registration} />
+      <PartiesStatus texts={texts} parties={application.parties} />
       <Card title={a.summaryTitle} icon="info">
         <dl className="properties">
           <div><dt>{a.reference}</dt><dd className="mono strong">{application.reference}</dd></div>

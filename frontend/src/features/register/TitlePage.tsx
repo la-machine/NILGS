@@ -219,12 +219,14 @@ function DepositForm({ texts, titleId, parties, onDone }: { texts: Texts; titleI
   const [depositor, setDepositor] = useState('')
   const [notary, setNotary] = useState('')
   const [evidence, setEvidence] = useState('')
+  const [caseReference, setCaseReference] = useState('')
   const [failure, setFailure] = useState<string | null>(null)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setFailure(null)
     try {
-      await registerApi.deposit({ titleId, kind, depositorPartyId: depositor, submittedByPartyId: notary || undefined, evidenceReferences: references(evidence) })
+      await registerApi.deposit({ titleId, kind, depositorPartyId: depositor, submittedByPartyId: notary || undefined, evidenceReferences: references(evidence),
+        caseReference: kind === 'SALE' && caseReference.trim() ? caseReference.trim() : undefined })
       setEvidence('')
       onDone()
     } catch (error) {
@@ -254,6 +256,11 @@ function DepositForm({ texts, titleId, parties, onDone }: { texts: Texts; titleI
         </select>
       </Field>
       <Field label={k.evidence} hint={k.evidenceHint} required requiredLabel={texts.common.required}><input value={evidence} onChange={(e) => setEvidence(e.target.value)} required /></Field>
+      {kind === 'SALE' && (
+        <Field label={k.depositCase} hint={k.depositCaseHint}>
+          <input value={caseReference} maxLength={40} onChange={(e) => setCaseReference(e.target.value)} data-deposit-case />
+        </Field>
+      )}
       <div className="form-actions start"><Button type="submit" icon="plus">{k.recordDeposit}</Button></div>
     </form>
   )

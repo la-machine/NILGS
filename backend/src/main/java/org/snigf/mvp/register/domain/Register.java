@@ -15,8 +15,12 @@ public final class Register {
     private Register() {
     }
 
-    /** Kinds registered only by two conservators, each signing (D9). */
+    /** Kinds registered only by two conservators, each signing (D9); and a CREATION from a case (ADR-043 D40). */
     public static final Set<String> DUAL_CONTROL_KINDS = Set.of("CLOSURE", "CANCELLATION", "CORRECTION");
+
+    public static boolean dualControl(String kind, UUID applicationId) {
+        return DUAL_CONTROL_KINDS.contains(kind) || ("CREATION".equals(kind) && applicationId != null);
+    }
 
     /** Which signing act an officer performs. */
     public enum SigningAct { REGISTER, REQUEST_CONFIRMATION, CONFIRM }
@@ -29,12 +33,31 @@ public final class Register {
                            String registrationNumber, String jurisdiction, UUID accountId) {
     }
 
-    public record Holder(UUID partyId, String partyName, String interest, int shareNum, int shareDen) {
+    /**
+     * A holder and their right (ADR-043): sole ownership, co-ownership, usufruct (with its term: {@code LIFE}, or
+     * {@code UNTIL} its date) or bare ownership. {@code identity}: the party as the register records it, signed with every
+     * inscription proposed from V35 on.
+     */
+    public record Holder(UUID partyId, String partyName, String interest, int shareNum, int shareDen, String usufructTerm, LocalDate usufructUntil,
+                         PartyIdentity identity) {
+
+        public Holder(UUID partyId, String partyName, String interest, int shareNum, int shareDen) {
+            this(partyId, partyName, interest, shareNum, shareDen, null, null, null);
+        }
+    }
+
+    /** A party's identity as the register records it; for a case's owner, the identity version it came from (ADR-043). */
+    public record PartyIdentity(String partyKind, String identityKind, String identityNumber, UUID sourceIdentityId, Integer sourceIdentityVersion) {
     }
 
     /** A charge or a restriction; {@code inscriptionId} and {@code number} when it is in force on a title. */
     public record Charge(UUID inscriptionId, Integer number, String kind, UUID beneficiaryId, String beneficiaryName, BigDecimal amount,
-                         boolean blocksTransfer, LocalDate endsOn, String note) {
+                         boolean blocksTransfer, LocalDate endsOn, String note, PartyIdentity beneficiaryIdentity) {
+
+        public Charge(UUID inscriptionId, Integer number, String kind, UUID beneficiaryId, String beneficiaryName, BigDecimal amount,
+                      boolean blocksTransfer, LocalDate endsOn, String note) {
+            this(inscriptionId, number, kind, beneficiaryId, beneficiaryName, amount, blocksTransfer, endsOn, note, null);
+        }
     }
 
     /** A title as the register says it stands now: every value computed from registered inscriptions. */
@@ -56,7 +79,22 @@ public final class Register {
                               List<UUID> evidenceVersions, UUID completesTransactionId, UUID targetInscriptionId, BigDecimal areaM2,
                               UUID parcelVersionId, UUID proposedBy, String proposedByName, Instant proposedAt, String confirmedByName,
                               UUID registeredBy, String registeredByName, Instant registeredAt, String closedByName, String closedReason, String hash,
-                              List<Holder> holders, Charge charge, Integer cancelledByNumber, Integer correctedByNumber, String titleNumber) {
+                              List<Holder> holders, Charge charge, Integer cancelledByNumber, Integer correctedByNumber, String titleNumber,
+                              UUID applicationId, UUID decisionId, UUID ownershipStatementId, Integer ownershipStatementVersion, boolean bindsParties) {
+
+        /** An inscription without a case and whose signed bytes do not carry its parties (before V35). */
+        public Inscription(UUID id, UUID titleId, UUID officeId, String officeCode, Integer number, String kind, String status, int expectedVersion,
+                           String authorityType, String authorityReference, String reason, List<String> evidenceReferences,
+                           List<UUID> evidenceVersions, UUID completesTransactionId, UUID targetInscriptionId, BigDecimal areaM2,
+                           UUID parcelVersionId, UUID proposedBy, String proposedByName, Instant proposedAt, String confirmedByName,
+                           UUID registeredBy, String registeredByName, Instant registeredAt, String closedByName, String closedReason, String hash,
+                           List<Holder> holders, Charge charge, Integer cancelledByNumber, Integer correctedByNumber, String titleNumber,
+                           UUID applicationId) {
+            this(id, titleId, officeId, officeCode, number, kind, status, expectedVersion, authorityType, authorityReference, reason,
+                    evidenceReferences, evidenceVersions, completesTransactionId, targetInscriptionId, areaM2, parcelVersionId, proposedBy,
+                    proposedByName, proposedAt, confirmedByName, registeredBy, registeredByName, registeredAt, closedByName, closedReason, hash,
+                    holders, charge, cancelledByNumber, correctedByNumber, titleNumber, applicationId, null, null, null, false);
+        }
     }
 
     public record NewInscription(String officeCode, UUID titleId, String kind, int expectedVersion, String authorityType,
@@ -65,13 +103,35 @@ public final class Register {
                                  List<NewHolder> holders, NewCharge charge) {
     }
 
-    public record NewHolder(UUID party, String interest, int shareNum, int shareDen) {
+    public record NewHolder(UUID party, String interest, int shareNum, int shareDen, String usufructTerm, LocalDate usufructUntil) {
+
+        public NewHolder(UUID party, String interest, int shareNum, int shareDen) {
+            this(party, interest, shareNum, shareDen, null, null);
+        }
+    }
+
+    /** A document a CREATION from a case rests on, for the conservators who examine it (ADR-043): a counter file or a case document. */
+    public record EvidenceFile(UUID id, String storageKey, String sha256, long sizeBytes, String mediaType, String originalName, String kind) {
+    }
+
+    /**
+     * An approved case of a procedure that creates a title, waiting for its registration (ADR-042 §4, "Approved, to
+     * register"). {@code problems} is what stops a CREATION now; {@code mayPropose} also says the reader never handled it;
+     * {@code owners}, whom the title will name, from the decided ownership statement (ADR-043), with their shares.
+     * {@code registers} is CREATION (procedure A) or TRANSFER (procedure B, step 6), whose {@code titleNumber} is the title
+     * the case names; a CREATION has none yet.
+     */
+    public record CaseToRegister(UUID applicationId, String reference, String officeCode, String typeCode, String parcelReference,
+                                 java.time.Instant decidedAt, List<String> problems, boolean mayPropose, UUID inscriptionId,
+                                 String inscriptionStatus, String owners, String registers, String titleNumber) {
     }
 
     public record NewCharge(String kind, UUID beneficiary, BigDecimal amount, boolean blocksTransfer, LocalDate endsOn, String note) {
     }
 
-    public record NewDeposit(UUID titleId, String kind, UUID depositorPartyId, UUID submittedByPartyId, List<String> evidenceReferences) {
+    /** {@code caseReference}, when given, names the procedure B case the deposit is for (V37); the database checks it. */
+    public record NewDeposit(UUID titleId, String kind, UUID depositorPartyId, UUID submittedByPartyId, List<String> evidenceReferences,
+                             String caseReference) {
     }
 
     /**

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.snigf.mvp.application.application.ApplicationTypeCatalogue;
 import org.snigf.mvp.application.domain.ApplicationRepository;
 import org.snigf.mvp.application.domain.ApplicationType;
+import org.snigf.mvp.application.domain.ProcedureStage;
 import org.snigf.mvp.application.domain.Requirements;
 import org.snigf.mvp.audit.SystemActor;
 import org.snigf.mvp.identity.IdentityIntegrationTest;
@@ -24,10 +25,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
 /**
- * Slice 1 design C4: one demonstration type, "Demande d'immatriculation (DEMO)", with three
- * configurable synthetic document categories, labelled as demonstration requirements. The
- * catalogue comes from configuration; a change is a new version (the old one is kept), audited;
- * an invalid catalogue is refused whole.
+ * Slice 1 design C4: demonstration types with configurable synthetic document categories, labelled as
+ * demonstration requirements; from Slice 4 (ADR-042), the two procedures' types and their stages. The
+ * catalogue comes from configuration; a change is a new version (the old one is kept), audited; an
+ * invalid catalogue is refused whole, and an invalid procedure is refused by the database too.
  */
 class ApplicationTypeConfigIT extends IdentityIntegrationTest {
 
@@ -62,8 +63,8 @@ class ApplicationTypeConfigIT extends IdentityIntegrationTest {
             documents.add(new Requirements.DocumentCategory("DEMO_TAX_RECEIPT", false, "Quittance (DEMO)", "Tax receipt (DEMO)"));
             ApplicationType.Definition changed = new ApplicationType.Definition(before.code(), before.nameFr(), before.nameEn(),
                     new Requirements(before.requirements().fields(), documents));
-            assertThat(SystemActor.call("application-types", () -> catalogue.apply(List.of(changed)))).isEqualTo(1);
-            assertThat(SystemActor.call("application-types", () -> catalogue.apply(List.of(changed))))
+            assertThat(SystemActor.call("application-types", () -> catalogue.apply(withEveryOtherType(changed)))).isEqualTo(1);
+            assertThat(SystemActor.call("application-types", () -> catalogue.apply(withEveryOtherType(changed))))
                     .as("the same definition again writes nothing").isZero();
 
             ApplicationType after = applications.latestType("DEMO_REGISTRATION").orElseThrow();
@@ -80,9 +81,65 @@ class ApplicationTypeConfigIT extends IdentityIntegrationTest {
             assertThat(saved.path("type").path("versionNo").asInt()).as("... until it is saved").isEqualTo(after.versionNo());
             assertThat(saved.path("type").path("requirements").path("documents").size()).isEqualTo(4);
         } finally {
-            SystemActor.call("application-types", () -> catalogue.apply(List.of(new ApplicationType.Definition(
+            SystemActor.call("application-types", () -> catalogue.apply(withEveryOtherType(new ApplicationType.Definition(
                     before.code(), before.nameFr(), before.nameEn(), before.requirements()))));
         }
+    }
+
+    /** The catalogue as configured, with one definition changed: a type left out would be made unavailable. */
+    private List<ApplicationType.Definition> withEveryOtherType(ApplicationType.Definition changed) {
+        List<ApplicationType.Definition> all = new ArrayList<>();
+        for (String code : applications.typeCodes()) {
+            ApplicationType t = applications.latestType(code).orElseThrow();
+            all.add(code.equals(changed.code()) ? changed : new ApplicationType.Definition(code, t.nameFr(), t.nameEn(), t.requirements()));
+        }
+        return all;
+    }
+
+    @Test
+    void theTwoProceduresTypesCarryTheirStagesAndTheGenericTypeNone() {
+        Requirements.Procedure a = applications.latestType("DEMO_IMMATRICULATION").orElseThrow().requirements().procedure();
+        assertThat(a.code()).isEqualTo("A");
+        assertThat(a.stages()).containsExactly("CADASTRAL_REVIEW", "FIELD_VISIT", "COMMISSION_REPORT", "PUBLICATION");
+        assertThat(a.registers()).isEqualTo("CREATION");
+        assertThat(a.delivery()).isTrue();
+        Requirements.Procedure b = applications.latestType("DEMO_MUTATION").orElseThrow().requirements().procedure();
+        assertThat(b.stages()).containsExactly("TITLE_VERIFICATION", "DUTIES_EVIDENCE");
+        assertThat(b.registers()).isEqualTo("TRANSFER");
+        assertThat(applications.latestType("DEMO_REGISTRATION").orElseThrow().requirements().procedure())
+                .as("the generic case flow keeps no procedure").isNull();
+        assertThat(applications.latestType("DEMO_MUTATION").orElseThrow().nameEn()).contains("DEMO");
+    }
+
+    @Test
+    void theStageCatalogueInTheCodeIsTheDatabasesOne() {
+        List<String> database = jdbc.queryForList("SELECT code || ':' || procedure || ':' || rank || ':' || coalesce(requires, '-')"
+                + " || ':' || permission FROM procedure_stage ORDER BY procedure, rank", String.class);
+        List<String> code = java.util.Arrays.stream(ProcedureStage.values())
+                .map(st -> st.name() + ":" + st.procedure() + ":" + st.rank() + ":"
+                        + (st.requires() == null ? "-" : st.requires().name()) + ":" + st.permission().code())
+                .sorted(java.util.Comparator.comparing((String x) -> x.split(":")[1]).thenComparingInt(x -> Integer.parseInt(x.split(":")[2])))
+                .toList();
+        assertThat(database).isEqualTo(code);
+    }
+
+    @Test
+    void anInvalidProcedureIsRefusedByTheCodeAndByTheDatabase() {
+        ApplicationType demo = applications.latestType("DEMO_IMMATRICULATION").orElseThrow();
+        Requirements wrong = new Requirements(demo.requirements().fields(), demo.requirements().documents(),
+                new Requirements.Procedure("A", List.of("PUBLICATION", "COMMISSION_REPORT"), "CREATION", true));
+        assertThatThrownBy(() -> SystemActor.call("application-types", () -> catalogue.apply(withEveryOtherType(
+                new ApplicationType.Definition(demo.code(), demo.nameFr(), demo.nameEn(), wrong)))))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("STAGE_OUT_OF_ORDER:COMMISSION_REPORT")
+                .hasMessageContaining("STAGE_NEEDS:COMMISSION_REPORT<FIELD_VISIT");
+        assertThatThrownBy(() -> jdbc.update("INSERT INTO application_type (code, version_no, available, name_fr, name_en, requirements)"
+                + " VALUES ('DEMO_PROCEDURE_PROBE', 1, true, 'Sonde (DEMO)', 'Probe (DEMO)', CAST(? AS jsonb))",
+                "{\"fields\":[],\"documents\":[],\"procedure\":{\"code\":\"B\",\"stages\":[\"CADASTRAL_REVIEW\"],"
+                        + "\"registers\":\"CREATION\",\"delivery\":true}}"))
+                .hasMessageContaining("STAGE_OF_ANOTHER_PROCEDURE:CADASTRAL_REVIEW")
+                .hasMessageContaining("PROCEDURE_REGISTERS_MISMATCH");
+        assertThat(applications.latestType("DEMO_PROCEDURE_PROBE")).isEmpty();
     }
 
     @Test

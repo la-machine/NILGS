@@ -134,7 +134,7 @@ SELECT throws_ok($$ SELECT pg_temp.propose('00000000-0000-0000-0000-0000000000c1
     'RG001', 'PARCEL_REQUIRED', 'a creation rests on a parcel version');
 SELECT throws_ok($$ SELECT pg_temp.propose('00000000-0000-0000-0000-0000000000c1', NULL, 'CREATION', 0, NULL, NULL, 10000, '00000000-0000-0000-0000-000000005001',
         format('[{"party":"%s","interest":"OWNERSHIP","shareNum":1,"shareDen":2}]', pg_temp.c('party_a')), NULL) $$,
-    'RG001', 'SHARES_MUST_TOTAL_ONE', 'shares total exactly one');
+    'RG001', 'SOLE_OWNERSHIP_INVALID', 'sole ownership is one holder of the whole (ADR-043): never a fraction');
 SELECT throws_ok($$ SELECT pg_temp.propose('00000000-0000-0000-0000-0000000000c2', NULL, 'CREATION', 0, NULL, NULL, 10000, '00000000-0000-0000-0000-000000005001',
         format('[{"party":"%s","interest":"OWNERSHIP","shareNum":1,"shareDen":1}]', pg_temp.c('party_c2')), NULL) $$,
     'RG001', 'ACTOR_HAS_INTEREST', 'a conservator cannot propose a title they would hold');

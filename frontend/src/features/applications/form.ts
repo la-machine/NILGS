@@ -42,6 +42,10 @@ export function messages(texts: Texts, lang: Lang, type: ApplicationType | null,
       case 'UNKNOWN_FIELD': return { field: null, text: fill(a.items.UNKNOWN_FIELD, { field: key }) }
       case 'PARCEL_NOT_FOUND': return { field: PARCEL_FIELD, text: a.items.PARCEL_NOT_FOUND }
       case 'PARCEL_REFERENCE_INVALID': return { field: PARCEL_FIELD, text: a.items.PARCEL_REFERENCE_INVALID }
+      // ADR-042 step 6: the title a transfer names, resolved at submission.
+      case 'TITLE_NOT_FOUND': case 'TITLE_CLOSED': case 'TITLE_NOT_ON_PARCEL': case 'TITLE_CASE_OPEN':
+        return { field: 'titleNumber', text: a.items[code] }
+      case 'DECLARATION_INVALID': return { field: null, text: a.items.DECLARATION_INVALID }
       default: return { field: null, text: item }
     }
   })

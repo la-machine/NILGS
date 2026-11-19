@@ -31,14 +31,17 @@ public final class Review {
     public record Assignment(Stage stage, UUID assigneeId, String assigneeName, Instant at) {
     }
 
-    /** A recommendation (with its finding) or a return to review (with its reason). */
+    /** A recommendation (with its finding) or a return to review (with its reason), in its review round (V36). */
     public record Step(UUID id, String kind, Recommendation recommendation, String text, UUID actorId, String actorName,
-                       Instant at) {
+                       Instant at, int round) {
     }
 
-    /** Always simulated in the MVP: "Simulated decision — no legal effect". */
+    /**
+     * Always simulated in the MVP: "Simulated decision — no legal effect". {@code round}: the review round it closed
+     * (V36, ADR-043 step 5b); the latest round's is the one that counts, the earlier ones are kept unchanged.
+     */
     public record Decision(UUID id, Outcome outcome, String grounds, List<UUID> citedVersions, boolean simulated,
-                           String decidedByName, Instant at) {
+                           String decidedByName, Instant at, int round) {
 
         public Decision {
             citedVersions = List.copyOf(citedVersions);

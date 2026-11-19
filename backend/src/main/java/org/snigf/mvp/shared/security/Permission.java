@@ -77,6 +77,22 @@ public enum Permission {
     REGISTER_DEPOSIT_READ("register.deposit.read", Family.BUSINESS, false, "Read one's own deposits and their documents", "Consulter ses propres dépôts et leurs pièces", Scope.OWN),
     REGISTER_DEPOSIT_DOCUMENT("register.deposit.document", Family.BUSINESS, false, "Add documents to one's own open deposit, or ask for one to be replaced", "Ajouter des pièces à son propre dépôt ouvert, ou demander le remplacement d'une pièce", Scope.OWN),
     REGISTER_DEPOSIT_WITHDRAW("register.deposit.withdraw", Family.BUSINESS, false, "Withdraw one's own deposit", "Retirer son propre dépôt", Scope.OWN),
+    /**
+     * The procedures' stages, objections and delivery (ADR-042, V31), held at an office; never professional. Only the
+     * commission's report is delegable, so a member designated for a commission receives it by special grant (D26).
+     */
+    PROCEDURE_STAGE_CADASTRAL("procedure.stage.cadastral", Family.BUSINESS, false, "Record a case's cadastral review and field visit", "Enregistrer l'examen cadastral et la visite de terrain d'un dossier", Scope.OFFICE),
+    PROCEDURE_COMMISSION_REPORT("procedure.commission.report", Family.BUSINESS, true, "Record and validate the commission's report on a field visit", "Enregistrer et valider le procès-verbal de la commission sur une visite de terrain", Scope.OFFICE),
+    PROCEDURE_STAGE_PUBLISH("procedure.stage.publish", Family.BUSINESS, false, "Publish a case's notice, opening its objection period", "Publier l'avis d'un dossier et ouvrir sa période d'opposition", Scope.OFFICE),
+    PROCEDURE_STAGE_TITLE("procedure.stage.title", Family.BUSINESS, false, "Record the verification of a case's title and of its duty receipt", "Enregistrer la vérification du titre d'un dossier et de sa quittance de droits", Scope.OFFICE),
+    PROCEDURE_OBJECTION_RECORD("procedure.objection.record", Family.BUSINESS, false, "Record an objection received at the counter", "Enregistrer une opposition reçue au guichet", Scope.OFFICE),
+    PROCEDURE_OBJECTION_DECIDE("procedure.objection.decide", Family.BUSINESS, false, "Decide an objection recorded by someone else", "Statuer sur une opposition enregistrée par une autre personne", Scope.OFFICE),
+    PROCEDURE_DELIVERY_RECORD("procedure.delivery.record", Family.BUSINESS, false, "Record the collection of a registration notice", "Enregistrer le retrait d'un avis d'inscription", Scope.OFFICE),
+    /** The persons of a case (ADR-043): transcribed at intake from the documents presented, then checked by a second officer. */
+    APPLICATION_PARTY_RECORD("application.party.record", Family.BUSINESS, false, "Transcribe the persons of a case from the documents presented", "Transcrire les personnes d'un dossier depuis les pièces présentées", Scope.OFFICE),
+    APPLICATION_PARTY_CHECK("application.party.check", Family.BUSINESS, false, "Check a transcription against the document presented (never one's own)", "Contrôler une transcription sur la pièce présentée (jamais la sienne)", Scope.OFFICE),
+    PROCEDURE_CASE_REOPEN("procedure.case.reopen", Family.BUSINESS, false, "Open the reconsideration of an approved case after an objection upheld after its decision", "Ouvrir le réexamen d'un dossier approuvé après une opposition admise postérieurement à sa décision", Scope.OFFICE),
+    APPLICATION_PARTY_EXCEPTION("application.party.exception", Family.BUSINESS, false, "Authorise a documented exception under a DEMO policy (an expired identity document)", "Autoriser une exception motivée selon une règle DEMO (pièce d'identité expirée)", Scope.OFFICE),
     /** The supervisor's in-application confirmation of a second-factor reset (ADR-028); business, so supervisors keep their audit permissions. */
     IDENTITY_RESET_CONFIRM("identity.reset.confirm", Family.BUSINESS, false, "Confirm the identity of a person whose second factor is reset", "Confirmer l’identité d’une personne dont le deuxième facteur est réinitialisé", Scope.OFFICE),
     /**

@@ -18,6 +18,7 @@ import org.snigf.mvp.application.domain.ApplicationState;
 import org.snigf.mvp.application.domain.ApplicationType;
 import org.snigf.mvp.application.domain.CompletenessRecord;
 import org.snigf.mvp.application.domain.Requirements;
+import org.snigf.mvp.application.domain.Tracking;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import tools.jackson.core.type.TypeReference;
@@ -36,14 +37,15 @@ class JdbcApplicationRepository implements ApplicationRepository {
               FROM application_type""";
     private static final String APPLICATION = """
             SELECT a.id, a.reference, a.applicant_id, a.type_code, a.type_version_id, a.state, a.parcel_reference,
-                   o.code AS office_code, a.data::text AS data, a.created_at, a.updated_at, a.submitted_at, a.version
+                   o.code AS office_code, a.data::text AS data, a.created_at, a.updated_at, a.submitted_at, a.version,
+                   a.declaration::text AS declaration
               FROM application a
               LEFT JOIN office o ON o.id = a.office_id
             """;
     private static final String CASE = """
             SELECT a.id, a.reference, a.applicant_id, a.type_code, a.type_version_id, a.state, a.parcel_reference,
                    o.code AS office_code, a.data::text AS data, a.created_at, a.updated_at, a.submitted_at, a.version,
-                   u.display_name AS applicant_name
+                   a.declaration::text AS declaration, u.display_name AS applicant_name
               FROM application a
               JOIN office o ON o.id = a.office_id
               JOIN app_user u ON u.id = a.applicant_id
@@ -56,6 +58,38 @@ class JdbcApplicationRepository implements ApplicationRepository {
 
     JdbcApplicationRepository(JdbcClient jdbc) {
         this.jdbc = jdbc;
+    }
+
+    @Override
+    public List<Tracking.ProcedureInstruction> procedureInstructions(UUID applicationId) {
+        return jdbc.sql("SELECT stages, action, at, pending FROM application_procedure_instructions(:id)").param("id", applicationId)
+                .query((rs, n) -> new Tracking.ProcedureInstruction(java.util.Arrays.asList((String[]) rs.getArray("stages").getArray()),
+                        rs.getString("action"), rs.getTimestamp("at").toInstant(), rs.getBoolean("pending")))
+                .list();
+    }
+
+    @Override
+    public List<Tracking.Reconsideration> reconsiderations(UUID applicationId) {
+        return jdbc.sql("SELECT round, stages, opened_at, decided FROM application_reconsideration(:id)").param("id", applicationId)
+                .query((rs, n) -> new Tracking.Reconsideration(rs.getInt("round"), java.util.Arrays.asList((String[]) rs.getArray("stages").getArray()),
+                        rs.getTimestamp("opened_at").toInstant(), rs.getBoolean("decided")))
+                .list();
+    }
+
+    @Override
+    public Optional<Tracking.Registration> registration(UUID applicationId) {
+        return jdbc.sql("SELECT title_number, registered_at, kind FROM application_registration(:id)").param("id", applicationId)
+                .query((rs, n) -> new Tracking.Registration(rs.getString("title_number"), rs.getTimestamp("registered_at").toInstant(),
+                        rs.getString("kind")))
+                .optional();
+    }
+
+    @Override
+    public List<Tracking.StageProgress> stageProgress(UUID applicationId) {
+        return jdbc.sql("SELECT stage, status, at FROM application_stage_progress(:id)").param("id", applicationId)
+                .query((rs, n) -> new Tracking.StageProgress(rs.getString("stage"), rs.getString("status"),
+                        rs.getTimestamp("at") == null ? null : rs.getTimestamp("at").toInstant()))
+                .list();
     }
 
     @Override
@@ -128,13 +162,35 @@ class JdbcApplicationRepository implements ApplicationRepository {
 
     @Override
     public boolean updateDraft(UUID id, long expectedVersion, UUID typeVersionId, String parcelReference,
-                               Map<String, String> data) {
+                               Map<String, String> data, String declaration) {
         return jdbc.sql("""
                         UPDATE application SET type_version_id = :type, parcel_reference = :parcel,
-                               data = CAST(:data AS jsonb), version = version + 1
+                               data = CAST(:data AS jsonb), declaration = CAST(:declaration AS jsonb), version = version + 1
                          WHERE id = :id AND state = 'DRAFT' AND version = :expected""")
                 .param("type", typeVersionId).param("parcel", parcelReference).param("data", json.writeValueAsString(data))
-                .param("id", id).param("expected", expectedVersion).update() == 1;
+                .param("declaration", declaration).param("id", id).param("expected", expectedVersion).update() == 1;
+    }
+
+    @Override
+    public List<String> declarationProblems(UUID id) {
+        return jdbc.sql("SELECT application_declaration_problems(:id)").param("id", id)
+                .query((rs, n) -> rs.getArray(1) == null ? List.<String>of() : List.of((String[]) rs.getArray(1).getArray()))
+                .optional().orElse(List.of());
+    }
+
+    @Override
+    public List<Tracking.CasePerson> parties(UUID id) {
+        return jdbc.sql("SELECT ref, roles, full_name, status FROM application_parties(:id)").param("id", id)
+                .query((rs, n) -> new Tracking.CasePerson(rs.getString("ref"), List.of((String[]) rs.getArray("roles").getArray()),
+                        rs.getString("full_name"), rs.getString("status")))
+                .list();
+    }
+
+    @Override
+    public List<String> partyProblems(UUID id) {
+        return jdbc.sql("SELECT case_party_status(:id)").param("id", id)
+                .query((rs, n) -> rs.getArray(1) == null ? List.<String>of() : List.of((String[]) rs.getArray(1).getArray()))
+                .optional().orElse(List.of());
     }
 
     @Override
@@ -287,7 +343,7 @@ class JdbcApplicationRepository implements ApplicationRepository {
                 rs.getObject("applicant_id", UUID.class), rs.getString("type_code"),
                 rs.getObject("type_version_id", UUID.class), ApplicationState.valueOf(rs.getString("state")),
                 rs.getString("parcel_reference"), rs.getString("office_code"), data, instant(rs, "created_at"),
-                instant(rs, "updated_at"), instant(rs, "submitted_at"), rs.getLong("version"));
+                instant(rs, "updated_at"), instant(rs, "submitted_at"), rs.getLong("version"), rs.getString("declaration"));
     }
 
     private static Instant instant(ResultSet rs, String column) throws SQLException {

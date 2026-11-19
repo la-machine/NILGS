@@ -65,7 +65,11 @@ class RetentionIT extends IdentityIntegrationTest {
     void auditorsAndSystemAdministratorsReadRetentionAndNobodyElse() throws Exception {
         SignedIn auditor = signedIn("AUDITOR");
         JsonNode classes = ok(auditor.browser().send(get(BASE + "/retention-classes")), 200);
-        assertThat(classes.findValuesAsString("code")).containsExactly("DEPOSIT_DOCUMENT", "DEPOSIT_DOCUMENT_REPLACEMENT", "PROFESSIONAL_EVIDENCE");
+        assertThat(classes.findValuesAsString("code")).containsExactly("APPLICATION_IDENTITY_DOCUMENT", "APPLICATION_OWNERSHIP_EVIDENCE",
+                "APPLICATION_SUPPORTING_DOCUMENT", "CASE_IDENTITY_DOCUMENT", "CASE_MANDATE", "CASE_OWNERSHIP_EVIDENCE", "DEPOSIT_DOCUMENT",
+                "DEPOSIT_DOCUMENT_REPLACEMENT", "PROCEDURE_OBJECTION_EVIDENCE",
+                "PROCEDURE_STAGE_EVIDENCE",
+                "PROFESSIONAL_EVIDENCE");
         assertThat(classes.findValuesAsString("standing")).containsOnly("NO_APPROVED_SCHEDULE_KEPT");
         classes.forEach(c -> assertThat(c.path("scheduleReference").isNull()).isTrue());
         assertThat(audited("RECORD_RETENTION_READ", null)).isPositive();

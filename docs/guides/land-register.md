@@ -49,6 +49,10 @@ Any proposal can end as `WITHDRAWN` (by its proposer) or `REJECTED` (by a conser
 reason, and has no effect. Numbers are taken at registration, under the title's row lock, so they
 have no gaps. `AREA_REDUCTION` is modelled for slice 4 and refused today.
 
+A CREATION is either synthetic (`SYNTHETIC_DEMO`, proposed here from a parcel and a party) or proposed from an
+approved procedure A case (`IMMATRICULATION`, from **Approved, to register**; see the
+[procedures guide](procedures.md)). The second names its case, in the signed bytes too.
+
 ### Signing
 
 1. The server asks the database for the inscription's canonical bytes (`snigf-inscription-v1`).
@@ -63,6 +67,11 @@ have no gaps. `AREA_REDUCTION` is modelled for slice 4 and refused today.
 
 A copy of the public key is kept with the signature, because an officer may later remove a lost
 key (ADR-028) and what they signed must stay verifiable.
+
+A CREATION from a case (ADR-043 C5) also signs its decision, the ownership statement and its version,
+each holder's identity and its source version, and a usufruct's term. A change to any of them, or to
+the parcel, before the second signature refuses it with `STALE_PROPOSAL`; a first signature is never
+reused on a new proposal. A party changed directly in the database makes title verification fail.
 
 ### A deposit's documents
 

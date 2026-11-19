@@ -152,6 +152,140 @@ public abstract class CaseFlowIntegrationTest extends IdentityIntegrationTest {
         assertThat(accepted.getStatus()).as(accepted.getContentAsString()).isEqualTo(200);
     }
 
+    // --- Procedure A and its persons (ADR-042, ADR-043) ----------------------------------------------------
+
+    protected static final String PROCEDURES = "/api/v1/procedures";
+
+    /** The applicant alone, on their own behalf, in full ownership (ADR-043). */
+    protected static Map<String, Object> selfDeclaration(String name) {
+        return Map.of("capacity", "SELF",
+                "persons", List.of(Map.of("ref", "p1", "kind", "NATURAL_PERSON", "roles", List.of("APPLICANT", "INTENDED_OWNER"), "fullName", name,
+                        "identityKind", "NATIONAL_ID", "identityNumber", "DEMO-ID-SELF-0001", "phone", "+237 600000001")),
+                "shares", List.of(Map.of("person", "p1", "interest", "OWNERSHIP", "shareNum", 1, "shareDen", 1)));
+    }
+
+    /**
+     * A {@code DEMO_IMMATRICULATION} case under review: drafted with its declaration, its three documents, submitted, paid,
+     * its persons transcribed by one intake officer and checked by another (ADR-043), accepted.
+     */
+    protected String immatriculationUnderReview(Browser applicant, String parcel) throws Exception {
+        return immatriculationUnderReview(applicant, parcel, selfDeclaration("DEMO Applicant Owner"));
+    }
+
+    protected String immatriculationUnderReview(Browser applicant, String parcel, Map<String, Object> declaration) throws Exception {
+        String id = immatriculationSubmitted(applicant, parcel, declaration);
+        paid(applicant, id);
+        partiesReady(id, signedIn("INTAKE_OFFICER"), signedIn("INTAKE_OFFICER"));
+        accepted(signedIn("INTAKE_OFFICER"), id);
+        return id;
+    }
+
+    /** Drafted with its declaration and documents, then submitted: in completeness review. */
+    protected String immatriculationSubmitted(Browser applicant, String parcel, Map<String, Object> declaration) throws Exception {
+        String id = json.readTree(sendJson(applicant, post(APPS).header("Idempotency-Key", key()),
+                "{\"typeCode\":\"DEMO_IMMATRICULATION\",\"data\":{}}").getContentAsString()).path("id").asString("");
+        MockHttpServletResponse saved = sendJson(applicant, put(APPS + "/" + id), json.writeValueAsString(Map.of("expectedVersion", 0,
+                "parcelReference", parcel, "data", Map.of("applicantCapacity", "OCCUPANT", "landUse", "AGRICULTURAL",
+                        "occupiedSince", "2009", "statement", "Farmed since 2009 (synthetic)"), "declaration", declaration)));
+        assertThat(saved.getStatus()).as(saved.getContentAsString()).isEqualTo(200);
+        for (String category : List.of("DEMO_IDENTITY", "DEMO_DEVELOPMENT_EVIDENCE", "DEMO_SITE_PLAN")) {
+            applicant.csrf();
+            assertThat(applicant.send(multipart(APPS + "/" + id + "/documents/" + category)
+                    .file(new MockMultipartFile("file", category + ".pdf", "application/pdf", DocumentFixtures.pdf("/Lang (" + category + ")")))
+                    .header("Idempotency-Key", key())).getStatus()).isEqualTo(201);
+        }
+        MockHttpServletResponse submitted = sendJson(applicant, post(APPS + "/" + id + "/submission").header("Idempotency-Key", key()),
+                "{\"expectedVersion\":1}");
+        assertThat(submitted.getStatus()).as(submitted.getContentAsString()).isEqualTo(200);
+        return id;
+    }
+
+    /** Keeps a document presented at the counter for the case's persons; returns its id. */
+    protected String partyFile(SignedIn recorder, String id, String purpose) throws Exception {
+        recorder.browser().csrf();
+        MockHttpServletResponse added = recorder.browser().send(multipart(PROCEDURES + "/" + id + "/parties/files")
+                .file(new MockMultipartFile("file", purpose.toLowerCase(java.util.Locale.ROOT) + ".pdf", "application/pdf",
+                        DocumentFixtures.pdf("/Lang (" + purpose + ")")))
+                .param("purpose", purpose));
+        assertThat(added.getStatus()).as(added.getContentAsString()).isEqualTo(200);
+        JsonNode files = json.readTree(added.getContentAsString()).path("files");
+        return files.get(files.size() - 1).path("id").asString("");
+    }
+
+    protected JsonNode parties(SignedIn who, String id) throws Exception {
+        MockHttpServletResponse read = who.browser().send(get(PROCEDURES + "/" + id + "/parties"));
+        assertThat(read.getStatus()).as(read.getContentAsString()).isEqualTo(200);
+        return json.readTree(read.getContentAsString());
+    }
+
+    /**
+     * Intake as ADR-043 asks it: {@code recorder} scans the documents presented and transcribes each person, the ownership
+     * statement and each mandate as declared; {@code checker}, another officer, checks each one MATCHES.
+     */
+    protected void partiesReady(String id, SignedIn recorder, SignedIn checker) throws Exception {
+        String identityFile = partyFile(recorder, id, "IDENTITY_DOCUMENT");
+        String ownershipFile = partyFile(recorder, id, "OWNERSHIP_EVIDENCE");
+        String mandateFile = partyFile(recorder, id, "MANDATE");
+        JsonNode view = parties(recorder, id);
+        for (JsonNode person : view.path("persons")) {
+            JsonNode declared = person.path("identities").get(0);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("fullName", declared.path("fullName").asString(""));
+            body.put("identityKind", declared.path("identityKind").asString(""));
+            body.put("identityNumber", declared.path("identityNumber").asString(""));
+            if (declared.hasNonNull("phone")) {
+                body.put("phone", declared.path("phone").asString(""));
+            }
+            body.put("sourceFile", identityFile);
+            body.put("supersedes", declared.path("id").asString(""));
+            ok(sendJson(recorder.browser(), post(PROCEDURES + "/" + id + "/parties/persons/" + person.path("id").asString("") + "/identity"),
+                    json.writeValueAsString(body)));
+        }
+        JsonNode statement = view.path("statements").get(0);
+        List<Map<String, Object>> shares = new java.util.ArrayList<>();
+        for (JsonNode share : statement.path("shares")) {
+            shares.add(Map.of("person", share.path("personId").asString(""), "interest", share.path("interest").asString(""),
+                    "shareNum", share.path("shareNum").asInt(), "shareDen", share.path("shareDen").asInt(), "basisFile", ownershipFile));
+        }
+        ok(sendJson(recorder.browser(), post(PROCEDURES + "/" + id + "/parties/ownership"),
+                json.writeValueAsString(Map.of("shares", shares, "supersedes", statement.path("id").asString("")))));
+        for (JsonNode mandate : view.path("mandates")) {
+            List<String> represents = new java.util.ArrayList<>();
+            for (JsonNode ref : mandate.path("represents")) {
+                for (JsonNode person : view.path("persons")) {
+                    if (ref.asString("").equals(person.path("ref").asString(""))) {
+                        represents.add(person.path("id").asString(""));
+                    }
+                }
+            }
+            ok(sendJson(recorder.browser(), post(PROCEDURES + "/" + id + "/parties/persons/" + mandate.path("representativeId").asString("") + "/mandate"),
+                    json.writeValueAsString(Map.of("represents", represents, "scope", mandate.path("scope").asString(""), "documentFile", mandateFile,
+                            "supersedes", mandate.path("id").asString("")))));
+        }
+        JsonNode recorded = parties(checker, id);
+        for (JsonNode person : recorded.path("persons")) {
+            check(checker, id, "IDENTITY", person.path("identities").get(0).path("id").asString(""));
+        }
+        check(checker, id, "OWNERSHIP", recorded.path("statements").get(0).path("id").asString(""));
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (JsonNode mandate : recorded.path("mandates")) {
+            if (seen.add(mandate.path("representativeId").asString(""))) {
+                check(checker, id, "MANDATE", mandate.path("id").asString(""));
+            }
+        }
+        assertThat(parties(checker, id).path("problems")).as("every person, the statement and the mandates checked").isEmpty();
+    }
+
+    protected MockHttpServletResponse check(SignedIn checker, String id, String kind, String target) throws Exception {
+        return ok(sendJson(checker.browser(), post(PROCEDURES + "/" + id + "/parties/checks"),
+                json.writeValueAsString(Map.of("targetKind", kind, "targetId", target, "outcome", "MATCHES"))));
+    }
+
+    private static MockHttpServletResponse ok(MockHttpServletResponse response) throws Exception {
+        assertThat(response.getStatus()).as(response.getContentAsString()).isEqualTo(200);
+        return response;
+    }
+
     /** Draft, both required documents, submitted, paid, accepted by an intake officer: under review. */
     protected String underReview(Browser applicant, String parcel) throws Exception {
         String id = submitted(applicant, parcel);

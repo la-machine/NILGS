@@ -20,7 +20,7 @@ import { AppShell } from './AppShell'
 import { AuthLayout } from './AuthLayout'
 import { placeOf } from './navigation'
 import type { PlaceId } from './navigation'
-import { Pages, VerifyPage } from './Pages'
+import { Pages, PublicNoticesPage, VerifyPage } from './Pages'
 import { PublicLayout } from './PublicLayout'
 import type { Screen } from './screens'
 
@@ -134,6 +134,17 @@ export function App() {
             })} />
         </AppShell>
       </DialogProvider>
+    )
+  }
+
+  // The public notices of procedures need no account (ADR-042 §3).
+  if (route.segments[0] === 'notices' && screen.name !== 'loading') {
+    return (
+      <PublicLayout texts={texts} lang={lang} onToggleLang={toggleLang}>
+        <Suspense fallback={<Spinner label={texts.shell.loading} />}>
+          <PublicNoticesPage texts={texts} lang={lang} />
+        </Suspense>
+      </PublicLayout>
     )
   }
 

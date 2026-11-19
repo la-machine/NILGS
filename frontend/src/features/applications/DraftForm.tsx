@@ -18,8 +18,10 @@ import { Alert, Badge } from '../../shared/ui/Feedback'
 import { useDialog } from '../../shared/ui/dialogContext'
 import { DocumentsPanel } from '../documents'
 import { errorMessage } from '../../shared/ui/errorMessage'
-import { applicationsApi, PARCEL_REFERENCE } from './api'
-import type { Application, ApplicationType } from './api'
+import { applicationsApi, needsDeclaration, PARCEL_REFERENCE, registersOf } from './api'
+import type { Application, ApplicationType, Declaration } from './api'
+import { cleanedDeclaration, emptyDeclaration } from './declaration'
+import { DeclarationEditor } from './DeclarationEditor'
 import { cleaned, hint, label, messages, PARCEL_FIELD, typeName } from './form'
 import type { ItemMessage } from './form'
 
@@ -35,6 +37,11 @@ export function DraftForm({ ctx, type, draft }: { ctx: PageContext; type: Applic
   const [stale, setStale] = useState(false)
   const [busy, setBusy] = useState<'save' | 'submit' | 'delete' | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // ADR-043: the persons of the case, for a type that registers a title.
+  const declares = needsDeclaration(type)
+  const registers = registersOf(type) ?? 'CREATION'
+  const [declaration, setDeclaration] = useState<Declaration>(() => draft?.declaration ?? emptyDeclaration(registers))
+  const [declarationProblems, setDeclarationProblems] = useState<string[]>(draft?.declarationProblems ?? [])
   // One key per form: a retry of the same creation or submission is answered once.
   const [createKey] = useState(() => crypto.randomUUID())
   const [submitKey] = useState(() => crypto.randomUUID())
@@ -45,7 +52,11 @@ export function DraftForm({ ctx, type, draft }: { ctx: PageContext; type: Applic
 
   const refused = (error: unknown) => {
     if (error instanceof ApiError && Array.isArray(error.body.items)) {
-      setItems(messages(texts, lang, type, error.body.items as string[]))
+      const all = error.body.items as string[]
+      const declared = all.filter((i) => i.startsWith('DECLARATION:')).map((i) => i.slice('DECLARATION:'.length))
+      if (declared.length > 0) setDeclarationProblems(declared)
+      setItems(messages(texts, lang, type, all.filter((i) => !i.startsWith('DECLARATION:'))
+        .concat(declared.length > 0 ? [a.declarationIncomplete] : [])))
     } else if (error instanceof ApiError && error.code === 'STALE_VERSION') {
       setStale(true)
     } else {
@@ -56,15 +67,18 @@ export function DraftForm({ ctx, type, draft }: { ctx: PageContext; type: Applic
   /** Saves the form; returns where the draft now stands. */
   const save = async (): Promise<{ id: string; version: number }> => {
     const body = { parcelReference: parcelValue || null, data: cleaned(values) }
-    if (!saved) {
+    let at = saved
+    if (!at) {
       const written = await applicationsApi.create({ typeCode: type.code, ...body }, createKey)
-      const next = { id: written.id, version: written.version }
-      setSaved(next)
-      return next
+      at = { id: written.id, version: written.version }
+      setSaved(at)
+      if (!declares) return at
     }
-    const updated = await applicationsApi.update(saved.id, { expectedVersion: saved.version, ...body })
+    const updated = await applicationsApi.update(at.id, { expectedVersion: at.version, ...body,
+      ...(declares ? { declaration: cleanedDeclaration(declaration, registers) } : {}) })
     const next = { id: updated.id, version: updated.version }
     setSaved(next)
+    setDeclarationProblems(updated.declarationProblems ?? [])
     return next
   }
 
@@ -169,6 +183,8 @@ export function DraftForm({ ctx, type, draft }: { ctx: PageContext; type: Applic
           })}
         </div>
       </Card>
+
+      {declares && <DeclarationEditor texts={texts} value={declaration} onChange={setDeclaration} problems={declarationProblems} registers={registers} />}
 
       {type.requirements.documents.length > 0 && saved && (
         <DocumentsPanel texts={texts} lang={lang} applicationId={saved.id} editable />

@@ -130,3 +130,18 @@ change, as the table owner, and is append-only. The application can only read it
   assigned scopes.
 - In e2e, staff accounts registered as applicants first. They keep the applicant role, so they
   reach the applicant endpoints for their own (empty) records and get 404 for anyone else's.
+
+## Amended by ADR-042 (11 Nov 2026)
+
+- A type's `requirements` may carry a `procedure` (V31), versioned with the type and checked by the database.
+- Two DEMO types join the catalogue: `DEMO_IMMATRICULATION` (procedure A) and `DEMO_MUTATION` (procedure B).
+  `DEMO_REGISTRATION` is unchanged, kept for backward compatibility, with no procedure.
+- The nine states are unchanged: the stages are records beside `UNDER_REVIEW`, never new states.
+
+## Amended by ADR-043 step 5b (15 Nov 2026, V36)
+
+- **One new transition: `APPROVED` to `UNDER_REVIEW`**, only through a reconsideration (`procedure_reconsider`), after an
+  objection upheld after the decision, by an independent supervisor with a justification. The database refuses it
+  otherwise. `APPROVED` stays the end of an examination round; `REFUSED` and `WITHDRAWN` stay final; every other
+  transition is unchanged. The nine states are unchanged.
+- `application.review_round` counts the rounds; it moves only with that transition.

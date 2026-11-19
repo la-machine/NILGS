@@ -42,7 +42,9 @@ class ApplicationDomainTest {
         assertThat(ApplicationState.DRAFT.canMoveTo(ApplicationState.WITHDRAWN)).as("a draft is deleted, not withdrawn").isFalse();
         assertThat(ApplicationState.SUBMITTED.canMoveTo(ApplicationState.APPROVED)).isFalse();
         assertThat(ApplicationState.PENDING_DECISION.canMoveTo(ApplicationState.UNDER_REVIEW)).as("returned to review").isTrue();
-        assertThat(ApplicationState.APPROVED.isFinal()).isTrue();
+        assertThat(ApplicationState.APPROVED.isFinal()).as("final, but for a reconsideration (ADR-043 step 5b)").isTrue();
+        assertThat(ApplicationState.APPROVED.canMoveTo(ApplicationState.UNDER_REVIEW)).as("only through a reconsideration").isTrue();
+        assertThat(ApplicationState.REFUSED.canMoveTo(ApplicationState.UNDER_REVIEW)).as("a refusal ends the case").isFalse();
         assertThat(ApplicationState.WITHDRAWN.isFinal()).isTrue();
         assertThat(ApplicationState.INFO_REQUESTED.isFinal()).isFalse();
     }

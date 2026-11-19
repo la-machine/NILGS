@@ -142,6 +142,13 @@ snigf:
     page-size: ${SNIGF_REGISTER_PAGE_SIZE}
     lookups-per-hour: ${SNIGF_RATE_LOOKUP_PER_HOUR}
     max-tracked-accounts: ${SNIGF_RATE_MAX_TRACKED_CLIENTS}
+  # Procedures A and B (ADR-042): the DEMO objection period a publication opens (never a legal deadline),
+  # and the public notices list, throttled per address like public verification.
+  procedure:
+    objection-period: ${SNIGF_PROCEDURE_OBJECTION_PERIOD}
+    notices-per-minute: ${SNIGF_RATE_NOTICES_PER_MINUTE}
+    max-tracked-clients: ${SNIGF_RATE_MAX_TRACKED_CLIENTS}
+    page-size: ${SNIGF_PROCEDURE_PAGE_SIZE}
   # Documents issued by SNIGF and their verification (ADR-039). DEMO acknowledgment only.
   issuance:
     verify-base-url: ${SNIGF_ISSUANCE_VERIFY_BASE_URL}

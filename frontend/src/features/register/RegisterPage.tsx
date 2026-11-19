@@ -16,10 +16,13 @@ import { Field } from '../../shared/ui/Field'
 import { Alert, Badge, EmptyState, Skeleton } from '../../shared/ui/Feedback'
 import { errorMessage } from '../../shared/ui/errorMessage'
 import { CONFLICT_OUTCOMES, REASON_MAX, REASON_MIN, references, registerApi } from './api'
-import type { Conflict, ConflictOutcome, Inscription, Party, TitleSummary, Transaction } from './api'
+import type { CaseToRegister, Conflict, ConflictOutcome, Inscription, Party, TitleSummary, Transaction } from './api'
+import { CaseToRegisterItem } from './CasesToRegister'
 import { ProposalItem } from './Proposals'
 
-interface Loaded { titles: TitleSummary[]; proposals: Inscription[]; conflicts: Conflict[]; overdue: Transaction[]; parties: Party[] }
+interface Loaded {
+  titles: TitleSummary[]; proposals: Inscription[]; conflicts: Conflict[]; overdue: Transaction[]; parties: Party[]; cases: CaseToRegister[]
+}
 
 export function RegisterPage({ ctx, params }: { ctx: PageContext; params: URLSearchParams }) {
   const { texts, session, lang } = ctx
@@ -35,8 +38,12 @@ export function RegisterPage({ ctx, params }: { ctx: PageContext; params: URLSea
   useEffect(() => {
     if (!office) return
     let current = true
-    Promise.all([registerApi.titles(office), registerApi.proposals(office), registerApi.conflicts(office), registerApi.overdue(office), registerApi.parties(office)])
-      .then(([titles, proposals, conflicts, overdue, parties]) => { if (current) setData({ titles, proposals, conflicts, overdue, parties }) })
+    const proposing = canAt(session, 'register.propose', office)
+    Promise.all([registerApi.titles(office), registerApi.proposals(office), registerApi.conflicts(office), registerApi.overdue(office), registerApi.parties(office),
+      proposing ? registerApi.caseQueue() : Promise.resolve([] as CaseToRegister[])])
+      .then(([titles, proposals, conflicts, overdue, parties, cases]) => {
+        if (current) setData({ titles, proposals, conflicts, overdue, parties, cases: cases.filter((c) => c.officeCode === office) })
+      })
       .catch((e) => { if (current) setFailure(errorMessage(texts, e)) })
     return () => { current = false }
   }, [office, reloads]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -76,6 +83,15 @@ export function RegisterPage({ ctx, params }: { ctx: PageContext; params: URLSea
               </table>
             )}
           </Card>
+          {canPropose && (
+            <Card title={k.casesTitle} icon="checkCircle" description={k.casesIntro}>
+              {data.cases.length === 0 ? <EmptyState icon="checkCircle" title={k.noCases} /> : (
+                <ul className="plain-list exception-list" data-cases-to-register>
+                  {data.cases.map((c) => <CaseToRegisterItem key={`${c.applicationId}-${c.inscriptionId ?? ''}`} texts={texts} lang={lang} entry={c} onProposed={reload} />)}
+                </ul>
+              )}
+            </Card>
+          )}
           <Card title={k.proposalsTitle} icon="signature" description={k.proposalsIntro}>
             {data.proposals.length === 0 ? <EmptyState icon="checkCircle" title={k.noProposals} /> : (
               <ul className="plain-list exception-list">

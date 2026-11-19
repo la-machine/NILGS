@@ -14,10 +14,11 @@ import { Button } from '../../shared/ui/Button'
 import { Card, PageHeader } from '../../shared/ui/Card'
 import { Alert, Badge, EmptyState, Skeleton } from '../../shared/ui/Feedback'
 import { errorMessage } from '../../shared/ui/errorMessage'
-import { AnswersCard, CompletenessCard, HistoryCard, messages, STATE_TONE, typeName } from '../applications'
+import { AnswersCard, CompletenessCard, HistoryCard, messages, needsDeclaration, STATE_TONE, typeName } from '../applications'
 import { DocumentsPanel } from '../documents'
 import { AcknowledgmentCard } from '../issuance'
 import { formatAmount, STANDING_TONE } from '../payments'
+import { PartiesPanel, ProcedurePanel } from '../procedures'
 import { ReviewRecord, reviewsApi } from '../reviews'
 import type { Review } from '../reviews'
 import { casesApi } from './api'
@@ -82,6 +83,15 @@ export function CaseDetailPage({ ctx, id }: { ctx: PageContext; id: string }) {
           <AnswersCard texts={texts} lang={lang} type={found.type} data={found.data} />
           <DocumentsPanel texts={texts} lang={lang} applicationId={found.id} editable={false} source="case" />
           <AcknowledgmentCard texts={texts} lang={lang} applicationId={found.id} source="case" />
+          {needsDeclaration(found.type) && (
+            <PartiesPanel key={`parties-${found.version}`} texts={texts} lang={lang} applicationId={found.id} viewerId={session.userId}
+              mayRecord={canAt(session, 'application.party.record', found.officeCode)}
+              mayCheck={canAt(session, 'application.party.check', found.officeCode)}
+              mayAuthorise={canAt(session, 'application.party.exception', found.officeCode)} />
+          )}
+          {['UNDER_REVIEW', 'PENDING_DECISION', 'APPROVED', 'REFUSED'].includes(found.state) && (
+            <ProcedurePanel key={found.version} texts={texts} lang={lang} applicationId={found.id} />
+          )}
           {review && <ReviewRecord texts={texts} lang={lang} review={review} />}
           <CompletenessCard texts={texts} lang={lang} type={found.type} steps={found.completeness} />
           <HistoryCard texts={texts} lang={lang} history={found.history} />

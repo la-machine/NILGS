@@ -46,7 +46,14 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
         }
     }
 
-    enum Reach { EVERYWHERE, SOMEWHERE, TEST_OFFICE, OWN, ASSIGNED }
+    /**
+     * READ_CASE: the permission everywhere, or for assigned records (a procedure: its office's readers and its assignees);
+     * STAGE_RECORDER: any permission that records a procedure stage, at some office (ADR-042).
+     */
+    enum Reach { EVERYWHERE, SOMEWHERE, TEST_OFFICE, OWN, ASSIGNED, READ_CASE, STAGE_RECORDER }
+
+    private static final List<Permission> STAGE_RECORDING = List.of(Permission.PROCEDURE_STAGE_CADASTRAL, Permission.PROCEDURE_COMMISSION_REPORT,
+            Permission.PROCEDURE_STAGE_PUBLISH, Permission.PROCEDURE_STAGE_TITLE);
 
     static final String UNKNOWN_PARCEL = "/api/v1/parcels/DEMO-PCL-DEMOIT-2026-999999-0";
 
@@ -125,6 +132,34 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
                     .contentType(JSON).content("{\"expectedVersion\":0,\"resolution\":\"NO_CONFLICT\",\"note\":\"permission matrix\"}")),
             new Endpoint("POST /parcels/{unknown}/versions", Permission.PARCEL_CORRECT, () -> post(UNKNOWN_PARCEL + "/versions")
                     .contentType(JSON).content("{\"expectedVersion\":1,\"reason\":\"permission matrix\"}")),
+            // Procedures (ADR-042, step 3)
+            new Endpoint("GET /procedures/{unknown}", Permission.APPLICATION_READ, () -> get("/api/v1/procedures/" + SOMEONE), Reach.READ_CASE),
+            new Endpoint("GET /procedures/{unknown}/files/{unknown}", Permission.APPLICATION_READ, () -> get("/api/v1/procedures/" + SOMEONE
+                    + "/files/" + SOMEONE), Reach.READ_CASE),
+            new Endpoint("POST /procedures/{unknown}/stages/CADASTRAL_REVIEW", Permission.PROCEDURE_STAGE_CADASTRAL, () -> multipart("/api/v1/procedures/"
+                    + SOMEONE + "/stages/CADASTRAL_REVIEW").file(new org.springframework.mock.web.MockMultipartFile("record", "", "application/json",
+                    "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8)))),
+            new Endpoint("POST /procedures/{unknown}/stages/COMMISSION_REPORT", Permission.PROCEDURE_COMMISSION_REPORT, () -> multipart("/api/v1/procedures/"
+                    + SOMEONE + "/stages/COMMISSION_REPORT").file(new org.springframework.mock.web.MockMultipartFile("record", "", "application/json",
+                    "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8)))),
+            new Endpoint("GET /procedures/queue", Permission.PROCEDURE_STAGE_CADASTRAL, () -> get("/api/v1/procedures/queue"), Reach.STAGE_RECORDER),
+            // Publication and objections (ADR-042, step 4); the public notices are @PublicEndpoint, outside the matrix.
+            new Endpoint("POST /procedures/{unknown}/stages/PUBLICATION", Permission.PROCEDURE_STAGE_PUBLISH, () -> multipart("/api/v1/procedures/"
+                    + SOMEONE + "/stages/PUBLICATION").file(new org.springframework.mock.web.MockMultipartFile("record", "", "application/json",
+                    "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8)))),
+            new Endpoint("POST /procedures/{unknown}/objections", Permission.PROCEDURE_OBJECTION_RECORD, () -> multipart("/api/v1/procedures/"
+                    + SOMEONE + "/objections").file(new org.springframework.mock.web.MockMultipartFile("objection", "", "application/json",
+                    "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8))).header("Idempotency-Key", SOMEONE.toString())),
+            new Endpoint("POST /procedures/{unknown}/objections/{unknown}/decision", Permission.PROCEDURE_OBJECTION_DECIDE, () -> post("/api/v1/procedures/"
+                    + SOMEONE + "/objections/" + SOMEONE + "/decision").contentType(JSON).content("{\"outcome\":\"DISMISSED\",\"grounds\":\"permission matrix\"}")),
+            new Endpoint("POST /procedures/{unknown}/reconsideration", Permission.PROCEDURE_CASE_REOPEN, () -> post("/api/v1/procedures/"
+                    + SOMEONE + "/reconsideration").contentType(JSON).content("{\"expectedVersion\":0,\"justification\":\"permission matrix check\"}")),
+            new Endpoint("GET /procedures/{unknown}/objections/{unknown}/files/{unknown}", Permission.APPLICATION_READ, () -> get("/api/v1/procedures/"
+                    + SOMEONE + "/objections/" + SOMEONE + "/files/" + SOMEONE), Reach.READ_CASE),
+            new Endpoint("GET /procedures/{unknown}/objections/{unknown}/objector", Permission.PROCEDURE_OBJECTION_RECORD, () -> get("/api/v1/procedures/"
+                    + SOMEONE + "/objections/" + SOMEONE + "/objector")),
+            new Endpoint("GET /procedures/objection-queue", Permission.PROCEDURE_OBJECTION_DECIDE, () -> get("/api/v1/procedures/objection-queue"),
+                    Reach.SOMEWHERE),
             new Endpoint("GET /application-types", Permission.APPLICATION_CREATE, () -> get("/api/v1/application-types"), Reach.OWN),
             new Endpoint("GET /applications", Permission.APPLICATION_READ, () -> get("/api/v1/applications"), Reach.OWN),
             new Endpoint("POST /applications", Permission.APPLICATION_CREATE, () -> post("/api/v1/applications").contentType(JSON)
@@ -209,6 +244,34 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
                     .content("{\"officeCode\":\"DEMOIT\"}"), Reach.TEST_OFFICE),
             new Endpoint("POST /register/inscriptions", Permission.REGISTER_PROPOSE, () -> post("/api/v1/register/inscriptions").contentType(JSON)
                     .content("{\"officeCode\":\"DEMOIT\",\"expectedVersion\":0}"), Reach.TEST_OFFICE),
+            // ADR-042 step 5: an unknown case has no office, so the proposal is refused for everyone; the queue opens at some office.
+            new Endpoint("POST /register/cases/{unknown}/creation", Permission.REGISTER_PROPOSE, () -> post("/api/v1/register/cases/" + SOMEONE
+                    + "/creation").contentType(JSON).content("{}")),
+            // ADR-042 step 6: the TRANSFER from a procedure B case, the same way.
+            new Endpoint("POST /register/cases/{unknown}/transfer", Permission.REGISTER_PROPOSE, () -> post("/api/v1/register/cases/" + SOMEONE
+                    + "/transfer").contentType(JSON).content("{}")),
+            new Endpoint("GET /register/case-queue", Permission.REGISTER_PROPOSE, () -> get("/api/v1/register/case-queue"), Reach.SOMEWHERE),
+            // ADR-043 step 5a: an unknown case has no office; reading is open to its assignees as a procedure is.
+            new Endpoint("GET /procedures/{unknown}/parties", Permission.APPLICATION_READ, () -> get("/api/v1/procedures/" + SOMEONE + "/parties"),
+                    Reach.READ_CASE),
+            new Endpoint("GET /procedures/{unknown}/parties/files/{unknown}", Permission.APPLICATION_READ, () -> get("/api/v1/procedures/" + SOMEONE
+                    + "/parties/files/" + SOMEONE), Reach.READ_CASE),
+            new Endpoint("POST /procedures/{unknown}/parties/files", Permission.APPLICATION_PARTY_RECORD, () -> multipart("/api/v1/procedures/" + SOMEONE
+                    + "/parties/files").file(new MockMultipartFile("file", "x.pdf", "application/pdf", new byte[] {'%'})).param("purpose", "MANDATE")),
+            new Endpoint("POST /procedures/{unknown}/parties/persons/{unknown}/identity", Permission.APPLICATION_PARTY_RECORD, () -> post(
+                    "/api/v1/procedures/" + SOMEONE + "/parties/persons/" + SOMEONE + "/identity").contentType(JSON).content("{}")),
+            new Endpoint("POST /procedures/{unknown}/parties/ownership", Permission.APPLICATION_PARTY_RECORD, () -> post("/api/v1/procedures/" + SOMEONE
+                    + "/parties/ownership").contentType(JSON).content("{}")),
+            new Endpoint("POST /procedures/{unknown}/parties/persons/{unknown}/mandate", Permission.APPLICATION_PARTY_RECORD, () -> post(
+                    "/api/v1/procedures/" + SOMEONE + "/parties/persons/" + SOMEONE + "/mandate").contentType(JSON).content("{}")),
+            new Endpoint("POST /procedures/{unknown}/parties/checks", Permission.APPLICATION_PARTY_CHECK, () -> post("/api/v1/procedures/" + SOMEONE
+                    + "/parties/checks").contentType(JSON).content("{}")),
+            new Endpoint("POST /procedures/{unknown}/parties/exceptions", Permission.APPLICATION_PARTY_EXCEPTION, () -> post("/api/v1/procedures/"
+                    + SOMEONE + "/parties/exceptions").contentType(JSON).content("{}")),
+            new Endpoint("GET /register/cases/{unknown}/evidence", Permission.REGISTER_PROPOSE, () -> get("/api/v1/register/cases/" + SOMEONE
+                    + "/evidence")),
+            new Endpoint("GET /register/cases/{unknown}/evidence/files/{unknown}", Permission.REGISTER_PROPOSE, () -> get("/api/v1/register/cases/"
+                    + SOMEONE + "/evidence/files/" + SOMEONE)),
             // The professional channel (ADR-041 step 4). An unknown title has no office, so the deposit is refused for everyone.
             new Endpoint("GET /professional/titles?number={unknown}", Permission.REGISTER_DEPOSIT_SUBMIT, () -> get("/api/v1/professional/titles")
                     .param("number", "DEMO-TF-DEMOIT-999999-Z"), Reach.SOMEWHERE),
@@ -302,6 +365,9 @@ class PermissionMatrixIT extends IdentityIntegrationTest {
             case TEST_OFFICE -> scope == Permission.Scope.ANY || scope == Permission.Scope.OFFICE;
             case OWN -> scope == Permission.Scope.OWN;
             case ASSIGNED -> scope == Permission.Scope.ASSIGNED;
+            case READ_CASE -> scope == Permission.Scope.ANY || scope == Permission.Scope.ASSIGNED;
+            case STAGE_RECORDER -> STAGE_RECORDING.stream().map(p -> role.permissions().get(p))
+                    .anyMatch(s -> s == Permission.Scope.ANY || s == Permission.Scope.OFFICE);
         };
     }
 

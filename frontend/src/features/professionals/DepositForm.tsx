@@ -73,6 +73,7 @@ export function DepositForm({ texts, title, capacity, onDeposited }: {
   const dialog = useDialog()
   const [kind, setKind] = useState<string>(DEPOSIT_KINDS[0])
   const [client, setClient] = useState<NewDepositor>(EMPTY_CLIENT)
+  const [caseReference, setCaseReference] = useState('')
   const [files, setFiles] = useState<DepositFile[]>([])
   const [chooser, setChooser] = useState(0)
   const [failure, setFailure] = useState<string | null>(null)
@@ -106,7 +107,8 @@ export function DepositForm({ texts, title, capacity, onDeposited }: {
     setBusy(true)
     setFailure(null)
     try {
-      const { id } = await depositsApi.deposit({ titleId: title.id, kind, depositor: client, files }, key)
+      const { id } = await depositsApi.deposit({ titleId: title.id, kind, depositor: client, files,
+        caseReference: kind === 'SALE' && caseReference.trim() ? caseReference.trim() : undefined }, key)
       setKey(crypto.randomUUID())
       onDeposited(id)
     } catch (error) {
@@ -125,6 +127,11 @@ export function DepositForm({ texts, title, capacity, onDeposited }: {
           {DEPOSIT_KINDS.map((o) => <option key={o} value={o}>{p.depositKinds[o]}</option>)}
         </select>
       </Field>
+      {kind === 'SALE' && (
+        <Field label={p.depositCase} hint={p.depositCaseHint}>
+          <input value={caseReference} maxLength={40} onChange={(e) => setCaseReference(e.target.value)} data-deposit-case />
+        </Field>
+      )}
       <fieldset className="fieldset">
         <legend>{p.client}</legend>
         <Field label={p.clientKind}>

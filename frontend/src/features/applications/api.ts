@@ -32,7 +32,11 @@ export interface ApplicationType {
   versionNo: number
   nameFr: string
   nameEn: string
-  requirements: { fields: FieldSpec[]; documents: DocumentCategory[] }
+  requirements: {
+    fields: FieldSpec[]; documents: DocumentCategory[]
+    /** A procedure's type (ADR-042): one that registers a CREATION needs the declaration of its persons (ADR-043). */
+    procedure?: { code: 'A' | 'B'; stages: string[]; registers: 'CREATION' | 'TRANSFER'; delivery: boolean } | null
+  }
   effectiveFrom: string
 }
 
@@ -100,9 +104,52 @@ export interface Application {
   completeness: ApplicantCompletenessStep[]
   /** The decision, once recorded: always simulated in the MVP (no legal effect). */
   decision: { outcome: 'APPROVED' | 'REFUSED'; grounds: string; simulated: boolean; decidedAt: string } | null
+  /** The stages of its procedure, statuses and dates only (ADR-042); empty for a type without one. */
+  stages?: { stage: string; status: 'NOT_STARTED' | 'COMPLETED' | 'NOT_SATISFIED' | 'IN_PROGRESS' | 'OUTDATED'; at: string | null }[]
+  /** What the office asks to carry out again, and what the applicant must do (ADR-042, decision 5); never the reason. */
+  procedureInstructions?: { stages: string[]; action: string | null; at: string; pending: boolean }[]
+  /** "Registered: DEMO-TF-…" once the case's title is registered (ADR-042 §4); never a title document. */
+  /** The title the case was registered on (ADR-042): created (CREATION) or transferred (TRANSFER, step 6). */
+  registration?: { titleNumber: string; registeredAt: string; kind?: 'CREATION' | 'TRANSFER' } | null
+  declaration?: Declaration | null
+  declarationProblems?: string[]
+  parties?: CaseParty[]
+  /** The case is reconsidered (ADR-043 step 5b): the round, the stages carried out again, whether the new decision is made; never why. */
+  reconsiderations?: { round: number; stages: string[]; openedAt: string; decided: boolean }[]
 }
 
 /** What a creation or a submission answers. */
+/** ADR-043: the persons of a case as the applicant declares them while a draft. DEMO data, never verified. */
+export type DeclaredRole = 'APPLICANT' | 'REPRESENTATIVE' | 'INTENDED_OWNER' | 'TRANSFEROR' | 'TRANSFEREE'
+export interface DeclaredPerson {
+  ref: string; kind: 'NATURAL_PERSON' | 'LEGAL_PERSON'; roles: DeclaredRole[]; fullName: string; identityKind: string; identityNumber: string
+  phone?: string | null; postalAddress?: string | null
+}
+export interface Declaration {
+  capacity: 'SELF' | 'ON_BEHALF_OF_ONE' | 'ON_BEHALF_OF_SEVERAL'; persons: DeclaredPerson[]
+  shares: { person: string; interest: string; shareNum: string | number; shareDen: string | number; usufructTerm?: string | null; usufructUntil?: string | null }[]
+  mandates: { representative: string; represents: string[]; scope: string }[]
+}
+/** Where the office is with a person of the case; `verification` is always UNVERIFIED_DEMO. */
+export interface CaseParty {
+  ref: string; roles: DeclaredRole[]; fullName: string; status: 'DECLARED' | 'RECORDED' | 'MATCHES_DOCUMENT' | 'DOES_NOT_MATCH' | 'DOCUMENT_EXPIRED'
+  verification: 'UNVERIFIED_DEMO'
+}
+
+/** What a type's procedure registers (ADR-042): a CREATION (procedure A), a TRANSFER (procedure B), or nothing. */
+export type Registers = 'CREATION' | 'TRANSFER'
+export function registersOf(type: ApplicationType): Registers | null {
+  return type.requirements.procedure?.registers ?? null
+}
+
+/**
+ * Whether a type needs the declaration of its persons (ADR-043): a procedure that registers a CREATION (its intended
+ * owners) or a TRANSFER (its transferors and transferees, step 6, D37).
+ */
+export function needsDeclaration(type: ApplicationType): boolean {
+  return registersOf(type) !== null
+}
+
 export interface Written { id: string; reference: string | null; state: ApplicationState; version: number }
 
 /** A parcel reference's shape (the server also checks its check character). */
@@ -114,7 +161,7 @@ export const applicationsApi = {
   read: (id: string) => call<Application>('GET', `/applications/${encodeURIComponent(id)}`),
   create: (body: { typeCode: string; parcelReference: string | null; data: Record<string, string> }, idempotencyKey: string) =>
     call<Written>('POST', '/applications', body, { 'Idempotency-Key': idempotencyKey }),
-  update: (id: string, body: { expectedVersion: number; parcelReference: string | null; data: Record<string, string> }) =>
+  update: (id: string, body: { expectedVersion: number; parcelReference: string | null; data: Record<string, string>; declaration?: unknown }) =>
     call<Application>('PUT', `/applications/${encodeURIComponent(id)}`, body),
   remove: (id: string, expectedVersion: number) =>
     call<void>('DELETE', `/applications/${encodeURIComponent(id)}?expectedVersion=${expectedVersion}`),

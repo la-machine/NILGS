@@ -7,7 +7,8 @@ import { t } from '../../shared/i18n'
 import type { PageContext, Session } from '../../shared/session/types'
 import { DialogProvider } from '../../shared/ui/Dialog'
 import { references, registerApi, share, signingActFor } from './api'
-import type { DepositDocument, DocumentReplacement, Inscription, TitleView } from './api'
+import type { CaseToRegister, DepositDocument, DocumentReplacement, Inscription, TitleView } from './api'
+import { CaseToRegisterItem } from './CasesToRegister'
 import { DepositDocuments } from './DepositDocuments'
 import { ProposalItem } from './Proposals'
 import { RegisterPage } from './RegisterPage'
@@ -247,6 +248,72 @@ describe('the documents of a deposit', () => {
   })
 })
 
+const caseToRegister = (over: Partial<CaseToRegister> = {}): CaseToRegister => ({
+  applicationId: 'a1', reference: 'DEMO-APP-2026-000001-X', officeCode: 'DEMO1', typeCode: 'DEMO_IMMATRICULATION',
+  parcelReference: 'DEMO-PCL-DEMO1-2026-000001-Z', decidedAt: '2026-11-14T10:00:00Z', problems: [], mayPropose: true,
+  inscriptionId: null, inscriptionStatus: null, owners: 'DEMO Heir Two (2/3); DEMO Heir Three (1/3)', ...over,
+})
+
+describe('approved, to register (ADR-042 step 5, ADR-043)', () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks() })
+
+  it('proposes the CREATION from the case with a reason only: the holders are the approved statement\'s owners (ADR-043)', async () => {
+    const propose = vi.spyOn(registerApi, 'proposeFromCase').mockResolvedValue({ id: 'i9' })
+    const onProposed = vi.fn()
+    render(<ul><CaseToRegisterItem texts={t('en')} lang="en" entry={caseToRegister()} onProposed={onProposed} /></ul>)
+    expect(screen.getByText('The title will name: DEMO Heir Two (2/3); DEMO Heir Three (1/3)')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Propose the CREATION' }))
+    expect(screen.queryByLabelText(/Applicant's name/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+    expect(await screen.findByText(t('en').register.reasonTooShort)).toBeTruthy()
+    expect(propose).not.toHaveBeenCalled()
+    fireEvent.change(screen.getByLabelText(/^Reason/), { target: { value: 'Approved immatriculation, procedure complete' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+    await waitFor(() => expect(propose).toHaveBeenCalledWith('a1', 'Approved immatriculation, procedure complete'))
+    expect(onProposed).toHaveBeenCalled()
+  })
+
+  it('asks two conservators to sign a CREATION from a case (D40), one for a synthetic one', () => {
+    const fromCase = inscription({ kind: 'CREATION', applicationId: 'a1' })
+    expect(signingActFor(fromCase, ME)).toBe('request-confirmation')
+    expect(signingActFor(fromCase, 'other')).toBeNull()
+    expect(signingActFor({ ...fromCase, status: 'CONFIRMATION_PENDING' }, ME)).toBeNull()
+    expect(signingActFor({ ...fromCase, status: 'CONFIRMATION_PENDING' }, 'other')).toBe('confirm')
+    expect(signingActFor(inscription({ kind: 'CREATION' }), ME)).toBe('register')
+  })
+
+  it('says what holds a case, offers nothing to its handler, and shows a proposal waiting for its signature', () => {
+    const { container } = render(<ul>
+      <CaseToRegisterItem texts={t('en')} lang="en" entry={caseToRegister({ problems: ['OBJECTION_OPEN'], mayPropose: false })} onProposed={() => {}} />
+      <CaseToRegisterItem texts={t('en')} lang="en" entry={caseToRegister({ applicationId: 'a2', reference: 'DEMO-APP-2026-000002-X',
+        problems: ['CREATION_ALREADY_PROPOSED'], mayPropose: false, inscriptionId: 'i1', inscriptionStatus: 'PROPOSED' })} onProposed={() => {}} />
+    </ul>)
+    expect(screen.getByText(t('en').errors.OBJECTION_OPEN)).toBeTruthy()
+    expect(screen.getByText('Proposed, waiting for a signature')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Propose the CREATION' })).toBeNull()
+    expect(container.querySelectorAll('[data-case-problems]')).toHaveLength(1)
+  })
+})
+
+describe('a transfer to register (ADR-042 step 6)', () => {
+  afterEach(() => { cleanup(); vi.restoreAllMocks() })
+
+  it('names the title the case transfers and proposes the TRANSFER from the case with a reason only', async () => {
+    const transfer = vi.spyOn(registerApi, 'proposeTransferFromCase').mockResolvedValue({ id: 'i8' })
+    const creation = vi.spyOn(registerApi, 'proposeFromCase')
+    render(<ul><CaseToRegisterItem texts={t('en')} lang="en" onProposed={() => {}} entry={caseToRegister({ typeCode: 'DEMO_MUTATION',
+      registers: 'TRANSFER', titleNumber: 'DEMO-TF-DEMO1-000003-D', owners: 'DEMO Buyer (1/1)' })} /></ul>)
+    expect(screen.getByText('Transfer of title DEMO-TF-DEMO1-000003-D')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Propose the CREATION' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Propose the TRANSFER' }))
+    expect(screen.getByText(t('en').register.caseTransferIntro)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText(/^Reason/), { target: { value: 'Approved sale, title verified and duties evidenced' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Propose' }))
+    await waitFor(() => expect(transfer).toHaveBeenCalledWith('a1', 'Approved sale, title verified and duties evidenced'))
+    expect(creation).not.toHaveBeenCalled()
+  })
+})
+
 describe('the conservation', () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
@@ -259,8 +326,12 @@ describe('the conservation', () => {
       arrivingStatus: 'IN_CONFLICT', status: 'OPEN', openedAt: '2026-10-30T10:00:00Z', outcome: null, resolvedByName: null, resolutionReason: null,
     }])
     vi.spyOn(registerApi, 'overdue').mockResolvedValue([])
+    vi.spyOn(registerApi, 'caseQueue').mockResolvedValue([caseToRegister(), caseToRegister({ applicationId: 'a9', reference: 'DEMO-APP-2026-000009-X', officeCode: 'DEMO2' })])
     render(<DialogProvider><RegisterPage ctx={ctx} params={new URLSearchParams()} /></DialogProvider>)
     expect(await screen.findByText('DEMO Owner')).toBeTruthy()
+    expect(screen.getByText(t('en').register.casesTitle)).toBeTruthy()
+    expect(screen.getByText('DEMO-APP-2026-000001-X')).toBeTruthy()
+    expect(screen.queryByText('DEMO-APP-2026-000009-X')).toBeNull()
     expect(screen.getByText(t('en').register.demoTitle)).toBeTruthy()
     expect(screen.getByText(/DEMO First.*DEMO Second/)).toBeTruthy()
   })

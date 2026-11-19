@@ -13,6 +13,7 @@ import { errorMessage } from '../../shared/ui/errorMessage'
 import { AnswersCard, CompletenessCard, HistoryCard, STATE_TONE, typeName } from '../applications'
 import type { Case } from '../cases'
 import { DocumentsPanel, documentsApi } from '../documents'
+import { ProcedurePanel } from '../procedures'
 import { reviewsApi } from './api'
 import type { Review } from './api'
 import { ReviewPanel } from './ReviewPanel'
@@ -67,6 +68,7 @@ export function ReviewCasePage({ ctx, id }: { ctx: PageContext; id: string }) {
         <div className="detail-main">
           <AnswersCard texts={texts} lang={lang} type={found.type} data={found.data} />
           <DocumentsPanel texts={texts} lang={lang} applicationId={found.id} editable={false} source="assigned" />
+          <ProcedurePanel key={found.version} texts={texts} lang={lang} applicationId={found.id} />
           <CompletenessCard texts={texts} lang={lang} type={found.type} steps={found.completeness} />
           <HistoryCard texts={texts} lang={lang} history={found.history} />
         </div>

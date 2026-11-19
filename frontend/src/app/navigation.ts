@@ -4,12 +4,13 @@
 // use it (a role, or a special grant for the audit actions), so nobody is shown a link to a
 // page that would only refuse them; the server checks every call regardless.
 import { AUDIT_ACTIONS } from '../features/audit'
+import { RECORDING } from '../features/procedures'
 import type { Texts } from '../shared/i18n'
 import { accessTo, can, canAssigned, canOwn, canSomewhere } from '../shared/session/access'
 import type { Session } from '../shared/session/types'
 import type { IconName } from '../shared/ui/Icon'
 
-export type PlaceId = 'dashboard' | 'applications' | 'professional' | 'professionals' | 'cases' | 'reviews' | 'register' | 'parcels' | 'alerts' | 'accounts' | 'roles' | 'grants' | 'workload' | 'payments' | 'issued-documents' | 'records' | 'confirmations' | 'audit' | 'account'
+export type PlaceId = 'dashboard' | 'applications' | 'professional' | 'professionals' | 'cases' | 'reviews' | 'procedures' | 'objections' | 'register' | 'parcels' | 'alerts' | 'accounts' | 'roles' | 'grants' | 'workload' | 'payments' | 'issued-documents' | 'records' | 'confirmations' | 'audit' | 'account'
 
 export interface Place {
   id: PlaceId
@@ -47,6 +48,14 @@ export const GROUPS: PlaceGroup[] = [
     }, {
       id: 'reviews', icon: 'shield', label: (t) => t.nav.reviews,
       visible: (s) => canAssigned(s, 'application.read'),
+    }, {
+      // The stages an officer records (ADR-042): any permission that records one, at some office.
+      id: 'procedures', icon: 'checkCircle', label: (t) => t.nav.procedures,
+      visible: (s) => RECORDING.some((p) => canSomewhere(s, p)),
+    }, {
+      // The objections a supervisor decides (ADR-042 step 4).
+      id: 'objections', icon: 'alert', label: (t) => t.nav.objections,
+      visible: (s) => canSomewhere(s, 'procedure.objection.decide'),
     }, {
       id: 'register', icon: 'signature', label: (t) => t.nav.register,
       visible: (s) => canSomewhere(s, 'register.read'),

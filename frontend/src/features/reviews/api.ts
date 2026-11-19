@@ -29,7 +29,11 @@ export interface QueueEntry {
   mine: boolean
 }
 
-export interface ReviewStep { kind: 'RECOMMENDATION' | 'RETURN'; recommendation: Recommendation | null; text: string; actorName: string; at: string }
+export interface ReviewStep {
+  kind: 'RECOMMENDATION' | 'RETURN'; recommendation: Recommendation | null; text: string; actorName: string; at: string
+  /** The review round it belongs to (V36). */
+  round: number
+}
 
 export interface Decision {
   outcome: Outcome
@@ -38,6 +42,8 @@ export interface Decision {
   simulated: boolean
   decidedByName: string
   at: string
+  /** The review round it closed (V36): the latest round's decision is the one that counts. */
+  round: number
 }
 
 export interface Review {
@@ -52,8 +58,14 @@ export interface Review {
   decision: Decision | null
   /** Overlap and duplicate alerts still open on the parcel: a decision waits for them. */
   openAlerts: number
+  /** What the case's procedure still needs before an approval (ADR-042); a refusal never waits for it. */
+  procedureGate: string[]
   /** Whether the person asking recommended on this case: then they never decide it. */
   youRecommended: boolean
+  /** The current review round (V36): 0, then one per reconsideration; decision is its own. */
+  round: number
+  /** The decisions of earlier rounds, reconsidered and kept unchanged. */
+  earlierDecisions: Decision[]
 }
 
 const one = (id: string) => `/reviews/${encodeURIComponent(id)}`

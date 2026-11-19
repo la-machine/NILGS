@@ -129,4 +129,24 @@ covers both.
   so and disables the button.
 - Reassignment, workload and deadlines are not here: E-22 (supervisor) and E-16 (tracking).
 
+## Amended by ADR-042 (11 Nov 2026, V32)
+
+- **A gate on approval, after the existing guards.** For a type with a procedure, a recommendation of approval
+  and an approved decision are refused while the procedure is incomplete (`PROCEDURE_INCOMPLETE`, SQLSTATE
+  `PC001`, triggers `review_step_procedure_gate` and `decision_procedure_gate`). A refusal is never gated.
+- **Separation.** Whoever recorded a stage of a case never claims it (`STAGE_RECORDER_CANNOT_REVIEW`).
+- **The review view** carries `procedureGate`, and the form lists it.
+- Types without a procedure are unchanged.
+
+## Amended by ADR-043 step 5b (15 Nov 2026, V36)
+
+- **One decision per round**, not per case: `decision`, `review_step` and `case_assignment` carry the round, set by the
+  database; one assignment per stage and round. The latest round's decision counts; the earlier ones are kept
+  unchanged and shown as reconsidered.
+- **Separation, across rounds.** Whoever recommended on the case never decides it, in any round; a decision
+  authority who decided an earlier round never decides again; whoever opened a reconsideration never reviews or decides
+  the case; a decision follows a recommendation of its own round.
+- The review view carries `round` and `earlierDecisions`; the audit events of claims, recommendations, returns and
+  decisions carry the round.
+
 *Copyright (c) 2026 FLYT. Author: Pythagore.*

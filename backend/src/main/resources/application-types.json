@@ -45,6 +45,87 @@
           { "code": "DEMO_SITE_PLAN", "required": false, "labelFr": "Plan de situation (DEMO)", "labelEn": "Site plan (DEMO)" }
         ]
       }
+    },
+    {
+      "code": "DEMO_IMMATRICULATION",
+      "nameFr": "Immatriculation directe (DEMO)",
+      "nameEn": "Direct first registration (DEMO)",
+      "requirements": {
+        "fields": [
+          {
+            "key": "applicantCapacity", "kind": "CHOICE", "required": true, "maxLength": 0,
+            "options": [
+              { "code": "OCCUPANT", "labelFr": "Occupant qui a mis le terrain en valeur (DEMO)", "labelEn": "Occupant who developed the land (DEMO)" },
+              { "code": "HEIR", "labelFr": "Héritier d'un occupant (DEMO)", "labelEn": "Heir of an occupant (DEMO)" }
+            ],
+            "labelFr": "Fondement de la demande", "labelEn": "Basis of the claim",
+            "hintFr": null, "hintEn": null
+          },
+          {
+            "key": "landUse", "kind": "CHOICE", "required": true, "maxLength": 0,
+            "options": [
+              { "code": "RESIDENTIAL", "labelFr": "Habitation", "labelEn": "Residential" },
+              { "code": "AGRICULTURAL", "labelFr": "Agricole", "labelEn": "Agricultural" },
+              { "code": "COMMERCIAL", "labelFr": "Commercial", "labelEn": "Commercial" }
+            ],
+            "labelFr": "Usage du terrain", "labelEn": "Land use",
+            "hintFr": null, "hintEn": null
+          },
+          {
+            "key": "occupiedSince", "kind": "TEXT", "required": true, "maxLength": 40, "options": null,
+            "labelFr": "Occupé depuis", "labelEn": "Occupied since",
+            "hintFr": "Année ou date du début de l'occupation (données fictives).",
+            "hintEn": "Year or date the occupation began (synthetic data)."
+          },
+          {
+            "key": "statement", "kind": "LONG_TEXT", "required": true, "maxLength": 2000, "options": null,
+            "labelFr": "Exposé de la demande", "labelEn": "Statement",
+            "hintFr": "Comment le terrain a été occupé et mis en valeur (données fictives).",
+            "hintEn": "How the land was occupied and developed (synthetic data)."
+          }
+        ],
+        "documents": [
+          { "code": "DEMO_IDENTITY", "required": true, "labelFr": "Pièce d'identité (DEMO)", "labelEn": "Identity document (DEMO)" },
+          { "code": "DEMO_DEVELOPMENT_EVIDENCE", "required": true, "labelFr": "Preuve de mise en valeur (DEMO)", "labelEn": "Evidence of development (DEMO)" },
+          { "code": "DEMO_SITE_PLAN", "required": true, "labelFr": "Plan de situation (DEMO)", "labelEn": "Site plan (DEMO)" }
+        ],
+        "procedure": {
+          "code": "A",
+          "stages": ["CADASTRAL_REVIEW", "FIELD_VISIT", "COMMISSION_REPORT", "PUBLICATION"],
+          "registers": "CREATION",
+          "delivery": true
+        }
+      }
+    },
+    {
+      "code": "DEMO_MUTATION",
+      "nameFr": "Mutation totale par vente (DEMO)",
+      "nameEn": "Transfer of a whole title by sale (DEMO)",
+      "requirements": {
+        "fields": [
+          {
+            "key": "titleNumber", "kind": "TEXT", "required": true, "maxLength": 40, "options": null,
+            "labelFr": "Numéro du titre foncier", "labelEn": "Land title number",
+            "hintFr": "Le numéro DEMO du titre vendu, par exemple DEMO-TF-YDE1-000001-K.",
+            "hintEn": "The DEMO number of the title sold, for example DEMO-TF-YDE1-000001-K."
+          },
+          {
+            "key": "statement", "kind": "LONG_TEXT", "required": true, "maxLength": 2000, "options": null,
+            "labelFr": "Exposé de la demande", "labelEn": "Statement",
+            "hintFr": "La vente et le notaire qui l'a reçue (données fictives). Déclarez cédants et acquéreurs dans les personnes du dossier.",
+            "hintEn": "The sale and the notary who received it (synthetic data). Declare the transferors and transferees as the persons of the case."
+          }
+        ],
+        "documents": [
+          { "code": "DEMO_IDENTITY", "required": true, "labelFr": "Pièce d'identité (DEMO)", "labelEn": "Identity document (DEMO)" }
+        ],
+        "procedure": {
+          "code": "B",
+          "stages": ["TITLE_VERIFICATION", "DUTIES_EVIDENCE"],
+          "registers": "TRANSFER",
+          "delivery": true
+        }
+      }
     }
   ]
 }

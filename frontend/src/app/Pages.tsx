@@ -28,6 +28,9 @@ const WorkloadPage = lazy(() => import('../features/reports').then((m) => ({ def
 const FinancePage = lazy(() => import('../features/payments').then((m) => ({ default: m.FinancePage })))
 const IssuedDocumentsPage = lazy(() => import('../features/issuance').then((m) => ({ default: m.IssuedDocumentsPage })))
 export const VerifyPage = lazy(() => import('../features/issuance').then((m) => ({ default: m.VerifyPage })))
+const ProcedureQueuePage = lazy(() => import('../features/procedures').then((m) => ({ default: m.ProcedureQueuePage })))
+const ObjectionQueuePage = lazy(() => import('../features/procedures').then((m) => ({ default: m.ObjectionQueuePage })))
+export const PublicNoticesPage = lazy(() => import('../features/procedures').then((m) => ({ default: m.PublicNoticesPage })))
 const RetentionPage = lazy(() => import('../features/retention').then((m) => ({ default: m.RetentionPage })))
 const ConfirmationsPage = lazy(() => import('../features/recovery').then((m) => ({ default: m.ConfirmationsPage })))
 const AuditPage = lazy(() => import('../features/audit').then((m) => ({ default: m.AuditPage })))
@@ -37,6 +40,14 @@ export function Pages({ route, place, allowed, ctx, onAddKey }: {
   route: Route; place: PlaceId | null; allowed: boolean; ctx: PageContext; onAddKey: (label: string) => Promise<void>
 }) {
   const { texts } = ctx
+  // The public notices of procedures (ADR-042) are open to everyone, signed in or not.
+  if (route.segments[0] === 'notices') {
+    return (
+      <Suspense fallback={<div className="page" aria-busy="true"><Skeleton lines={6} /></div>}>
+        <PublicNoticesPage texts={texts} lang={ctx.lang} />
+      </Suspense>
+    )
+  }
   // Public verification (ADR-039) is open to everyone, signed in or not.
   if (route.segments[0] === 'verify') {
     return (
@@ -73,6 +84,8 @@ export function Pages({ route, place, allowed, ctx, onAddKey }: {
       {place === 'professionals' && <ProfessionalsAdminRoutes ctx={ctx} route={route} />}
       {place === 'cases' && <CasesRoutes ctx={ctx} route={route} />}
       {place === 'reviews' && <ReviewsRoutes ctx={ctx} route={route} />}
+      {place === 'procedures' && <ProcedureQueuePage ctx={ctx} />}
+      {place === 'objections' && <ObjectionQueuePage ctx={ctx} />}
       {place === 'register' && <RegisterRoutes ctx={ctx} route={route} />}
       {place === 'parcels' && <ParcelsRoutes ctx={ctx} route={route} />}
       {place === 'alerts' && <AlertsRoutes ctx={ctx} route={route} />}

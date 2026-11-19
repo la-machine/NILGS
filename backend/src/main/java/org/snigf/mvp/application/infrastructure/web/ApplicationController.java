@@ -54,8 +54,9 @@ class ApplicationController {
                       @Size(max = Requirements.MAX_FIELDS) Map<String, String> data) {
     }
 
+    /** {@code declaration}: the persons, roles, shares and mandates (ADR-043), for a type that registers a title. */
     record UpdateBody(long expectedVersion, @Size(max = 40) String parcelReference,
-                      @Size(max = Requirements.MAX_FIELDS) Map<String, String> data) {
+                      @Size(max = Requirements.MAX_FIELDS) Map<String, String> data, tools.jackson.databind.JsonNode declaration) {
     }
 
     record SubmitBody(long expectedVersion) {
@@ -112,7 +113,41 @@ class ApplicationController {
                                String officeCode, Map<String, String> data, Instant createdAt, Instant updatedAt,
                                Instant submittedAt, long version, Instant since, String waitingOn,
                                PendingRequestResponse pendingRequest, List<StepResponse> history,
-                               List<ApplicantCompletenessResponse> completeness, DecisionResponse decision) {
+                               List<ApplicantCompletenessResponse> completeness, DecisionResponse decision,
+                               List<StageProgressResponse> stages, List<InstructionResponse> procedureInstructions,
+                               RegistrationResponse registration, tools.jackson.databind.JsonNode declaration,
+                               List<String> declarationProblems, List<PartyResponse> parties,
+                               List<ReconsiderationResponse> reconsiderations) {
+    }
+
+    /**
+     * The case is reconsidered (ADR-043 step 5b): the round, the stages carried out again, since when, and whether the new
+     * decision is made. Never why, nor the objections or who opened it.
+     */
+    record ReconsiderationResponse(int round, List<String> stages, Instant openedAt, boolean decided) {
+    }
+
+    /**
+     * A person of the case (ADR-043) as its applicant reads them: never the officer, the documents or a check's note.
+     * {@code verification} is always {@code UNVERIFIED_DEMO}: a {@code MATCHES_DOCUMENT} status says the entry corresponds to
+     * the document presented, never that the identity was authenticated.
+     */
+    record PartyResponse(String ref, List<String> roles, String fullName, String status, String verification) {
+    }
+
+    /**
+     * "Registered: DEMO-TF-…" (ADR-042 §4) or "Transfer registered" (step 6): the title's number, when, and whether the case
+     * created the title or transferred it ({@code kind}); null until registered. Never a title document nor the holders.
+     */
+    record RegistrationResponse(String titleNumber, Instant registeredAt, String kind) {
+    }
+
+    /** What the office asks to carry out again (ADR-042, decision 5): stages, the applicant's action, never the reason. */
+    record InstructionResponse(List<String> stages, String action, Instant at, boolean pending) {
+    }
+
+    /** A stage of the case's procedure (ADR-042): its status and date, never who or why. */
+    record StageProgressResponse(String stage, String status, Instant at) {
     }
 
     /** The decision as the applicant reads it: simulated, no legal effect (MVP-05). */
@@ -158,7 +193,8 @@ class ApplicationController {
     ApplicationResponse update(@AuthenticationPrincipal AuthenticatedUser applicant, @PathVariable UUID id,
                                @Valid @RequestBody UpdateBody body) {
         return response(applications.update(applicant, id, body.expectedVersion(),
-                new ApplicationService.Form(body.parcelReference(), body.data())));
+                new ApplicationService.Form(body.parcelReference(), body.data(),
+                        body.declaration() == null || body.declaration().isNull() ? null : body.declaration().toString())));
     }
 
     @DeleteMapping("/applications/{id}")
@@ -191,6 +227,8 @@ class ApplicationController {
         return new TypeResponse(t.code(), t.versionNo(), t.nameFr(), t.nameEn(), t.requirements(), t.effectiveFrom());
     }
 
+    private static final tools.jackson.databind.json.JsonMapper JSON = tools.jackson.databind.json.JsonMapper.builder().build();
+
     private static ApplicationResponse response(ApplicationService.View view) {
         Application a = view.application();
         Tracking t = view.tracking();
@@ -204,7 +242,13 @@ class ApplicationController {
                 t.completeness().stream().map(c -> new ApplicantCompletenessResponse(c.kind().name(), c.missing(),
                         c.requested(), c.message(), c.by().name(), c.at(), ReplacementResponse.of(c.replacements()))).toList(),
                 view.decision().map(d -> new DecisionResponse(d.outcome(), d.grounds(), d.simulated(), d.decidedAt()))
-                        .orElse(null));
+                        .orElse(null),
+                view.stages().stream().map(s -> new StageProgressResponse(s.stage(), s.status(), s.at())).toList(),
+                view.instructions().stream().map(i -> new InstructionResponse(i.stages(), i.action(), i.at(), i.pending())).toList(),
+                view.registration().map(r -> new RegistrationResponse(r.titleNumber(), r.registeredAt(), r.kind())).orElse(null),
+                a.declaration() == null ? null : JSON.readTree(a.declaration()), view.declarationProblems(),
+                view.parties().stream().map(p -> new PartyResponse(p.ref(), p.roles(), p.fullName(), p.status(), "UNVERIFIED_DEMO")).toList(),
+                view.reconsiderations().stream().map(r -> new ReconsiderationResponse(r.round(), r.stages(), r.openedAt(), r.decided())).toList());
     }
 
     static TransitionResponse transition(Application.Transition t) {

@@ -65,6 +65,37 @@ public final class InscriptionCanonical {
             form.text(Integer.toString(documents.size()));
             documents.forEach(d -> form.text(d.id().toString()).text(d.sha256()));
         }
+        // V34: a CREATION from a case also names it; nothing is added otherwise, so earlier bytes are unchanged.
+        if (i.applicationId() != null) {
+            form.text("case").text(i.applicationId().toString());
+        }
+        // V35 (ADR-043, owner's review): the decision and statement it was proposed under; the usufruct's term; and, for
+        // every inscription proposed from V35 on, its parties' identities, so a party changed behind the signatures shows.
+        if (i.decisionId() != null) {
+            form.text("decision").text(i.decisionId().toString()).text("statement").text(text(i.ownershipStatementId()))
+                    .text(i.ownershipStatementVersion() == null ? null : i.ownershipStatementVersion().toString());
+        }
+        List<Register.Holder> withTerm = holders.stream().filter(h -> h.usufructTerm() != null).toList();
+        if (!withTerm.isEmpty()) {
+            form.text("usufruct").text(Integer.toString(withTerm.size()));
+            for (Register.Holder h : withTerm) {
+                form.text(h.partyId().toString()).text(h.interest()).text(h.usufructTerm())
+                        .text(h.usufructUntil() == null ? null : h.usufructUntil().toString());
+            }
+        }
+        if (i.bindsParties()) {
+            form.text("parties").text(Integer.toString(holders.size()));
+            for (Register.Holder h : holders) {
+                Register.PartyIdentity p = h.identity();
+                form.text(h.partyId().toString()).text(h.interest()).text(p == null ? null : p.partyKind()).text(h.partyName())
+                        .text(p == null ? null : p.identityKind()).text(p == null ? null : p.identityNumber())
+                        .text(p == null ? null : text(p.sourceIdentityId()))
+                        .text(p == null || p.sourceIdentityVersion() == null ? null : p.sourceIdentityVersion().toString());
+            }
+            Register.PartyIdentity b = c == null ? null : c.beneficiaryIdentity();
+            form.text("beneficiary").text(c == null ? null : text(c.beneficiaryId())).text(b == null ? null : b.partyKind())
+                    .text(c == null ? null : c.beneficiaryName()).text(b == null ? null : b.identityKind()).text(b == null ? null : b.identityNumber());
+        }
         return form.toBytes();
     }
 

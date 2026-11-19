@@ -30,10 +30,17 @@ class JdbcReviewRepository implements ReviewRepository {
     }
 
     @Override
+    public int round(UUID applicationId) {
+        return jdbc.sql("SELECT review_round FROM application WHERE id = :id").param("id", applicationId).query(Integer.class)
+                .optional().orElse(0);
+    }
+
+    @Override
     public List<Review.Assignment> assignments(UUID applicationId) {
         return jdbc.sql("""
                         SELECT c.stage, c.assignee_id, u.display_name, c.at
                           FROM case_assignment c JOIN app_user u ON u.id = c.assignee_id
+                          JOIN application a ON a.id = c.application_id AND c.round = a.review_round
                          WHERE c.application_id = :id ORDER BY c.at""")
                 .param("id", applicationId)
                 .query((rs, n) -> new Review.Assignment(Review.Stage.valueOf(rs.getString(1)), rs.getObject(2, UUID.class),
@@ -44,32 +51,54 @@ class JdbcReviewRepository implements ReviewRepository {
     @Override
     public List<Review.Step> steps(UUID applicationId) {
         return jdbc.sql("""
-                        SELECT s.id, s.kind, s.recommendation, s.text, s.actor_id, u.display_name, s.at
+                        SELECT s.id, s.kind, s.recommendation, s.text, s.actor_id, u.display_name, s.at, s.round
                           FROM review_step s JOIN app_user u ON u.id = s.actor_id
                          WHERE s.application_id = :id ORDER BY s.at, s.id""")
                 .param("id", applicationId)
                 .query((rs, n) -> new Review.Step(rs.getObject("id", UUID.class), rs.getString("kind"),
                         rs.getString("recommendation") == null ? null : Review.Recommendation.valueOf(rs.getString("recommendation")),
-                        rs.getString("text"), rs.getObject("actor_id", UUID.class), rs.getString("display_name"), instant(rs, "at")))
+                        rs.getString("text"), rs.getObject("actor_id", UUID.class), rs.getString("display_name"), instant(rs, "at"),
+                        rs.getInt("round")))
                 .list();
     }
 
     @Override
     public Optional<Review.Decision> decision(UUID applicationId) {
+        return decisions(applicationId, "d.round = a.review_round").stream().findFirst();
+    }
+
+    @Override
+    public List<Review.Decision> earlierDecisions(UUID applicationId) {
+        return decisions(applicationId, "d.round < a.review_round");
+    }
+
+    private List<Review.Decision> decisions(UUID applicationId, String rounds) {
         return jdbc.sql("""
-                        SELECT d.id, d.outcome, d.grounds, d.cited_versions, d.simulated, u.display_name, d.at
+                        SELECT d.id, d.outcome, d.grounds, d.cited_versions, d.simulated, u.display_name, d.at, d.round
                           FROM decision d JOIN app_user u ON u.id = d.decided_by
-                         WHERE d.application_id = :id""")
+                          JOIN application a ON a.id = d.application_id
+                         WHERE d.application_id = :id
+                        """ + " AND " + rounds + " ORDER BY d.round")
                 .param("id", applicationId)
                 .query((rs, n) -> new Review.Decision(rs.getObject("id", UUID.class), Review.Outcome.valueOf(rs.getString("outcome")),
                         rs.getString("grounds"), Arrays.asList((UUID[]) rs.getArray("cited_versions").getArray()),
-                        rs.getBoolean("simulated"), rs.getString("display_name"), instant(rs, "at")))
-                .optional();
+                        rs.getBoolean("simulated"), rs.getString("display_name"), instant(rs, "at"), rs.getInt("round")))
+                .list();
     }
 
     @Override
     public int openAlerts(UUID applicationId) {
         return jdbc.sql("SELECT application_open_alerts(:id)").param("id", applicationId).query(Integer.class).single();
+    }
+
+    @Override
+    public List<String> procedureGate(UUID applicationId) {
+        return jdbc.sql("SELECT unnest(procedure_gate_problems(:id))").param("id", applicationId).query(String.class).list();
+    }
+
+    @Override
+    public int objectionsOpen(UUID applicationId) {
+        return jdbc.sql("SELECT procedure_objections_open(:id)").param("id", applicationId).query(Integer.class).single();
     }
 
     @Override
@@ -112,7 +141,7 @@ class JdbcReviewRepository implements ReviewRepository {
                           FROM application a
                           JOIN office o ON o.id = a.office_id
                           JOIN app_user u ON u.id = a.applicant_id
-                          LEFT JOIN case_assignment c ON c.application_id = a.id AND c.stage = :stage
+                          LEFT JOIN case_assignment c ON c.application_id = a.id AND c.stage = :stage AND c.round = a.review_round
                           LEFT JOIN app_user au ON au.id = c.assignee_id
                          WHERE CASE WHEN :mine THEN c.assignee_id = :actor
                                     ELSE a.state = :waiting AND c.id IS NULL END

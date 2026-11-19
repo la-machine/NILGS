@@ -13,6 +13,18 @@ import java.util.UUID;
  */
 public interface ApplicationRepository {
 
+    /** The stages of the case's procedure for its applicant (V32, {@code application_stage_progress}); empty without one. */
+    List<Tracking.StageProgress> stageProgress(UUID applicationId);
+
+    /** What the office asks to carry out again, for its applicant (V33, {@code application_procedure_instructions}). */
+    List<Tracking.ProcedureInstruction> procedureInstructions(UUID applicationId);
+
+    /** The case's reconsiderations, for its applicant (V36, {@code application_reconsideration}). */
+    List<Tracking.Reconsideration> reconsiderations(UUID applicationId);
+
+    /** The title the case was registered under, once registered (V34, {@code application_registration}). */
+    java.util.Optional<Tracking.Registration> registration(UUID applicationId);
+
     /** The versions in force of every available type. */
     List<ApplicationType> availableTypes();
 
@@ -41,7 +53,17 @@ public interface ApplicationRepository {
      * Changes a draft still at {@code expectedVersion}, moving it to the type version in force;
      * false when it changed meanwhile.
      */
-    boolean updateDraft(UUID id, long expectedVersion, UUID typeVersionId, String parcelReference, Map<String, String> data);
+    boolean updateDraft(UUID id, long expectedVersion, UUID typeVersionId, String parcelReference, Map<String, String> data,
+                        String declaration);
+
+    /** What is wrong with a draft's declaration, for its applicant (V35); empty when nothing is, or its type needs none. */
+    List<String> declarationProblems(UUID id);
+
+    /** The persons of a case as its applicant reads them (V35, {@code application_parties}). */
+    List<Tracking.CasePerson> parties(UUID id);
+
+    /** What the case's persons still need before acceptance, for an officer who reads them (V35); empty when nothing. */
+    List<String> partyProblems(UUID id);
 
     /** Deletes a draft still at {@code expectedVersion}; false when it changed or is gone. */
     boolean deleteDraft(UUID id, long expectedVersion);

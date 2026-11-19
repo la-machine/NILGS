@@ -21,7 +21,32 @@ export const DOCUMENT_CATEGORIES = ['DEED', 'IDENTITY', 'AUTHORISATION', 'TAX_OR
 export const REASON_MIN = 10
 export const REASON_MAX = 2000
 
-export interface Holder { partyId: string; partyName: string; interest: string; shareNum: number; shareDen: number }
+export interface Holder {
+  partyId: string; partyName: string; interest: string; shareNum: number; shareDen: number
+  /** A usufruct's term (ADR-043): LIFE, or UNTIL its date. */
+  usufructTerm?: 'LIFE' | 'UNTIL' | null; usufructUntil?: string | null
+}
+/** What the two conservators examine before signing a CREATION from a case (ADR-043); never a phone or an address. */
+export interface EvidenceCheck { outcome: 'MATCHES' | 'DOES_NOT_MATCH'; by: string; at: string }
+export interface CaseEvidence {
+  reference: string; capacity: string | null
+  statement: { id: string; version: number; enteredBy: string; enteredAt: string; verification: 'UNVERIFIED_DEMO'; check: EvidenceCheck | null }
+  owners: {
+    ref: string; kind: string; fullName: string; identityKind: string; identityNumber: string; validUntil?: string; expiredAtTranscription: boolean
+    exception?: { policy: string; reason: string; by: string; at: string }; interest: string; shareNum: number; shareDen: number
+    usufructTerm?: 'LIFE' | 'UNTIL'; usufructUntil?: string; identityVersionId: string; identityVersion: number; verification: 'UNVERIFIED_DEMO'
+    transcribedBy: string; transcribedAt: string; sourceFile?: string; sourceVersion?: string; basisFile?: string; basisVersion?: string
+    check?: EvidenceCheck
+  }[]
+  mandates: { representative: string; scope: string; represents: string[]; documentFile: string | null; version: number; check: EvidenceCheck | null }[]
+  files: { id: string; purpose: string; name: string; sha256: string; mediaType: string; sizeBytes: number }[]
+  /** A transfer (ADR-042 step 6): what it registers, the transferors as transcribed and checked, the title and the deposit. */
+  registers?: 'CREATION' | 'TRANSFER'
+  transferors?: { ref: string; kind: string; fullName: string; identityKind: string; identityNumber: string; identityVersion: number
+    verification: 'UNVERIFIED_DEMO'; sourceFile?: string; check?: EvidenceCheck }[]
+  title?: { id: string; number: string; version: number } | null
+  deposit?: { id: string; status: string; channel: string; depositedAt: string } | null
+}
 export interface Charge {
   inscriptionId: string | null; number: number | null; kind: string; beneficiaryName: string | null; amount: number | null
   blocksTransfer: boolean; endsOn: string | null; note: string | null
@@ -37,6 +62,19 @@ export interface Inscription {
   proposedBy: string; proposedByName: string; proposedAt: string; confirmedByName: string | null; registeredByName: string | null; registeredAt: string | null
   closedByName: string | null; closedReason: string | null; hash: string | null; holders: Holder[]; charge: Charge | null
   cancelledByNumber: number | null; correctedByNumber: number | null; titleNumber: string | null
+  /** The approved case a CREATION was proposed from (ADR-042 §4). */
+  applicationId?: string | null
+}
+/**
+ * An approved case waiting for its registration: what stops it, and its proposal if any (ADR-042 §4). A procedure A case
+ * registers a CREATION; a procedure B case a TRANSFER on the title it names (step 6).
+ */
+export interface CaseToRegister {
+  applicationId: string; reference: string; officeCode: string; typeCode: string; parcelReference: string; decidedAt: string
+  problems: string[]; mayPropose: boolean; inscriptionId: string | null; inscriptionStatus: string | null
+  /** Whom the title will name, from the decided ownership statement (ADR-043), with their shares. */
+  owners: string | null
+  registers?: 'CREATION' | 'TRANSFER'; titleNumber?: string | null
 }
 export interface Transaction {
   id: string; titleId: string; titleNumber: string; officeCode: string; kind: string; channel: string; depositorName: string; submittedByName: string | null
@@ -90,9 +128,20 @@ export const registerApi = {
     call<ParcelVersionRef>('GET', `${BASE}/parcels/${encodeURIComponent(reference)}?office=${encodeURIComponent(code)}`),
   createParty: (party: NewParty) => call<{ id: string }>('POST', `${BASE}/parties`, party),
   propose: (proposal: NewInscription) => call<{ id: string }>('POST', `${BASE}/inscriptions`, proposal, idempotent()),
+  caseQueue: (page = 0) => call<CaseToRegister[]>('GET', `${BASE}/case-queue?page=${page}`),
+  /** Each call is audited by the server (ADR-043). */
+  caseEvidence: (applicationId: string) => call<CaseEvidence>('GET', `${BASE}/cases/${encodeURIComponent(applicationId)}/evidence`),
+  caseEvidenceFileUrl: (applicationId: string, fileId: string) =>
+    `/api/v1${BASE}/cases/${encodeURIComponent(applicationId)}/evidence/files/${encodeURIComponent(fileId)}`,
+  proposeFromCase: (applicationId: string, reason: string) =>
+    call<{ id: string }>('POST', `${BASE}/cases/${encodeURIComponent(applicationId)}/creation`, { reason }, idempotent()),
+  /** The TRANSFER of an approved procedure B case onto the title it names (ADR-042 step 6); the database decides everything. */
+  proposeTransferFromCase: (applicationId: string, reason: string) =>
+    call<{ id: string }>('POST', `${BASE}/cases/${encodeURIComponent(applicationId)}/transfer`, { reason }, idempotent()),
   withdraw: (id: string, reason: string) => call<Inscription>('POST', `${BASE}/inscriptions/${encodeURIComponent(id)}/withdraw`, { reason }),
   reject: (id: string, reason: string) => call<Inscription>('POST', `${BASE}/inscriptions/${encodeURIComponent(id)}/reject`, { reason }),
-  deposit: (body: { titleId: string; kind: string; depositorPartyId: string; submittedByPartyId?: string; evidenceReferences: string[] }) =>
+  deposit: (body: { titleId: string; kind: string; depositorPartyId: string; submittedByPartyId?: string; evidenceReferences: string[]
+    caseReference?: string }) =>
     call<{ id: string }>('POST', `${BASE}/transactions`, body, idempotent()),
   withdrawDeposit: (id: string, reason: string) => call<Transaction>('POST', `${BASE}/transactions/${encodeURIComponent(id)}/withdraw`, { reason }),
   refuseDeposit: (id: string, reason: string) => call<Transaction>('POST', `${BASE}/transactions/${encodeURIComponent(id)}/refuse`, { reason }),
@@ -132,7 +181,8 @@ export const registerApi = {
 
 /** Which signing act this person may perform on a proposal now, if any. */
 export function signingActFor(i: Inscription, viewerId: string): SigningAct | null {
-  const dual = DUAL_CONTROL.includes(i.kind)
+  // A CREATION from a case is signed by two conservators (ADR-043 D40).
+  const dual = DUAL_CONTROL.includes(i.kind) || (i.kind === 'CREATION' && !!i.applicationId)
   if (i.status === 'PROPOSED') {
     if (!dual) return 'register'
     return i.proposedBy === viewerId ? 'request-confirmation' : null

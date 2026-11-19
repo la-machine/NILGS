@@ -91,7 +91,8 @@ export interface OwnReplacement {
 }
 export interface NewDepositor { kind: (typeof DEPOSITOR_KINDS)[number]; fullName: string; identityKind: string; identityNumber: string }
 export interface DepositFile { category: string; file: File }
-export interface NewDeposit { titleId: string; kind: string; depositor: NewDepositor; files: DepositFile[] }
+/** {@code caseReference}: the procedure B case the sale is deposited for (ADR-042 step 6), or none. */
+export interface NewDeposit { titleId: string; kind: string; depositor: NewDepositor; files: DepositFile[]; caseReference?: string }
 
 const idempotent = () => ({ 'Idempotency-Key': crypto.randomUUID() })
 const one = (id: string) => encodeURIComponent(id)
@@ -136,6 +137,7 @@ export const depositsApi = {
     form.append('depositorName', d.depositor.fullName)
     form.append('depositorIdentityKind', d.depositor.identityKind)
     form.append('depositorIdentityNumber', d.depositor.identityNumber)
+    if (d.caseReference?.trim()) form.append('caseReference', d.caseReference.trim())
     for (const f of d.files) {
       form.append('categories', f.category)
       form.append('files', f.file, f.file.name)

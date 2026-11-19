@@ -154,27 +154,33 @@ class JdbcRegisterRepository implements RegisterRepository {
         List<Register.Inscription> out = new ArrayList<>(rows.size());
         for (Register.Inscription i : rows) {
             List<Register.Holder> holders = jdbc.sql("""
-                            SELECT h.party_id, p.full_name, h.interest, h.share_num, h.share_den
+                            SELECT h.party_id, p.full_name, h.interest, h.share_num, h.share_den, h.usufruct_term, h.usufruct_until,
+                                   p.kind, p.identity_kind, p.identity_number, p.source_identity_id, p.source_identity_version
                               FROM inscription_holder h JOIN register_party p ON p.id = h.party_id
                              WHERE h.inscription_id = :id ORDER BY h.party_id, h.interest""")
                     .param("id", i.id())
                     .query((rs, n) -> new Register.Holder(rs.getObject("party_id", UUID.class), rs.getString("full_name"), rs.getString("interest"),
-                            rs.getInt("share_num"), rs.getInt("share_den")))
+                            rs.getInt("share_num"), rs.getInt("share_den"), rs.getString("usufruct_term"), rs.getObject("usufruct_until", LocalDate.class),
+                            new Register.PartyIdentity(rs.getString("kind"), rs.getString("identity_kind"), rs.getString("identity_number"),
+                                    rs.getObject("source_identity_id", UUID.class), (Integer) rs.getObject("source_identity_version"))))
                     .list();
             Register.Charge charge = jdbc.sql("""
-                            SELECT c.charge_kind, c.beneficiary_id, p.full_name, c.amount, c.blocks_transfer, c.ends_on, c.note
+                            SELECT c.charge_kind, c.beneficiary_id, p.full_name, c.amount, c.blocks_transfer, c.ends_on, c.note,
+                                   p.kind, p.identity_kind, p.identity_number
                               FROM inscription_charge c LEFT JOIN register_party p ON p.id = c.beneficiary_id
                              WHERE c.inscription_id = :id""")
                     .param("id", i.id())
                     .query((rs, n) -> new Register.Charge(null, null, rs.getString("charge_kind"), rs.getObject("beneficiary_id", UUID.class),
                             rs.getString("full_name"), rs.getBigDecimal("amount"), rs.getBoolean("blocks_transfer"),
-                            rs.getObject("ends_on", LocalDate.class), rs.getString("note")))
+                            rs.getObject("ends_on", LocalDate.class), rs.getString("note"), rs.getString("kind") == null ? null
+                            : new Register.PartyIdentity(rs.getString("kind"), rs.getString("identity_kind"), rs.getString("identity_number"), null, null)))
                     .optional().orElse(null);
             out.add(new Register.Inscription(i.id(), i.titleId(), i.officeId(), i.officeCode(), i.number(), i.kind(), i.status(), i.expectedVersion(),
                     i.authorityType(), i.authorityReference(), i.reason(), i.evidenceReferences(), i.evidenceVersions(), i.completesTransactionId(),
                     i.targetInscriptionId(), i.areaM2(), i.parcelVersionId(), i.proposedBy(), i.proposedByName(), i.proposedAt(), i.confirmedByName(),
                     i.registeredBy(), i.registeredByName(), i.registeredAt(), i.closedByName(), i.closedReason(), i.hash(), holders, charge,
-                    i.cancelledByNumber(), i.correctedByNumber(), i.titleNumber()));
+                    i.cancelledByNumber(), i.correctedByNumber(), i.titleNumber(), i.applicationId(), i.decisionId(), i.ownershipStatementId(),
+                    i.ownershipStatementVersion(), i.bindsParties()));
         }
         return out;
     }
@@ -189,7 +195,9 @@ class JdbcRegisterRepository implements RegisterRepository {
                 rs.getObject("proposed_by", UUID.class), rs.getString("proposed_name"), instant(rs, "proposed_at"), rs.getString("confirmed_name"),
                 rs.getObject("registered_by", UUID.class), rs.getString("registered_name"), instant(rs, "registered_at"), rs.getString("closed_name"),
                 rs.getString("closed_reason"), hash == null ? null : HexFormat.of().formatHex(hash), List.of(), null,
-                (Integer) rs.getObject("cancelled_by"), (Integer) rs.getObject("corrected_by"), rs.getString("title_number"));
+                (Integer) rs.getObject("cancelled_by"), (Integer) rs.getObject("corrected_by"), rs.getString("title_number"),
+                rs.getObject("application_id", UUID.class), rs.getObject("decision_id", UUID.class), rs.getObject("ownership_statement_id", UUID.class),
+                (Integer) rs.getObject("ownership_statement_version"), rs.getBoolean("binds_parties"));
     }
 
     @Override
@@ -244,12 +252,59 @@ class JdbcRegisterRepository implements RegisterRepository {
                 .query(UUID.class).single();
     }
 
+    @Override
+    public UUID proposeFromCase(UUID applicationId, String reason) {
+        return jdbc.sql("SELECT register_propose_from_case(:application, :reason)")
+                .param("application", applicationId).param("reason", reason)
+                .query(UUID.class).single();
+    }
+
+    @Override
+    public UUID proposeTransferFromCase(UUID applicationId, String reason) {
+        return jdbc.sql("SELECT register_propose_transfer_from_case(:application, :reason)")
+                .param("application", applicationId).param("reason", reason)
+                .query(UUID.class).single();
+    }
+
+    @Override
+    public Optional<String> caseEvidence(UUID applicationId) {
+        return jdbc.sql("SELECT register_case_evidence(:id)::text").param("id", applicationId).query(String.class).optional();
+    }
+
+    @Override
+    public Optional<Register.EvidenceFile> caseEvidenceFile(UUID applicationId, UUID fileId) {
+        return jdbc.sql("SELECT * FROM register_case_evidence_file(:app, :file)").param("app", applicationId).param("file", fileId)
+                .query((rs, n) -> new Register.EvidenceFile(rs.getObject("id", UUID.class), rs.getString("storage_key"), rs.getString("sha256"),
+                        rs.getLong("size_bytes"), rs.getString("media_type"), rs.getString("original_name"), rs.getString("kind")))
+                .optional();
+    }
+
+    @Override
+    public List<Register.CaseToRegister> caseQueue(int limit, int offset) {
+        return jdbc.sql("SELECT * FROM register_case_queue(:limit, :offset)").param("limit", limit).param("offset", offset)
+                .query((rs, n) -> new Register.CaseToRegister(rs.getObject("application_id", UUID.class), rs.getString("reference"),
+                        rs.getString("office_code"), rs.getString("type_code"), rs.getString("parcel_reference"), instant(rs, "decided_at"),
+                        texts(rs.getArray("problems")), rs.getBoolean("may_propose"), rs.getObject("inscription_id", UUID.class),
+                        rs.getString("inscription_status"), rs.getString("owners"), rs.getString("registers"), rs.getString("title_number")))
+                .list();
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.strip();
+    }
+
     private static Map<String, Object> holderJson(Register.NewHolder h) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("party", h.party());
         out.put("interest", h.interest());
         out.put("shareNum", h.shareNum());
         out.put("shareDen", h.shareDen());
+        if (h.usufructTerm() != null) {
+            out.put("usufructTerm", h.usufructTerm());
+        }
+        if (h.usufructUntil() != null) {
+            out.put("usufructUntil", h.usufructUntil().toString());
+        }
         return out;
     }
 
@@ -309,8 +364,10 @@ class JdbcRegisterRepository implements RegisterRepository {
     @Override
     public UUID deposit(Register.NewDeposit d, Duration reviewAfter) {
         return jdbc.sql("""
-                        SELECT transaction_deposit(:title, :kind, :depositor, :submitted, CAST(:evidence AS text[]), CAST(:after AS interval))""")
+                        SELECT transaction_deposit(:title, :kind, :depositor, :submitted, CAST(:evidence AS text[]), CAST(:after AS interval),
+                                                   CAST(:case AS text))""")
                 .param("title", d.titleId()).param("kind", d.kind()).param("depositor", d.depositorPartyId()).param("submitted", d.submittedByPartyId())
+                .param("case", blankToNull(d.caseReference()))
                 .param("evidence", d.evidenceReferences() == null ? new String[0] : d.evidenceReferences().toArray(String[]::new))
                 .param("after", reviewAfter.toSeconds() + " seconds")
                 .query(UUID.class).single();
@@ -529,7 +586,8 @@ class JdbcRegisterRepository implements RegisterRepository {
     }
 
     @Override
-    public Register.DepositOutcome depositAsProfessional(UUID titleId, String kind, Register.NewDepositor depositor, List<Register.KeptDocument> documents,
+    public Register.DepositOutcome depositAsProfessional(UUID titleId, String kind, String caseReference, Register.NewDepositor depositor,
+                                                         List<Register.KeptDocument> documents,
                                                          Duration reviewAfter) {
         Map<String, Object> party = new LinkedHashMap<>();
         party.put("kind", depositor == null ? null : depositor.kind());
@@ -548,8 +606,9 @@ class JdbcRegisterRepository implements RegisterRepository {
         }).toList();
         return jdbc.sql("""
                         SELECT transaction_id, conflict_id
-                          FROM transaction_deposit_professional(:title, :kind, CAST(:depositor AS jsonb), CAST(:documents AS jsonb), CAST(:after AS interval))""")
-                .param("title", titleId).param("kind", kind).param("depositor", json.writeValueAsString(party))
+                          FROM transaction_deposit_professional(:title, :kind, CAST(:depositor AS jsonb), CAST(:documents AS jsonb), CAST(:after AS interval),
+                                                                CAST(:case AS text))""")
+                .param("title", titleId).param("kind", kind).param("depositor", json.writeValueAsString(party)).param("case", blankToNull(caseReference))
                 .param("documents", json.writeValueAsString(files)).param("after", reviewAfter.toSeconds() + " seconds")
                 .query((rs, n) -> new Register.DepositOutcome(rs.getObject("transaction_id", UUID.class), rs.getObject("conflict_id", UUID.class)))
                 .single();
@@ -623,7 +682,10 @@ class JdbcRegisterRepository implements RegisterRepository {
         List<Register.Holder> out = new ArrayList<>();
         for (JsonNode h : json.readTree(document)) {
             UUID party = UUID.fromString(h.path("party").asString(""));
-            out.add(new Register.Holder(party, names.get(party), h.path("interest").asString(""), h.path("shareNum").asInt(), h.path("shareDen").asInt()));
+            String term = h.path("usufructTerm").asString("");
+            String until = h.path("usufructUntil").asString("");
+            out.add(new Register.Holder(party, names.get(party), h.path("interest").asString(""), h.path("shareNum").asInt(), h.path("shareDen").asInt(),
+                    term.isEmpty() ? null : term, until.isEmpty() ? null : LocalDate.parse(until), null));
         }
         return out;
     }

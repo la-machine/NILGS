@@ -126,6 +126,34 @@ public enum AuditAction {
     REGISTER_DEPOSIT_DOCUMENT_DOWNLOADED,
     REGISTER_DEPOSIT_DOCUMENT_INTEGRITY_FAILED,
     REGISTER_TITLE_LOOKED_UP,
+    /** Procedures A and B (ADR-042): a stage recorded, a stage corrected by a new record, an attached file read, a refusal. */
+    PROCEDURE_STAGE_RECORDED,
+    PROCEDURE_STAGE_CORRECTED,
+    PROCEDURE_STAGE_FILE_DOWNLOADED,
+    /** Publication and objections (ADR-042 step 4): a notice opened, an objection received at the counter, decided, its file read. */
+    PROCEDURE_NOTICE_PUBLISHED,
+    PROCEDURE_OBJECTION_RECORDED,
+    PROCEDURE_OBJECTION_DECIDED,
+    PROCEDURE_OBJECTION_FILE_DOWNLOADED,
+    /** An objector's identity document was read, one objection at a time (decision 1 of 13 Nov 2026). */
+    PROCEDURE_OBJECTOR_IDENTITY_READ,
+    /** A CREATION proposed from an approved case (ADR-042 step 5). Its registration is REGISTER_INSCRIPTION_REGISTERED. */
+    PROCEDURE_REGISTRATION_PROPOSED,
+    /** The persons of a case (ADR-043): a counter file kept or read, an identity transcribed or corrected, the ownership statement
+     * and a mandate recorded, a version checked by a second officer. Never the identity numbers themselves. */
+    CASE_PARTY_FILE_ADDED,
+    CASE_PARTY_FILE_DOWNLOADED,
+    CASE_PARTY_IDENTITY_RECORDED,
+    CASE_PARTY_IDENTITY_CORRECTED,
+    CASE_OWNERSHIP_RECORDED,
+    CASE_MANDATE_RECORDED,
+    CASE_PARTY_CHECKED,
+    /** A supervisor's documented exception under a DEMO policy (an expired identity document), and a conservator's read of a case's evidence. */
+    CASE_PARTY_EXCEPTION_AUTHORISED,
+    CASE_PARTIES_READ_FOR_REGISTRATION,
+    /** An approved case reopened in a new round after an objection upheld after its decision (ADR-043 step 5b). */
+    CASE_RECONSIDERATION_OPENED,
+    PROCEDURE_REFUSED,
     ACCESS_DENIED,
     AUDIT_EVENTS_READ,
     AUDIT_TIMELINE_READ,

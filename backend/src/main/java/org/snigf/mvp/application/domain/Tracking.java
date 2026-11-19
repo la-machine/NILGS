@@ -26,6 +26,46 @@ import java.util.List;
 public record Tracking(ApplicationState state, Instant since, Party waitingOn, PendingRequest pendingRequest,
                        List<Step> history, List<CompletenessStep> completeness) {
 
+    /**
+     * A stage of the case's procedure as its applicant sees it (ADR-042): the stage, {@code NOT_STARTED}, {@code COMPLETED},
+     * {@code NOT_SATISFIED}, {@code IN_PROGRESS} (a publication whose objection period is open) or {@code OUTDATED} (a record
+     * that no longer holds, to be made again), and when its latest record was made; never the officer, the finding, the
+     * evidence, a notice's objections or an objector.
+     */
+    public record StageProgress(String stage, String status, Instant at) {
+    }
+
+    /**
+     * Work the office asks to carry out again (ADR-042, decision 5 of 13 Nov 2026): the stages, the publication anew
+     * after them, what the applicant must do (null when nothing), since when, and whether any of it is still to do.
+     * Never the objection that led to it, its number, the objector, the statement or the grounds.
+     */
+    public record ProcedureInstruction(List<String> stages, String action, Instant at, boolean pending) {
+    }
+
+    /**
+     * The title the case was registered under in the DEMO register (ADR-042 §4, step 5): its number and when. A case is
+     * not a title: the case stays APPROVED. Never the holders, the inscription or the conservator.
+     */
+    public record Registration(String titleNumber, Instant registeredAt, String kind) {
+    }
+
+    /**
+     * A person of the case as its applicant reads them (ADR-043): their reference, roles and name, and where the office is
+     * with their identity ({@code DECLARED}, {@code RECORDED}, {@code MATCHES_DOCUMENT}, {@code DOES_NOT_MATCH}). Always DEMO,
+     * never independently verified; never the officer or a check's note.
+     */
+    public record CasePerson(String ref, List<String> roles, String fullName, String status) {
+    }
+
+    /**
+     * A reconsideration of the approved case as its applicant reads it (ADR-043 step 5b, D41): the round, the stages carried
+     * out again, since when, and whether the new decision is made. Never the justification, the objections, the objectors
+     * or who opened it.
+     */
+    public record Reconsideration(int round, List<String> stages, Instant openedAt, boolean decided) {
+    }
+
     /** Who had the application in hand at a step: no person is ever named to the applicant. */
     public enum Party { APPLICANT, OFFICE, SYSTEM }
 

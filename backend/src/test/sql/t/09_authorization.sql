@@ -17,8 +17,8 @@ SELECT gen_random_uuid(), u, 'SYSTEM_ADMIN', '00000000-0000-0000-0000-0000000000
                     '00000000-0000-0000-0000-0000000000b4']::uuid[]) u;
 
 -- Catalogue and seeds
-SELECT is((SELECT count(*)::int FROM permission), 54, 'the catalogue holds the 54 permissions of the code (V7, V8, V10, V20, V21, V24, V25, V30; RoleSeedIT compares each)');
-SELECT is((SELECT count(*)::int FROM role_definition WHERE system), 13, 'the thirteen baseline roles are seeded as system roles');
+SELECT is((SELECT count(*)::int FROM permission), 65, 'the catalogue holds the 65 permissions of the code (V7, V8, V10, V20, V21, V24, V25, V30, V31, V35, V36; RoleSeedIT compares each)');
+SELECT is((SELECT count(*)::int FROM role_definition WHERE system), 14, 'the fourteen baseline roles are seeded as system roles');
 SELECT is((SELECT count(*)::int FROM permission WHERE family = 'ADMINISTRATION' AND delegable), 0,
     'no administration permission is delegable');
 SELECT throws_ok($$ INSERT INTO permission VALUES ('admin.x.y', 'ADMINISTRATION', true, ARRAY['ANY'], 'Test', 'Test') $$,

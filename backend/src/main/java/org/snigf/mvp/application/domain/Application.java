@@ -17,10 +17,18 @@ import java.util.UUID;
  */
 public record Application(UUID id, String reference, UUID applicantId, String typeCode, UUID typeVersionId,
                           ApplicationState state, String parcelReference, String officeCode, Map<String, String> data,
-                          Instant createdAt, Instant updatedAt, Instant submittedAt, long version) {
+                          Instant createdAt, Instant updatedAt, Instant submittedAt, long version, String declaration) {
 
     public Application {
         data = data == null ? Map.of() : Map.copyOf(data);
+    }
+
+    /** Without a declaration (ADR-043): the types that register no title need none. */
+    public Application(UUID id, String reference, UUID applicantId, String typeCode, UUID typeVersionId, ApplicationState state,
+                       String parcelReference, String officeCode, Map<String, String> data, Instant createdAt, Instant updatedAt,
+                       Instant submittedAt, long version) {
+        this(id, reference, applicantId, typeCode, typeVersionId, state, parcelReference, officeCode, data, createdAt, updatedAt, submittedAt,
+                version, null);
     }
 
     public boolean ownedBy(UUID user) {

@@ -82,15 +82,20 @@ class PermissionMatrixTest {
     void grantsBecomeAuthoritiesByScope() {
         Map<String, RoleDefinition> roles = baseline();
         Set<String> officer = EffectivePermissions.authorities(Set.of(new RoleGrant("CADASTRAL_OFFICER", "DEMO1")), roles);
-        assertThat(officer).contains("parcel.create@DEMO1", "parcel.correct@DEMO1", "parcel.read", "alert.resolve@DEMO1")
-                .doesNotContain("parcel.create", "audit.event.search", "admin.role.assign");
+        assertThat(officer).contains("parcel.create@DEMO1", "parcel.correct@DEMO1", "parcel.read", "alert.resolve@DEMO1",
+                        "procedure.stage.cadastral@DEMO1")
+                .doesNotContain("parcel.create", "audit.event.search", "admin.role.assign", "procedure.commission.report@DEMO1");
+        assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("COMMISSION_SECRETARY", "DEMO1")), roles))
+                .as("the commission's report belongs to its secretary, never to the cadastral officer (ADR-042 D26)")
+                .containsExactlyInAnyOrder("parcel.read", "application.read@DEMO1", "procedure.commission.report@DEMO1");
 
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("AUDITOR", "DEMO1")), roles))
                 .containsExactlyInAnyOrder("audit.event.search", "audit.chain.verify", "audit.checkpoint.create",
                         "audit.checkpoint.list", "audit.checkpoint.download", "audit.key.read", "parcel.read",
                         "application.read", "records.retention.read");
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("SUPERVISOR", "DEMO2")), roles))
-                .contains("audit.event.search@DEMO2", "audit.chain.verify", "identity.reset.confirm@DEMO2")
+                .contains("audit.event.search@DEMO2", "audit.chain.verify", "identity.reset.confirm@DEMO2",
+                        "procedure.objection.decide@DEMO2")
                 .doesNotContain("audit.event.search", "identity.reset.confirm");
         assertThat(EffectivePermissions.authorities(Set.of(new RoleGrant("SYSTEM_ADMIN", "DEMO1")), roles))
                 .hasSize(20).allMatch(a -> a.startsWith("admin.") || a.startsWith("records."));

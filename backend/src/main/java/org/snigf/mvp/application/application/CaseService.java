@@ -107,6 +107,11 @@ public class CaseService {
         if (!missing.isEmpty()) {
             throw refused(application, "ITEMS_MISSING", ApplicationRefused.Kind.CONFLICT, missing);
         }
+        // ADR-043 D38: every person, the ownership statement and every mandate transcribed and checked by a second officer.
+        List<String> parties = applications.partyProblems(id);
+        if (!parties.isEmpty()) {
+            throw refused(application, "PARTIES_INCOMPLETE", ApplicationRefused.Kind.CONFLICT, parties);
+        }
         PaymentLookup lookup = payments.getIfAvailable();
         if (lookup != null && lookup.of(id).blocksAcceptance()) {
             throw refused(application, "PAYMENT_REQUIRED", ApplicationRefused.Kind.CONFLICT, List.of());
@@ -227,6 +232,8 @@ public class CaseService {
                         List.of());
                 case "23001" -> throw refused(application, "INVALID_TRANSITION", ApplicationRefused.Kind.CONFLICT,
                         List.of());
+                // V35: the persons of the case changed in between.
+                case "PC001" -> throw refused(application, "PARTIES_INCOMPLETE", ApplicationRefused.Kind.CONFLICT, List.of());
                 default -> throw e;
             }
         }

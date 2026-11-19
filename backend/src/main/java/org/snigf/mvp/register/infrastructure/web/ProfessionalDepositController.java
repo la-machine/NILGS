@@ -75,11 +75,12 @@ class ProfessionalDepositController {
     @PreAuthorize("@access.canAt(authentication, 'register.deposit.submit', @registerOffices.title(#titleId))")
     ResponseEntity<Created> deposit(@AuthenticationPrincipal AuthenticatedUser professional, @RequestParam UUID titleId, @RequestParam String kind,
                                     @RequestParam String depositorKind, @RequestParam String depositorName, @RequestParam String depositorIdentityKind,
-                                    @RequestParam String depositorIdentityNumber, @RequestParam List<String> categories,
+                                    @RequestParam String depositorIdentityNumber, @RequestParam(required = false) String caseReference,
+                                    @RequestParam List<String> categories,
                                     @RequestPart("files") List<MultipartFile> files,
                                     @RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key) {
         if (categories.size() != files.size() || files.size() > 20 || kind.length() > 20 || depositorKind.length() > 20 || depositorName.length() > 200
-                || depositorIdentityKind.length() > 40 || depositorIdentityNumber.length() > 64) {
+                || depositorIdentityKind.length() > 40 || depositorIdentityNumber.length() > 64 || (caseReference != null && caseReference.length() > 40)) {
             throw new RegisterRefused(RegisterRefused.Kind.INVALID, "VALIDATION_FAILED");
         }
         List<InputStream> opened = new ArrayList<>();
@@ -90,7 +91,7 @@ class ProfessionalDepositController {
                 opened.add(content);
                 uploads.add(new ProfessionalDepositService.Upload(categories.get(i), files.get(i).getOriginalFilename(), content));
             }
-            UUID id = deposits.deposit(professional, titleId, kind,
+            UUID id = deposits.deposit(professional, titleId, kind, caseReference,
                     new Register.NewDepositor(depositorKind, depositorName, depositorIdentityKind, depositorIdentityNumber), uploads, key);
             return ResponseEntity.created(URI.create("/api/v1/professional/deposits/" + id)).body(new Created(id));
         } catch (IOException e) {

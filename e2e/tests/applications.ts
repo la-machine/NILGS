@@ -72,6 +72,8 @@ export function applicationJourneys(people: () => ApplicationPeople, parcel: () 
     const list = await applicant.open('My applications')
     await list.getByRole('link', { name: 'New application' }).first().click()
     const page = applicant.page
+    // Three DEMO types since Slice 4 (ADR-042): the generic case flow is chosen from the picker.
+    await page.getByRole('link', { name: 'Land registration request (DEMO)' }).click()
     await expect(page.getByRole('heading', { level: 1, name: 'Land registration request (DEMO)' })).toBeVisible()
     await expect(page.getByText('Proof of right (DEMO)')).toBeVisible()
     await page.getByRole('combobox', { name: /^Land use/ }).selectOption('RESIDENTIAL')

@@ -78,8 +78,14 @@ class EndpointAnnotationArchTest {
                 Matcher matcher = ACCESS.matcher(rule);
                 if (!matcher.matches()) {
                     problems.add(method.getFullName() + ": use @access.can, canAt, canAtAny, canOwn or canSomewhere, not " + rule);
-                } else if (Permission.ofCode(matcher.group(2)).isEmpty()) {
-                    problems.add(method.getFullName() + ": unknown permission " + matcher.group(2));
+                } else {
+                    // Every permission the rule names, not only the first, is in the catalogue.
+                    Matcher named = Pattern.compile("'([a-z.-]+)'").matcher(rule);
+                    while (named.find()) {
+                        if (Permission.ofCode(named.group(1)).isEmpty()) {
+                            problems.add(method.getFullName() + ": unknown permission " + named.group(1));
+                        }
+                    }
                 }
             }
         }

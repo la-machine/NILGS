@@ -17,8 +17,8 @@ const pending: Review = {
     { stage: 'DECISION', assigneeName: 'Decider', at: '2026-10-24T11:00:00Z', mine: true },
   ],
   steps: [{ kind: 'RECOMMENDATION', recommendation: 'RECOMMEND_APPROVAL', text: 'Deed and plan match the register', actorName: 'Reviewer',
-    at: '2026-10-24T10:30:00Z' }],
-  decision: null, openAlerts: 0, youRecommended: false,
+    at: '2026-10-24T10:30:00Z', round: 0 }],
+  decision: null, openAlerts: 0, youRecommended: false, procedureGate: [], round: 0, earlierDecisions: [],
 }
 
 const citable = [{ id: 'v1', label: 'Proof of right (DEMO) — deed.pdf (v1)' }]
@@ -96,7 +96,7 @@ describe('a recorded decision', () => {
   it('always carries the simulated notice and names the documents cited', () => {
     render(<ReviewRecord texts={t('en')} lang="en" citedNames={{ v1: 'deed.pdf' }} review={{ ...pending, state: 'APPROVED',
       decision: { outcome: 'APPROVED', grounds: 'The right is proven', citedVersions: ['v1'], simulated: true, decidedByName: 'Decider',
-        at: '2026-10-24T12:00:00Z' } }} />)
+        at: '2026-10-24T12:00:00Z', round: 0 } }} />)
     expect(screen.getByRole('note').textContent).toBe('Simulated decision — no legal effect')
     expect(screen.getByText('Approved (simulated)')).toBeTruthy()
     expect(screen.getByText('Documents cited: deed.pdf.')).toBeTruthy()

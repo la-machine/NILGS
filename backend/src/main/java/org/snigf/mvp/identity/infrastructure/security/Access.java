@@ -107,7 +107,24 @@ public class Access {
     /**
      * The permission held everywhere or at some office, for endpoints whose service then
      * restricts each record to the offices held (the supervisor's reset confirmations,
-     * ADR-028). Role permissions only: such permissions are never delegable.
+     * ADR-028). Role permissions only: such permissions are never delegable. With {@code others}, any of the
+     * permissions named (the procedure stages' queue, ADR-042).
+     */
+    public boolean canSomewhere(Authentication authentication, String permission, String... others) {
+        if (canSomewhere(authentication, permission)) {
+            return true;
+        }
+        for (String other : others) {
+            if (canSomewhere(authentication, other)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * The permission held everywhere or at some office, for endpoints whose service then
+     * restricts each record to the offices held. Role permissions only.
      */
     public boolean canSomewhere(Authentication authentication, String permission) {
         if (authentication == null || !authentication.isAuthenticated() || permission == null

@@ -89,7 +89,12 @@ public class ApplicationService {
     }
 
     /** The form as the applicant sends it: every value is text. */
-    public record Form(String parcelReference, Map<String, String> data) {
+    /** {@code declaration}: the persons, roles, shares and mandates as the applicant declares them (ADR-043), as JSON, or null. */
+    public record Form(String parcelReference, Map<String, String> data, String declaration) {
+
+        public Form(String parcelReference, Map<String, String> data) {
+            this(parcelReference, data, null);
+        }
     }
 
     /** The answer to a creation or a submission; stored for idempotent retries. */
@@ -104,8 +109,12 @@ public class ApplicationService {
      * (history and completeness review without staff names or internal reasons, MVP-06) and the
      * decision.
      */
+    /** {@code stages}: the case's procedure, stage by stage, as its applicant may see it (ADR-042); empty without one. */
     public record View(Application application, ApplicationType type, Tracking tracking,
-                       Optional<DecisionLookup.DecisionSummary> decision) {
+                       Optional<DecisionLookup.DecisionSummary> decision, List<Tracking.StageProgress> stages,
+                       List<Tracking.ProcedureInstruction> instructions, Optional<Tracking.Registration> registration,
+                       List<String> declarationProblems, List<Tracking.CasePerson> parties,
+                       List<Tracking.Reconsideration> reconsiderations) {
     }
 
     @Transactional(readOnly = true)
@@ -156,7 +165,9 @@ public class ApplicationService {
         Optional<DecisionLookup.DecisionSummary> decision = Optional.ofNullable(decisions.getIfAvailable())
                 .flatMap(lookup -> lookup.of(id));
         return new View(application, type, Tracking.of(application, applications.transitions(id), applications.completeness(id)),
-                decision);
+                decision, applications.stageProgress(id), applications.procedureInstructions(id), applications.registration(id),
+                application.state() == ApplicationState.DRAFT ? applications.declarationProblems(id) : List.of(), applications.parties(id),
+                applications.reconsiderations(id));
     }
 
     /** Replaces a draft's form, under the type version now in force. */
@@ -168,7 +179,7 @@ public class ApplicationService {
         ApplicationType type = currentType(draft.typeCode());
         Form clean = normalised(form);
         requireValid(type, clean);
-        if (!applications.updateDraft(id, expectedVersion, type.id(), clean.parcelReference(), clean.data())) {
+        if (!applications.updateDraft(id, expectedVersion, type.id(), clean.parcelReference(), clean.data(), clean.declaration())) {
             throw new ApplicationRefused(ApplicationRefused.Kind.CONFLICT, "STALE_VERSION");
         }
         audit.record(AuditEvent.of(AuditAction.APPLICATION_DRAFT_UPDATED, AuditOutcome.SUCCESS)
@@ -213,6 +224,8 @@ public class ApplicationService {
         }
         ApplicationType type = currentType(draft.typeCode());
         List<String> missing = new ArrayList<>(type.requirements().check(draft.data(), true));
+        // ADR-043: the persons, roles, shares and mandates, as the database will check them on submission.
+        applications.declarationProblems(id).forEach(p -> missing.add("DECLARATION:" + p));
         Optional<ParcelDirectory.ActiveParcel> parcel = Optional.empty();
         if (draft.parcelReference() == null) {
             missing.add("MISSING:parcelReference");
@@ -239,6 +252,11 @@ public class ApplicationService {
             }
             if ("40001".equals(sqlState(e))) {
                 throw new ApplicationRefused(ApplicationRefused.Kind.CONFLICT, "STALE_VERSION");
+            }
+            if ("PC001".equals(sqlState(e))) {
+                // V37: a procedure B case names its title at submission; anything else the database refuses is the declaration.
+                String reason = procedureReason(e);
+                throw incomplete(draft, List.of(TITLE_REFUSALS.contains(reason) ? reason : "DECLARATION_INVALID"));
             }
             throw e;
         }
@@ -337,6 +355,10 @@ public class ApplicationService {
         if (form.parcelReference() != null && !parcelReferenceWellFormed(form.parcelReference())) {
             problems.add("PARCEL_REFERENCE_INVALID");
         }
+        // The database bounds it too (32 KiB); its content is checked as the applicant goes and at submission (V35).
+        if (form.declaration() != null && form.declaration().length() > 16_000) {
+            problems.add("DECLARATION_TOO_LARGE");
+        }
         if (!problems.isEmpty()) {
             throw new ApplicationRefused(ApplicationRefused.Kind.INVALID, "FORM_INVALID", problems);
         }
@@ -354,7 +376,9 @@ public class ApplicationService {
         }
         String parcel = form == null || form.parcelReference() == null || form.parcelReference().isBlank()
                 ? null : form.parcelReference().strip().toUpperCase(java.util.Locale.ROOT);
-        return new Form(parcel, data);
+        String declaration = form == null || form.declaration() == null || form.declaration().isBlank() || "null".equals(form.declaration().strip())
+                ? null : form.declaration();
+        return new Form(parcel, data, declaration);
     }
 
     private ApplicationRefused incomplete(Application draft, List<String> missing) {
@@ -379,6 +403,24 @@ public class ApplicationService {
         } catch (IdempotencyStore.InProgress e) {
             throw new ApplicationRefused(ApplicationRefused.Kind.CONFLICT, "IDEMPOTENCY_IN_PROGRESS");
         }
+    }
+
+    /** The title a procedure B case names, refused at submission (V37, ADR-042 step 6). */
+    private static final java.util.Set<String> TITLE_REFUSALS = java.util.Set.of("TITLE_NOT_FOUND", "TITLE_CLOSED", "TITLE_NOT_ON_PARCEL",
+            "TITLE_CASE_OPEN");
+    private static final Pattern PROCEDURE_REASON = Pattern.compile(": ([A-Z][A-Z0-9_]{2,63})\\b");
+
+    /** The reason code a PC001 refusal carries as its message (as {@code ProcedureRefused} reads it). */
+    private static String procedureReason(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof SQLException sql && "PC001".equals(sql.getSQLState()) && sql.getMessage() != null) {
+                var m = PROCEDURE_REASON.matcher(sql.getMessage());
+                if (m.find()) {
+                    return m.group(1);
+                }
+            }
+        }
+        return "";
     }
 
     private static String sqlState(Throwable e) {

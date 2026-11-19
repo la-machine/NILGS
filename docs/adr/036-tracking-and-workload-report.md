@@ -130,4 +130,10 @@ Durations are whole seconds; the interface shows days, hours and minutes.
   - the audit timeline of one case (E-18, which needs ADR-027's office on audit events);
   - business-day calendars and holidays: targets count calendar time.
 
+## Amended by ADR-042 (11 Nov 2026, V32)
+
+The applicant's projection gains `stages`: each stage of the case's procedure, with its status (`NOT_STARTED`,
+`COMPLETED`, `NOT_SATISFIED`) and the date of its latest record. It never carries the officer, the finding or
+the evidence. `ApplicantPayloadSchema` pins the three fields. It is empty for a type without a procedure.
+
 *Copyright (c) 2026 FLYT. Author: Pythagore.*

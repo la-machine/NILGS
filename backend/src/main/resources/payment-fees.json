@@ -6,6 +6,20 @@
       "currency": "XAF",
       "labelFr": "Frais de service de la plateforme DÉMO — pas un droit administratif officiel",
       "labelEn": "DEMO platform service charge — not an official administrative fee"
+    },
+    {
+      "typeCode": "DEMO_IMMATRICULATION",
+      "amount": 25000,
+      "currency": "XAF",
+      "labelFr": "Frais de service de la plateforme DÉMO — pas un droit administratif officiel",
+      "labelEn": "DEMO platform service charge — not an official administrative fee"
+    },
+    {
+      "typeCode": "DEMO_MUTATION",
+      "amount": 15000,
+      "currency": "XAF",
+      "labelFr": "Frais de service de la plateforme DÉMO — pas un droit d'enregistrement ni de timbre",
+      "labelEn": "DEMO platform service charge — not a registration or stamp duty"
     }
   ]
 }

@@ -546,6 +546,29 @@ model before this plan is approved.
   whether a conflict naming it is under review, never the other deposit nor a conflict decision's
   reason.*
 
+## Amended by ADR-043 (14 Nov 2026)
+
+- **D2 for a CREATION from a case:** two signatures, the proposer's and another conservator's, neither having handled
+  the case (D40, V35). A synthetic CREATION keeps one.
+- **§2, parties:** a party made for a case's owner names the identity version it came from (`register_party.source_identity_id`).
+- **§2, holders (owner's review, C1):** sole ownership is one `OWNERSHIP` holder at 1/1; co-ownership at least two
+  `CO_OWNERSHIP` holders totalling one; usufruct and bare ownership both present, each totalling one, a usufruct with
+  its term (`LIFE` or `UNTIL` a date); a partial dismemberment is refused (`PARTIAL_DISMEMBERMENT_NOT_SUPPORTED`).
+  `holder_rights_problem()` is the rule for every CREATION and correction.
+- **§5, signed bytes (C5):** a CREATION from a case also signs its decision, the ownership statement and its version,
+  each holder's identity and its source version, and the terms. Any change before the second signature gives
+  `STALE_PROPOSAL`; a party changed directly in the database fails title verification.
+
+## Amended by ADR-042 step 5 (14 Nov 2026)
+
+- **§2, origins.** `ck_land_title_synthetic_only` is replaced by `ck_land_title_origin` (V34): a title is
+  `SYNTHETIC_DEMO` without a case, or `IMMATRICULATION` naming the approved procedure A case it was created from
+  (`land_title.application_id`, unique). `MORCELLEMENT` stays refused.
+- **§5, signed bytes.** A CREATION proposed from a case (`register_propose_from_case`) also signs the case's id,
+  appended; every other inscription's bytes are unchanged and every earlier signature still verifies.
+- **§3, single control** for a CREATION is unchanged (D2), with the case checked again at the signature, and the
+  conservator never one who handled the case.
+
 ## Amended by ADR-041 D18 and D19 (8 Nov 2026)
 
 - **§4.7, replacing a deposit document, needs a second conservator (D19, V29).** A replacement is a request

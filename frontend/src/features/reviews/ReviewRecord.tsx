@@ -26,6 +26,19 @@ export function ReviewRecord({ texts, lang, review, citedNames }: {
       {review.openAlerts > 0 && !review.decision && (
         <Alert tone="warning" title={r.alertTitle}>{fill(r.alertText, { n: review.openAlerts })}</Alert>
       )}
+      {review.round > 0 && (
+        <Alert tone="info" title={fill(r.roundTitle, { n: String(review.round) })}>
+          <div className="small">{r.roundIntro}</div>
+          <ul className="plain-list small" data-earlier-decisions>
+            {review.earlierDecisions.map((d) => (
+              <li key={d.round}>
+                {fill(r.earlierDecision, { round: String(d.round), outcome: texts.decision.outcomes[d.outcome], name: d.decidedByName,
+                  date: new Date(d.at).toLocaleDateString(lang) })}
+              </li>
+            ))}
+          </ul>
+        </Alert>
+      )}
       <Card title={r.recordTitle} icon="audit">
         {review.assignments.length > 0 && (
           <dl className="properties">
@@ -46,6 +59,7 @@ export function ReviewRecord({ texts, lang, review, citedNames }: {
                       <Badge tone={s.kind === 'RETURN' ? 'warning' : 'info'}>
                         {s.kind === 'RETURN' ? r.returned : r.recommendations[s.recommendation!]}
                       </Badge>
+                      {review.round > 0 && <span className="small muted"> {fill(r.stepRound, { n: String(s.round) })}</span>}
                     </div>
                     <p className="timeline-meta">{s.actorName} · <span className="num">{new Date(s.at).toLocaleString(lang)}</span></p>
                     <p className="timeline-reason pre-line">{s.text}</p>

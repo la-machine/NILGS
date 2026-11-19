@@ -34,7 +34,16 @@ import org.springframework.transaction.annotation.Transactional;
  *   <li>No decision while an overlap or duplicate alert on the parcel is open (409
  *       {@code OPEN_ALERT}); none without grounds (422); none on a case in another state (409).</li>
  * </ul>
- * The service refuses first, with a precise code, and audits each refusal; the database (V16)
+ * For a type with a procedure (ADR-042), an approval is recommended or decided only once every stage is
+ * completed ({@code 409 PROCEDURE_INCOMPLETE}); a refusal stays possible. While an objection to its publication is
+ * open, no recommendation (but a return for information) and no decision at all ({@code 409 OBJECTION_OPEN}).
+ * Whoever recorded a stage of a case, or recorded or decided one of its objections, never claims it
+ * ({@code 403 STAGE_RECORDER_CANNOT_REVIEW}, {@code 403 OBJECTION_HANDLER_CANNOT_REVIEW}).
+ * Rounds (V36, ADR-043 step 5b): a reconsideration reopens an approved case in a new round; its assignments, steps and
+ * decision belong to that round, and the latest round's decision is the one that counts. A decision authority who decided
+ * the case in an earlier round never decides it again ({@code 403 EARLIER_DECIDER_CANNOT_DECIDE}), and whoever opened a
+ * reconsideration never reviews or decides it ({@code 403 RECONSIDERATION_OPENER_CANNOT_REVIEW}).
+ * The service refuses first, with a precise code, and audits each refusal; the database (V16, V32, V36)
  * checks the same rules again and computes nothing it is told.
  */
 @Service
@@ -55,9 +64,13 @@ public class ReviewService {
         this.actor = actor;
     }
 
-    /** A case's review as staff see it: the state, who is assigned, the steps, the decision, open alerts. */
+    /**
+     * A case's review as staff see it: the state, who is assigned, the steps, the decision, open alerts, and what its
+     * procedure still needs before an approval.
+     */
     public record ReviewView(ApplicationWorkflow.CaseState state, List<Review.Assignment> assignments, List<Review.Step> steps,
-                             Optional<Review.Decision> decision, int openAlerts) {
+                             Optional<Review.Decision> decision, int openAlerts, List<String> procedureGate, int round,
+                             List<Review.Decision> earlierDecisions) {
     }
 
     @Transactional(readOnly = true)
@@ -72,7 +85,8 @@ public class ReviewService {
     @Transactional(readOnly = true)
     public ReviewView view(AuthenticatedUser staff, UUID id) {
         ApplicationWorkflow.CaseState state = visible(staff, id);
-        return new ReviewView(state, reviews.assignments(id), reviews.steps(id), reviews.decision(id), reviews.openAlerts(id));
+        return new ReviewView(state, reviews.assignments(id), reviews.steps(id), reviews.decision(id), reviews.openAlerts(id),
+                reviews.procedureGate(id), reviews.round(id), reviews.earlierDecisions(id));
     }
 
     @Transactional
@@ -95,7 +109,7 @@ public class ReviewService {
         });
         audit.record(AuditEvent.of(AuditAction.CASE_CLAIMED, AuditOutcome.SUCCESS)
                 .withEntity(ENTITY, id).withEntityRef(state.reference())
-                .withDetails(Map.of("stage", stage.name(), "office", state.officeCode())));
+                .withDetails(Map.of("stage", stage.name(), "office", state.officeCode(), "round", reviews.round(id))));
         return view(staff, id);
     }
 
@@ -109,6 +123,12 @@ public class ReviewService {
         if (!Review.textValid(finding)) {
             throw refused(state, "FINDING_REQUIRED", ReviewRefused.Kind.INVALID);
         }
+        if (recommendation != Review.Recommendation.RETURN_FOR_INFORMATION && reviews.objectionsOpen(id) > 0) {
+            throw refused(state, "OBJECTION_OPEN", ReviewRefused.Kind.CONFLICT);
+        }
+        if (recommendation == Review.Recommendation.RECOMMEND_APPROVAL && !reviews.procedureGate(id).isEmpty()) {
+            throw refused(state, "PROCEDURE_INCOMPLETE", ReviewRefused.Kind.CONFLICT);
+        }
         guarded(state, () -> {
             reviews.addStep(id, "RECOMMENDATION", recommendation, finding.strip(), reviewer.userId());
             return workflow.move(reviewer.userId(), id, expectedVersion, "UNDER_REVIEW", "PENDING_DECISION",
@@ -116,7 +136,7 @@ public class ReviewService {
         });
         audit.record(AuditEvent.of(AuditAction.REVIEW_RECOMMENDED, AuditOutcome.SUCCESS)
                 .withEntity(ENTITY, id).withEntityRef(state.reference())
-                .withDetails(Map.of("recommendation", recommendation.name(), "office", state.officeCode())));
+                .withDetails(Map.of("recommendation", recommendation.name(), "office", state.officeCode(), "round", reviews.round(id))));
         return view(reviewer, id);
     }
 
@@ -132,7 +152,7 @@ public class ReviewService {
         });
         audit.record(AuditEvent.of(AuditAction.DECISION_RETURNED, AuditOutcome.SUCCESS)
                 .withEntity(ENTITY, id).withEntityRef(state.reference()).withReason(truncate(reason.strip()))
-                .withDetails(Map.of("office", state.officeCode())));
+                .withDetails(Map.of("office", state.officeCode(), "round", reviews.round(id))));
         return view(authority, id);
     }
 
@@ -157,7 +177,14 @@ public class ReviewService {
         if (reviews.openAlerts(id) > 0) {
             throw refused(state, "OPEN_ALERT", ReviewRefused.Kind.CONFLICT);
         }
-        UUID follows = steps.stream().filter(s -> s.kind().equals("RECOMMENDATION")).reduce((a, b) -> b)
+        if (reviews.objectionsOpen(id) > 0) {
+            throw refused(state, "OBJECTION_OPEN", ReviewRefused.Kind.CONFLICT);
+        }
+        if (outcome == Review.Outcome.APPROVED && !reviews.procedureGate(id).isEmpty()) {
+            throw refused(state, "PROCEDURE_INCOMPLETE", ReviewRefused.Kind.CONFLICT);
+        }
+        int round = reviews.round(id);
+        UUID follows = steps.stream().filter(s -> s.kind().equals("RECOMMENDATION") && s.round() == round).reduce((a, b) -> b)
                 .map(Review.Step::id).orElseThrow(() -> refused(state, "RECOMMENDATION_MISSING", ReviewRefused.Kind.CONFLICT));
         guarded(state, () -> {
             reviews.decide(id, outcome, grounds.strip(), citations, follows, authority.userId());
@@ -168,6 +195,7 @@ public class ReviewService {
         facts.put("simulated", true);
         facts.put("cited", citations.size());
         facts.put("office", state.officeCode());
+        facts.put("round", reviews.round(id));
         audit.record(AuditEvent.of(AuditAction.DECISION_RECORDED, AuditOutcome.SUCCESS)
                 .withEntity(ENTITY, id).withEntityRef(state.reference()).withReason(truncate(grounds.strip()))
                 .withDetails(facts));
@@ -207,6 +235,11 @@ public class ReviewService {
                 case "40001" -> throw new ReviewRefused(ReviewRefused.Kind.CONFLICT, "STALE_VERSION");
                 case "23001" -> throw refused(state, "INVALID_TRANSITION", ReviewRefused.Kind.CONFLICT);
                 case "23514" -> throw refused(state, "REVIEW_INVALID", ReviewRefused.Kind.INVALID);
+                case "PC001" -> {
+                    String code = procedureCode(e);
+                    boolean conflict = code.equals("PROCEDURE_INCOMPLETE") || code.equals("OBJECTION_OPEN") || code.equals("PARTIES_INCOMPLETE");
+                    throw refused(state, code, conflict ? ReviewRefused.Kind.CONFLICT : ReviewRefused.Kind.FORBIDDEN);
+                }
                 default -> throw e;
             }
         }
@@ -224,6 +257,17 @@ public class ReviewService {
 
     private static String truncate(String text) {
         return text.length() > 1000 ? text.substring(0, 999) + "…" : text;
+    }
+
+    /** The reason a procedure trigger gave (V32): the first word of its message. */
+    private static String procedureCode(Throwable e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof SQLException sql && "PC001".equals(sql.getSQLState())) {
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile(": ([A-Z][A-Z0-9_]{2,63})\\b").matcher(String.valueOf(sql.getMessage()));
+                return m.find() ? m.group(1) : "PROCEDURE_REFUSED";
+            }
+        }
+        return "PROCEDURE_REFUSED";
     }
 
     private static String sqlState(Throwable e) {

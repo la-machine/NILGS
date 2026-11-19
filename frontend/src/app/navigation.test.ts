@@ -43,6 +43,14 @@ describe('navigation follows the session', () => {
     expect(visible(session(['records.retention.read']))).toEqual(['dashboard', 'records'])
   })
 
+  it('shows the procedure stages to whoever records one (ADR-042)', () => {
+    expect(visible(session(['procedure.commission.report@YDE1', 'application.read@YDE1']))).toEqual(['dashboard', 'cases', 'procedures'])
+    // The objections to decide, to a supervisor (step 4); an intake officer records them from the case, with no queue of their own.
+    expect(visible(session(['procedure.objection.decide@YDE1', 'application.read@YDE1']))).toEqual(['dashboard', 'cases', 'objections'])
+    expect(visible(session(['procedure.objection.record@YDE1', 'application.read@YDE1']))).toEqual(['dashboard', 'cases'])
+    expect(visible(session(['application.read@YDE1']))).toEqual(['dashboard', 'cases'])
+  })
+
   it('opens the audit trail for a special grant on an audit action', () => {
     const grant = { id: 'g', permission: 'audit.key.read', officeCode: null, validUntil: null, usesLeft: 1 }
     expect(visible(session([], { specialGrants: [grant] }))).toEqual(['dashboard', 'audit'])

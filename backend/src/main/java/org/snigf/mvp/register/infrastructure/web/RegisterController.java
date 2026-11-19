@@ -53,7 +53,9 @@ class RegisterController {
                      @Size(max = 64) String registrationNumber, @Size(max = 200) String jurisdiction, UUID accountId) {
     }
 
-    record HolderBody(UUID party, @Size(max = 20) String interest, int shareNum, int shareDen) {
+    /** {@code usufructTerm}: {@code LIFE} or {@code UNTIL} (with {@code usufructUntil}), for a usufruct only (ADR-043). */
+    record HolderBody(UUID party, @Size(max = 20) String interest, int shareNum, int shareDen, @Size(max = 8) String usufructTerm,
+                      java.time.LocalDate usufructUntil) {
     }
 
     record ChargeBody(@Size(max = 20) String kind, UUID beneficiary, BigDecimal amount, boolean blocksTransfer,
@@ -67,8 +69,13 @@ class RegisterController {
                         @Size(max = 50) List<HolderBody> holders, ChargeBody charge) {
     }
 
+    /** Why; the holders come from the case's approved ownership statement (ADR-043 D36), never from the request. */
+    record CaseCreationBody(@Size(max = 2000) String reason) {
+    }
+
+    /** {@code caseReference}: the procedure B case the sale is deposited for (ADR-042 step 6), or none. */
     record DepositBody(UUID titleId, @Size(max = 20) String kind, UUID depositorPartyId, UUID submittedByPartyId,
-                       @Size(max = 50) List<@Size(max = 200) String> evidenceReferences) {
+                       @Size(max = 50) List<@Size(max = 200) String> evidenceReferences, @Size(max = 40) String caseReference) {
     }
 
     record ReasonBody(@Size(max = 2000) String reason) {
@@ -132,6 +139,13 @@ class RegisterController {
         return register.proposals(staff, office, page);
     }
 
+    /** "Approved, to register" (ADR-042 §4): the approved procedure A cases at the conservator's offices. */
+    @GetMapping("/api/v1/register/case-queue")
+    @PreAuthorize("@access.canSomewhere(authentication, 'register.propose')")
+    List<Register.CaseToRegister> caseQueue(@AuthenticationPrincipal AuthenticatedUser staff, @RequestParam(defaultValue = "0") int page) {
+        return register.caseQueue(staff, page);
+    }
+
     @GetMapping("/api/v1/register/parties")
     @PreAuthorize("@access.canAt(authentication, 'register.read', #office)")
     List<Register.Party> parties(@AuthenticationPrincipal AuthenticatedUser staff, @RequestParam String office,
@@ -175,13 +189,61 @@ class RegisterController {
     ResponseEntity<Created> propose(@AuthenticationPrincipal AuthenticatedUser staff, @Valid @RequestBody ProposalBody body,
                                     @RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key) {
         List<Register.NewHolder> holders = body.holders() == null ? null : body.holders().stream()
-                .map(h -> new Register.NewHolder(h.party(), h.interest(), h.shareNum(), h.shareDen())).toList();
+                .map(h -> new Register.NewHolder(h.party(), h.interest(), h.shareNum(), h.shareDen(), h.usufructTerm(), h.usufructUntil())).toList();
         Register.NewCharge charge = body.charge() == null ? null : new Register.NewCharge(body.charge().kind(), body.charge().beneficiary(),
                 body.charge().amount(), body.charge().blocksTransfer(), body.charge().endsOn(), body.charge().note());
         UUID id = register.propose(staff, new Register.NewInscription(body.officeCode(), body.titleId(), body.kind(), body.expectedVersion(),
                 body.authorityType(), body.authorityReference(), body.reason(), body.evidenceReferences(), body.evidenceVersions(),
                 body.completesTransactionId(), body.targetInscriptionId(), body.areaM2(), body.parcelVersionId(), holders, charge), key);
         return ResponseEntity.created(URI.create("/api/v1/register/inscriptions/" + id)).body(new Created(id));
+    }
+
+    /**
+     * A CREATION from an approved case (ADR-042 §4). It is proposed here and registered by the usual signing act; the
+     * database refuses a case not approved, of another procedure, already registered or in progress, on a titled parcel,
+     * or one this conservator handled.
+     */
+    @PostMapping("/api/v1/register/cases/{id}/creation")
+    @PreAuthorize("@access.canAt(authentication, 'register.propose', @caseOffices.of(#id))")
+    ResponseEntity<Created> proposeFromCase(@AuthenticationPrincipal AuthenticatedUser staff, @PathVariable UUID id,
+                                            @Valid @RequestBody CaseCreationBody body,
+                                            @RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key) {
+        UUID created = register.proposeFromCase(staff, id, body.reason(), key);
+        return ResponseEntity.created(URI.create("/api/v1/register/inscriptions/" + created)).body(new Created(created));
+    }
+
+    /**
+     * A TRANSFER from an approved procedure B case (ADR-042 step 6). Proposed here onto the case's title, completing its
+     * deposit, the holders the decided transferees; signed by two conservators who never handled the case (D46). The
+     * database refuses everything step 6 lists.
+     */
+    @PostMapping("/api/v1/register/cases/{id}/transfer")
+    @PreAuthorize("@access.canAt(authentication, 'register.propose', @caseOffices.of(#id))")
+    ResponseEntity<Created> proposeTransferFromCase(@AuthenticationPrincipal AuthenticatedUser staff, @PathVariable UUID id,
+                                                    @Valid @RequestBody CaseCreationBody body,
+                                                    @RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key) {
+        UUID created = register.proposeTransferFromCase(staff, id, body.reason(), key);
+        return ResponseEntity.created(URI.create("/api/v1/register/inscriptions/" + created)).body(new Created(created));
+    }
+
+    /** The evidence the two conservators examine before signing an inscription from a case (ADR-043): read-only, audited. */
+    @GetMapping(path = "/api/v1/register/cases/{id}/evidence", produces = MediaType.APPLICATION_JSON_VALUE)
+    @PreAuthorize("@access.canAt(authentication, 'register.propose', @caseOffices.of(#id))"
+            + " or @access.canAt(authentication, 'register.inscribe', @caseOffices.of(#id))"
+            + " or @access.canAt(authentication, 'register.confirm', @caseOffices.of(#id))")
+    ResponseEntity<String> caseEvidence(@AuthenticationPrincipal AuthenticatedUser staff, @PathVariable UUID id) {
+        return ResponseEntity.ok().header("Cache-Control", "no-store").body(register.caseEvidence(staff, id));
+    }
+
+    @GetMapping("/api/v1/register/cases/{id}/evidence/files/{fileId}")
+    @PreAuthorize("@access.canAt(authentication, 'register.propose', @caseOffices.of(#id))"
+            + " or @access.canAt(authentication, 'register.inscribe', @caseOffices.of(#id))"
+            + " or @access.canAt(authentication, 'register.confirm', @caseOffices.of(#id))")
+    ResponseEntity<org.springframework.core.io.InputStreamResource> caseEvidenceFile(@AuthenticationPrincipal AuthenticatedUser staff,
+                                                                                     @PathVariable UUID id, @PathVariable UUID fileId) {
+        RegisterService.EvidenceDownload d = register.caseEvidenceFile(staff, id, fileId);
+        return ResponseEntity.ok().headers(DocumentHeaders.attachment(d.file().mediaType(), d.file().sizeBytes(), d.file().originalName(),
+                d.file().sha256())).body(new org.springframework.core.io.InputStreamResource(d.content()));
     }
 
     /** Starts the officer's signature. Reading the register is enough: the act's endpoint checks the act's permission. */
@@ -231,7 +293,7 @@ class RegisterController {
     ResponseEntity<Created> deposit(@AuthenticationPrincipal AuthenticatedUser staff, @Valid @RequestBody DepositBody body,
                                     @RequestHeader(name = IDEMPOTENCY_KEY, required = false) String key) {
         UUID id = register.deposit(staff, new Register.NewDeposit(body.titleId(), body.kind(), body.depositorPartyId(), body.submittedByPartyId(),
-                body.evidenceReferences()), key);
+                body.evidenceReferences(), body.caseReference()), key);
         return ResponseEntity.created(URI.create("/api/v1/register/transactions/" + id)).body(new Created(id));
     }
 

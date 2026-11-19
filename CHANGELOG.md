@@ -9,6 +9,248 @@ Each entry names the decision record (ADR) and the guide (`docs/guides/`) that e
 
 ## [Unreleased]
 
+### Procedures A and B, step 6: procedure B's mutation totale (Slice 4)
+
+[ADR-042](docs/adr/042-registration-and-transfer-procedures.md) "As built in step 6" (D45 to D47), migration V37, guide
+[procedures](docs/guides/procedures.md).
+
+- **Opening:** a `DEMO_MUTATION` case names its title; at submission the database finds it at the parcel's office and
+  refuses one unknown, closed, not on the parcel, or named by another open case. The declaration names transferors and
+  transferees (D37), never both for one person; the transferees' shares come from the deed.
+- **The deposit:** the notary (or the counter) deposits the sale naming the case's reference; one open deposit per case,
+  on its title; ADR-040's lock and conflicts unchanged.
+- **The stages:** a conservator verifies the title (the transferors exactly its holders, D45, matched by identity) and
+  cites the duty receipt of the case's deposit (D24, no amount). The verification holds while the holders are unchanged
+  and nothing blocks (D47).
+- **The TRANSFER:** proposed from the approved case onto its title, completing its deposit, the holders the decided
+  transferees; two signatures by conservators who never handled the case nor received its deposit (D46). The title
+  keeps its number; the earlier holders stay in its history; the applicant reads "Transfer registered".
+- **For the owner's review:** the procedure screen's header and the case's duty receipts are read through two
+  `SECURITY DEFINER` functions, so conservators need no `application.read`; the transferors are not in the TRANSFER's
+  signed bytes (the hash chain binds them as the holders).
+- **Fixed:** the DEMO_MUTATION v2 hints exceeded 200 characters and stopped the application at start.
+
+### Procedures A and B, step 6 designed: mutation totale (Slice 4)
+
+[ADR-042](docs/adr/042-registration-and-transfer-procedures.md) "Design of step 6", D45 to D47 decided by the owner; step 5b
+approved ([ADR-043](docs/adr/043-case-parties-ownership-and-reconsideration.md), D41 kept as decided).
+
+- **Persons:** transferors and transferees kept apart (D37), each identity transcribed and checked; the transferees'
+  ownership statement, from the deed, is the only source of the new holders (D36); `DEMO_MUTATION` v2.
+- **Title and deposit:** the case names its title at submission; one open deposit per case, on the same title.
+- **Decided:** the transferors are exactly the title's holders (D45); two signatures for a TRANSFER from a case (D46);
+  a title changed after verification registers only if its holders are unchanged and nothing blocks (D47).
+
+### Procedures A and B, step 5b: reconsideration rounds (Slice 4)
+
+[ADR-043](docs/adr/043-case-parties-ownership-and-reconsideration.md) "As built in step 5b" (D41, D42), ADR-032, ADR-035
+and ADR-042 amended, migration V36, guide [procedures](docs/guides/procedures.md).
+
+- **Reconsideration:** an approved case held by an objection upheld after its decision is reopened in a new round by
+  a supervisor who never handled it nor upheld the objection, with a justification (new permission
+  `procedure.case.reopen`). The stages the objections named, any added, and the publication are carried out again;
+  the notice is published anew; a new review and decision follow, by a decision authority who never decided it.
+- **Rounds:** assignments, review steps and decisions belong to a round; the latest round's decision counts; nothing
+  earlier is changed. A new approval makes the case registrable; a new refusal ends it. Never once a title is
+  registered, nor while a CREATION is proposed.
+- **Separation across rounds:** whoever was assigned to a case in any round stays apart from its stages and objections.
+- **Screens:** "Reconsideration" in the procedure card; the round and earlier decisions in the review record; the
+  applicant reads that the case is reconsidered and which stages are carried out again, never why.
+
+### Step 5a corrected after the owner's review (ADR-043 C1 to C5)
+
+[ADR-043](docs/adr/043-case-parties-ownership-and-reconsideration.md) "Corrections of the owner's review", ADR-040
+amended, migration V35 (amended in place), guides [procedures](docs/guides/procedures.md) and
+[land register](docs/guides/land-register.md).
+
+- **Rights:** sole ownership (one owner, 1/1), co-ownership (two or more, totalling one), usufruct and bare ownership
+  (both, each totalling one, the usufruct for life or until a date); a partial dismemberment is refused. One database
+  rule for the declaration, intake and the register.
+- **The conservators' evidence:** both signers examine the approved owners, their identities as transcribed and
+  checked, the rights and the cited documents, read-only and audited, never a phone or an address.
+- **Retention:** classes by kind for the counter documents and the applicant's documents; legal holds on one
+  document or a whole case, documents added later included. No period set; nothing disposed of.
+- **Identity document validity:** an optional "valid until"; a document expired when transcribed holds the case
+  until replaced or excepted by a supervisor under the DEMO policy (new permission `application.party.exception`).
+- **Signature integrity:** the signed bytes bind the decision, the statement and its version, each holder's identity
+  and source version; any change before the second signature gives `STALE_PROPOSAL`; a first signature is never
+  reused; a party changed in the database fails title verification. Tested, including a race of an identity
+  correction against the second signature.
+
+### Procedures A and B, step 5a: the persons of a case and its ownership statement (Slice 4)
+
+[ADR-043](docs/adr/043-case-parties-ownership-and-reconsideration.md) (D35 to D44), ADR-040 and ADR-042 amended,
+migration V35, guide [procedures](docs/guides/procedures.md).
+
+- **The declaration:** the applicant says in what capacity they apply (on their own behalf, for one person, for several
+  intended owners), declares every person with explicit roles, each owner's exact share from the documents (never an
+  equal split by default) and each representative's mandate. Checked as they go and at submission.
+- **Intake:** documents presented at the counter are scanned; each identity, the ownership statement and each mandate
+  are transcribed from them and checked by a second officer, never the recorder. Corrections are new versions with a
+  reason. Every entry is DEMO and never independently verified; a check means "corresponds to the document presented".
+  The case is accepted, and approved, only once everything is checked.
+- **Registration:** the holders are the approved statement's owners and shares, never a representative; anything
+  changed after the decision stops it; a CREATION from a case needs two conservators, neither having handled the case.
+- **Screens:** "Persons of the case" on the draft and the staff case; each person's status for the applicant; whom the
+  title will name in "Approved, to register"; two signatures.
+- **For the owner's review:** the identity, mandate and ownership documents are scanned at the counter, not uploaded
+  per person online; `DEMO_IMMATRICULATION`'s `applicantCapacity` field now reads "Basis of the claim".
+
+### Procedures A and B, step 5: procedure A's registration (Slice 4)
+
+[ADR-042](docs/adr/042-registration-and-transfer-procedures.md) "As built in step 5", ADR-040 amended, migration V34,
+guides [procedures](docs/guides/procedures.md) and [land register](docs/guides/land-register.md).
+
+- **Approved, to register** (`#/register`, `GET /api/v1/register/case-queue`): the approved procedure A cases of the
+  conservation with no title yet, what holds each, and its proposal in progress.
+- **A CREATION from the case** (`POST /api/v1/register/cases/{id}/creation`): the parcel, area, authority and evidence
+  from the case; the applicant the sole holder, their DEMO identity transcribed by the conservator. Registered by one
+  conservator's signature, as before, with the case checked again; the title is an `IMMATRICULATION` naming its case.
+- **Refused by the database:** a case not approved; procedure B or the generic type; an objection open or upheld
+  after the decision; a procedure no longer complete; a second CREATION; a titled parcel or one awaiting another
+  CREATION; a conservator who handled the case, at the proposal and at the signature.
+- **After it:** the case stays approved; the applicant reads "Registered: DEMO-TF-…" and that it is not a land title;
+  no objection is received. Registering issues no document (D27, D29).
+- **Signed bytes:** a CREATION from a case appends the case's id; every other inscription's bytes are unchanged.
+- **Audit:** `PROCEDURE_REGISTRATION_PROPOSED`; the proposal and the registration are on the case's timeline too.
+- **For the owner's review:** the applicant's identity is transcribed, not verified (SNIGF verifies none); a case held
+  by an objection upheld after its decision has no way out yet.
+
+### Procedures A and B, step 4: publication and objections (Slice 4); step 3 verified
+
+[ADR-042](docs/adr/042-registration-and-transfer-procedures.md) rev. 3, "Step 3 verified" and "As built in step 4",
+migration V33, guide [procedures](docs/guides/procedures.md).
+
+- **Step 3 verified.**
+  - Stage evidence: the SHA-256 is the server's, recorded and never changed; the original is kept byte for byte,
+    read-only, and served unchanged with its digest; tampering is refused and audited; only the case's readers
+    download, and every download is audited. Each property now has a test.
+  - A corrected field visit invalidates its report, which is kept. Approval waits for a new valid report, at the
+    recommendation and again at the decision.
+  - **Fixed:** the superseded report read "completed" to the applicant and left the secretary's queue. A record
+    that no longer holds now reads "to be recorded again" (`OUTDATED`) everywhere (V33).
+- **Publication.** Recorded by an intake officer once the stages before it hold. It opens a notice whose
+  objection period is the setting `SNIGF_PROCEDURE_OBJECTION_PERIOD` (`P30D`, `PT5M` in development), bounded
+  by the database. A corrected publication opens a new notice.
+- **Public notices** (`#/notices`, `GET /api/v1/public/notices`), no sign-in: the notice's number, the
+  procedure, the parcel's reference and locality, the office and the period only. Throttled per address
+  (`SNIGF_RATE_NOTICES_PER_MINUTE`). "DEMO publication, no legal effect".
+- **Objections at the counter.** Recorded by an intake officer for a named objector, with a statement and
+  files, under a retry key; late ones are recorded and marked. Never by the applicant or the case's assignees.
+- **Deciding an objection.** By a supervisor, once, with grounds; never its recorder, the case's reviewer or
+  decision authority, or a stage officer of the case. An upheld objection names the stages to examine again
+  and never refuses the case; a stage recorded again after the publication calls for a new publication.
+- **The block.** An open objection holds every recommendation and decision (`OBJECTION_OPEN`).
+  `procedure_registration_problems()` is ready for step 5: an open objection, or one upheld after the decision,
+  will block the registration.
+- **Personal data.** The objector's identity is shown only to the officers who receive or decide objections;
+  the application's account cannot read it from the table; it is never in the audit trail.
+- **Audited:** `PROCEDURE_NOTICE_PUBLISHED`, `PROCEDURE_OBJECTION_RECORDED`, `PROCEDURE_OBJECTION_DECIDED`,
+  `PROCEDURE_OBJECTION_FILE_DOWNLOADED`.
+- **Screens.** The notice and the objections on the procedure panel, with their forms; "Objections"
+  (`#/objections`) for supervisors; the public notices; the applicant's new statuses.
+- **Settings.** `SNIGF_PROCEDURE_OBJECTION_PERIOD`, `SNIGF_RATE_NOTICES_PER_MINUTE`, `SNIGF_PROCEDURE_PAGE_SIZE`:
+  run `bash infra/scripts/dev-setup.sh` to add them to a local `.env`.
+- **Decided by the owner (D30 to D34, 13 Nov 2026).**
+  - The objector's identity stays with the objection, out of the register. It is read one objection at a time,
+    by objection officers only, each read audited (`PROCEDURE_OBJECTOR_IDENTITY_READ`).
+  - An open objection holds approval and refusal alike.
+  - Every publication is kept; a stage recorded again after one calls for a new notice and period.
+  - A supervisor who recorded a stage of the case never decides its objections.
+  - After an upheld objection, the applicant is told the stages carried out again and what they must do
+    (`procedureInstructions`), never the objection or the objector.
+- **The upheld-objection workflow:** only the named stages are reopened (and a report whose visit is made again);
+  every earlier record, file and notice is kept unchanged; republication is refused until they hold again and then
+  opens a whole new period; the case is never refused by it.
+- **Audit-chain messages in the test log:** three, from `AuditApiIT.aBrokenChainIsReportedAndNeverSigned` and
+  `AuditChainIT.aTamperedChainIsNeverSignedAndTheRefusalIsAudited`, which tamper on purpose; none elsewhere.
+
+### Procedures A and B, step 3: stage records, corrections and the gate on approval (Slice 4)
+
+[ADR-042](docs/adr/042-registration-and-transfer-procedures.md) rev. 3, migration V32, a new module `procedure`,
+guide [procedures](docs/guides/procedures.md).
+
+- **Stage records.** Each stage is recorded by the officer its permission names, at the case's office, while
+  the case is under review. Never by the applicant, never by the case's reviewer or decision authority, and the
+  commission's report never by the officer of the visit it reports on (D26).
+- **Evidence.**
+  - Each record cites stored versions of the case's documents and holds up to five attached files (ADR-033
+    checks, retention class `PROCEDURE_STAGE_EVIDENCE`).
+  - The database records the parcel version reviewed, and which visit a report is on.
+- **Corrections are new records.** Each names the latest one and says why; nothing is updated or deleted.
+  Retries add nothing.
+- **The gate.** An approval can be neither recommended nor decided while a stage is missing or not satisfied,
+  a report is on a corrected visit, or the parcel changed since its review (`PROCEDURE_INCOMPLETE`). A
+  refusal is never held back. Whoever recorded a stage never reviews or decides the case.
+- **Audited:** `PROCEDURE_STAGE_RECORDED`, `PROCEDURE_STAGE_CORRECTED`, `PROCEDURE_STAGE_FILE_DOWNLOADED`,
+  `PROCEDURE_REFUSED`.
+- **Screens.**
+  - "Procedure stages" (`#/procedures`).
+  - The procedure panel on staff and assigned cases.
+  - The gate's problems on the review form.
+  - The applicant's "Stages of the procedure": statuses and dates only.
+- **Decided with this step (D29):**
+  - `DEMO_REGISTRATION` stays unchanged, with its limits stated;
+  - registering a title, generating the official title document, issuing the DEMO notice and the physical
+    delivery are four distinct acts;
+  - generating the actual land title in the official layout is the long-term target, for a legally authorised
+    workflow.
+- **Changed for developers:**
+  - `Access.canSomewhere` takes several permissions;
+  - `EndpointAnnotationArchTest` checks every permission a rule names;
+  - the review view carries `procedureGate`;
+  - the applicant's case carries `stages`.
+- **Tests:**
+  - pgTAP `33` (56) and `31` updated;
+  - `ProcedureIT`, `PermissionMatrixIT`, `RetentionIT`, `EndpointAnnotationArchTest`;
+  - Vitest `procedures.test.tsx` (6) and the navigation.
+- **Docs:** ADR-042 "As built in step 3", dated notes in ADR-032, ADR-035 and ADR-036, the guide, manual
+  chapters 2, 3, 4, 7 and 10.
+
+### Procedures A and B, step 2: procedures in the type catalogue (Slice 4)
+
+[ADR-042](docs/adr/042-registration-and-transfer-procedures.md) rev. 2, migration V31, guide
+[procedures](docs/guides/procedures.md).
+
+- **Owner's clarifications (11 Nov 2026):**
+  - D26: the commission's report is its own stage, recorded and validated by a commission secretary or a
+    designated member, never the cadastral officer;
+  - D27: registering a title is distinct from issuing the DEMO notice, and SNIGF generates no official
+    title document;
+  - D28: a mutation keeps the title and its number, and records new inscriptions on it.
+- **Two new DEMO types:**
+  - `DEMO_IMMATRICULATION` (procedure A: cadastral review, field visit, commission's report, publication);
+  - `DEMO_MUTATION` (procedure B: title verification, duty receipt).
+
+  Each has a DEMO platform charge, never a duty. `DEMO_REGISTRATION` keeps no procedure: **a deviation
+  from the plan, for review** (ADR-042 "As built in step 2").
+- **The procedure is checked twice,** at start and by the database on insert (`application_procedure_problems`):
+  known stages of its own procedure only, each once, in order, with what they need, and its own register act.
+- **Permissions:** seven `procedure.*` permissions and the baseline role `COMMISSION_SECRETARY`. Only the
+  commission's report is delegable, to a designated member by special grant.
+- **Changed for users:** **New application** now offers three types to choose from.
+- **Tests:**
+  - pgTAP `32` (33) and `09_authorization` (61 permissions, 14 roles);
+  - `ProcedureTest`, `ApplicationTypeConfigIT`, `PermissionMatrixTest`;
+  - the e2e applications journey picks its type.
+
+### Procedures A and B, step 1: recorded (Slice 4)
+
+[ADR-042](docs/adr/042-registration-and-transfer-procedures.md) rev. 1, proposed; accepted as rev. 2 in step 2.
+No code, no migration.
+
+- **Owner's answers (11 Nov 2026):**
+  - D22: one slice, procedure A (*immatriculation directe*) first, then B (*mutation totale*);
+  - D23: stages configured per application type version, and an open objection blocks the decision;
+  - D24: duty receipts are evidence; SNIGF computes no tax;
+  - D25: a DEMO notice of registration, plus a recorded physical collection.
+- **Defaults waiting for the owner's review (P1 to P4):**
+  - transfers that name no case keep working;
+  - objections are recorded at the counter only;
+  - the objection period is a `P30D` DEMO setting;
+  - which officer records each stage.
+- **Plan:** ten steps, V31 to V36. See ADR-042.
+
 ### Professional accounts, steps 15 and 16: documented and verified; Slice 3 complete
 
 [ADR-041](docs/adr/041-professional-accounts.md) rev. 7. No migration.

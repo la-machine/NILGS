@@ -161,7 +161,7 @@ SELECT is(pg_temp.step('00000000-0000-0000-0000-0000000000c2', 'RECOMMENDATION',
 SELECT pg_temp.act('00000000-0000-0000-0000-0000000000c6', $q$ UPDATE snigf.conflict_alert SET status = 'RESOLVED',
     resolution = 'DATA_ERROR_CORRECTED', resolution_note = 'Survey error, neighbour boundary to be corrected',
     resolved_by = '00000000-0000-0000-0000-0000000000c6', resolved_at = now(), version = version + 1 $q$);
-SELECT col_is_unique('snigf', 'decision', 'application_id', 'one decision per application');
+SELECT col_is_unique('snigf', 'decision', ARRAY['application_id', 'round'], 'one decision per application and review round (V36)');
 SELECT is(pg_temp.decide('00000000-0000-0000-0000-0000000000c4', 'APPROVED', 'Title proven and boundaries agreed',
     '{00000000-0000-0000-0000-0000000000e1}') + pg_temp.move('00000000-0000-0000-0000-0000000000c4', 'APPROVED'), 2,
     'once the alert is resolved, the decision authority decides');

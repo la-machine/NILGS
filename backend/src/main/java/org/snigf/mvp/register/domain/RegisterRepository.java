@@ -39,6 +39,21 @@ public interface RegisterRepository {
 
     UUID propose(UUID officeId, Register.NewInscription proposal);
 
+    /** A CREATION from an approved case (V34, {@code register_propose_from_case}); the database decides everything. */
+    UUID proposeFromCase(UUID applicationId, String reason);
+
+    /** A TRANSFER from an approved procedure B case (V37, {@code register_propose_transfer_from_case}); the database decides everything. */
+    UUID proposeTransferFromCase(UUID applicationId, String reason);
+
+    /** What two conservators examine before signing a CREATION from a case (V35, {@code register_case_evidence}); empty when they may not. */
+    Optional<String> caseEvidence(UUID applicationId);
+
+    /** A document that evidence cites, for its download (V35, {@code register_case_evidence_file}). */
+    Optional<Register.EvidenceFile> caseEvidenceFile(UUID applicationId, UUID fileId);
+
+    /** "Approved, to register" at the bound conservator's offices (V34, {@code register_case_queue}). */
+    List<Register.CaseToRegister> caseQueue(int limit, int offset);
+
     /** The bytes the database will accept a signature over, for whoever may read the inscription. */
     byte[] canonical(UUID inscriptionId);
 
@@ -113,7 +128,7 @@ public interface RegisterRepository {
     Optional<Register.TitleLookup> lookupTitle(String number);
 
     /** The transaction and its documents in one call; a refusal records nothing and locks nothing. */
-    Register.DepositOutcome depositAsProfessional(UUID titleId, String kind, Register.NewDepositor depositor, List<Register.KeptDocument> documents,
+    Register.DepositOutcome depositAsProfessional(UUID titleId, String kind, String caseReference, Register.NewDepositor depositor, List<Register.KeptDocument> documents,
                                                   Duration reviewAfter);
 
     /** The bound professional's own deposits, newest first, or the one with {@code id}. */
