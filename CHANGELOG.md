@@ -9,6 +9,14 @@ Each entry names the decision record (ADR) and the guide (`docs/guides/`) that e
 
 ## [Unreleased]
 
+### Fixed: the end-to-end run failed in CI at the applicant's tracking
+
+The journey "the applicant follows where it stands without names" refused any `"reason"` in the applicant's own case.
+Since the replacement requests ([ADR-041](docs/adr/041-professional-accounts.md) D19), the applicant rightly reads why the
+office asks them to replace a document, so the check failed and the 15 journeys after it did not run. It now checks that
+this reason is exactly the office's, and still refuses any other reason, officer's name or recommendation
+(`e2e/tests/applications.ts`; guide [end-to-end testing](docs/guides/end-to-end-testing.md)).
+
 ### Procedures A and B, step 6: procedure B's mutation totale (Slice 4)
 
 [ADR-042](docs/adr/042-registration-and-transfer-procedures.md) "As built in step 6" (D45 to D47), migration V37, guide

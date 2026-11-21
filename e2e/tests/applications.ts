@@ -309,7 +309,12 @@ export function applicationJourneys(people: () => ApplicationPeople, parcel: () 
     const mine = await applicant.api('GET', `/applications/${applicationId}`)
     expect(mine.status).toBe(200)
     expect(mine.body.waitingOn).toBeNull()
-    expect(JSON.stringify(mine.body)).not.toMatch(/actorName|"reason"|RECOMMEND_/)
+    // The only reason the applicant reads is the office's, for each document it asks them to replace (ADR-041 D19).
+    // Everything else stays internal: no officer's name, no recommendation, no other reason.
+    expect(mine.body.completeness.flatMap((c: { replacements: { reason: string }[] }) => c.replacements.map((r) => r.reason)))
+      .toEqual(['The scan is unreadable'])
+    expect(JSON.stringify(mine.body, (key, value) => (key === 'replacements' ? undefined : value)))
+      .not.toMatch(/actorName|"reason"|RECOMMEND_/)
 
     const office = mine.body.officeCode as string
     await ready(supervisor)
